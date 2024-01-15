@@ -27,6 +27,10 @@ class Intervention(models.Model):
     code_name = models.CharField(max_length=100)
     display_name = models.CharField(max_length=100)
 
+    def __str__(self):
+        return self.display_name  # This will return the display name in the dropdown
+
+
 class FacilityIntervention(models.Model):
     facility = models.ForeignKey(Facility, on_delete=models.CASCADE)
     intervention = models.ForeignKey(Intervention, on_delete=models.CASCADE)

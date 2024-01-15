@@ -26,10 +26,12 @@ def add_facility(request):
         emission_form = EmissionDataForm()
         intervention_formset = FacilityInterventionFormSet()
 
-    return render(request, 'add_facility.html', {
+
+    return render(request, 'appname/add_facility.html', {
         'facility_form': facility_form,
         'emission_form': emission_form,
         'intervention_formset': intervention_formset
-    })
+})
+
 
 

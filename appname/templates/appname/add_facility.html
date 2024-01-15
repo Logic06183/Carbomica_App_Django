@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Add Facility</title>
+</head>
+<body>
+    <h1>Add Facility</h1>
+    <form method="post">
+        {% csrf_token %}
+        
+        <fieldset>
+            <legend>Facility Details:</legend>
+            {{ facility_form.as_p }}
+        </fieldset>
+
+        <fieldset>
+            <legend>Emission Data:</legend>
+            {{ emission_form.as_p }}
+        </fieldset>
+
+        <fieldset>
+            <legend>Facility Interventions:</legend>
+            {{ intervention_formset.management_form }}
+            {% for form in intervention_formset %}
+                {{ form.as_p }}
+            {% endfor %}
+        </fieldset>
+
+        <button type="submit">Save</button>
+    </form>
+</body>
+</html>
