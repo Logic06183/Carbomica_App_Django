@@ -1,1 +1,2 @@
-web: gunicorn Carbomica_app.wsgi --log-file -
+web: gunicorn Carbomica_app.wsgi:application --log-file -
+release: python manage.py migrate
