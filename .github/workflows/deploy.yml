@@ -21,6 +21,19 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           
+      - name: Install Heroku CLI
+        run: |
+          curl https://cli-assets.heroku.com/install.sh | sh
+          
+      - name: Create Heroku app if not exists
+        env:
+          HEROKU_API_KEY: ${{secrets.HEROKU_API_KEY}}
+        run: |
+          if ! heroku apps:info carbomica-dashboard &> /dev/null; then
+            heroku create carbomica-dashboard
+            heroku addons:create heroku-postgresql:mini -a carbomica-dashboard
+          fi
+          
       - name: Deploy to Heroku
         uses: akhileshns/heroku-deploy@v3.12.14
         with:
@@ -28,9 +41,17 @@ jobs:
           heroku_app_name: "carbomica-dashboard"
           heroku_email: "craigparker6@gmail.com"
           buildpack: "heroku/python"
+          procfile: "true"
         env:
           HD_DJANGO_SECRET_KEY: ${{secrets.DJANGO_SECRET_KEY}}
-          HD_DJANGO_DEBUG: ${{secrets.DJANGO_DEBUG}}
+          HD_DJANGO_DEBUG: "False"
+          
+      - name: Configure Heroku environment
+        env:
+          HEROKU_API_KEY: ${{secrets.HEROKU_API_KEY}}
+        run: |
+          heroku config:set DJANGO_SECRET_KEY="${{secrets.DJANGO_SECRET_KEY}}" -a carbomica-dashboard
+          heroku config:set DJANGO_DEBUG="False" -a carbomica-dashboard
           
       - name: Run database migrations
         env:
