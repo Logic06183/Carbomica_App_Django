@@ -21,28 +21,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           
-      - name: Login to Heroku
-        uses: akhileshns/heroku-deploy@v3.12.14
-        with:
-          heroku_api_key: ${{secrets.HEROKU_API_KEY}}
-          heroku_app_name: "carbomica-dashboard"
-          heroku_email: "craigparker6@gmail.com"
-          justlogin: true
-          
-      - name: Install Heroku CLI
-        run: |
-          npm install -g heroku
-          
-      - name: Create Heroku app
-        run: |
-          if ! heroku apps:info carbomica-dashboard &> /dev/null; then
-            heroku apps:create carbomica-dashboard --buildpack heroku/python
-            heroku addons:create heroku-postgresql:mini -a carbomica-dashboard
-          fi
-        env:
-          HEROKU_API_KEY: ${{secrets.HEROKU_API_KEY}}
-          
-      - name: Deploy to Heroku
+      - name: Create and deploy to Heroku
         uses: akhileshns/heroku-deploy@v3.12.14
         with:
           heroku_api_key: ${{secrets.HEROKU_API_KEY}}
@@ -50,19 +29,27 @@ jobs:
           heroku_email: "craigparker6@gmail.com"
           buildpack: "heroku/python"
           procfile: "true"
+          usedocker: false
+          stack: "heroku-22"
+          formation: "web"
         env:
           HD_DJANGO_SECRET_KEY: ${{secrets.DJANGO_SECRET_KEY}}
           HD_DJANGO_DEBUG: "False"
+          HD_DATABASE_URL: ${{secrets.DATABASE_URL}}
           
-      - name: Configure Heroku environment
-        run: |
-          heroku config:set DJANGO_SECRET_KEY="${{secrets.DJANGO_SECRET_KEY}}" -a carbomica-dashboard
-          heroku config:set DJANGO_DEBUG="False" -a carbomica-dashboard
+      - name: Install Heroku CLI
+        run: npm install -g heroku
+        
+      - name: Set Heroku Config Vars
         env:
           HEROKU_API_KEY: ${{secrets.HEROKU_API_KEY}}
-          
-      - name: Run database migrations
         run: |
-          heroku run python manage.py migrate -a carbomica-dashboard
+          heroku config:set DJANGO_SECRET_KEY="${{secrets.DJANGO_SECRET_KEY}}" --app carbomica-dashboard
+          heroku config:set DJANGO_DEBUG=False --app carbomica-dashboard
+          heroku config:set DISABLE_COLLECTSTATIC=1 --app carbomica-dashboard
+          
+      - name: Run Migrations
         env:
           HEROKU_API_KEY: ${{secrets.HEROKU_API_KEY}}
+        run: |
+          heroku run python manage.py migrate --app carbomica-dashboard
