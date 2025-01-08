@@ -1,0 +1,317 @@
+{% extends 'appname/base.html' %}
+{% load static %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Summary Cards -->
+    <div class="row mb-4">
+        <div class="col-xl-3 col-sm-6 mb-4">
+            <div class="card shadow">
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col">
+                            <h6 class="text-muted mb-1">Total Facilities</h6>
+                            <span class="h2 font-weight-bold mb-0">{{ total_facilities }}</span>
+                        </div>
+                        <div class="col-auto">
+                            <div class="icon icon-shape bg-primary text-white rounded-circle shadow">
+                                <i class="fas fa-hospital"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-sm-6 mb-4">
+            <div class="card shadow">
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col">
+                            <h6 class="text-muted mb-1">Total Emissions</h6>
+                            <span class="h2 font-weight-bold mb-0">{{ total_emissions|floatformat:2 }}</span>
+                        </div>
+                        <div class="col-auto">
+                            <div class="icon icon-shape bg-danger text-white rounded-circle shadow">
+                                <i class="fas fa-smog"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-sm-6 mb-4">
+            <div class="card shadow">
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col">
+                            <h6 class="text-muted mb-1">Active Interventions</h6>
+                            <span class="h2 font-weight-bold mb-0">{{ active_interventions }}</span>
+                        </div>
+                        <div class="col-auto">
+                            <div class="icon icon-shape bg-success text-white rounded-circle shadow">
+                                <i class="fas fa-leaf"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-sm-6 mb-4">
+            <div class="card shadow">
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col">
+                            <h6 class="text-muted mb-1">Potential Savings</h6>
+                            <span class="h2 font-weight-bold mb-0">${{ potential_savings|floatformat:2 }}</span>
+                        </div>
+                        <div class="col-auto">
+                            <div class="icon icon-shape bg-info text-white rounded-circle shadow">
+                                <i class="fas fa-dollar-sign"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts Row -->
+    <div class="row mb-4">
+        <div class="col-xl-8 mb-4">
+            <div class="card shadow">
+                <div class="card-header bg-transparent">
+                    <h6 class="text-uppercase ls-1 mb-1">Emissions Overview</h6>
+                    <h2 class="mb-0">Emissions by Source</h2>
+                </div>
+                <div class="card-body">
+                    <div id="emissionsChart" style="height: 350px;"></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-4 mb-4">
+            <div class="card shadow">
+                <div class="card-header bg-transparent">
+                    <h6 class="text-uppercase ls-1 mb-1">Top Facilities</h6>
+                    <h2 class="mb-0">By Total Emissions</h2>
+                </div>
+                <div class="card-body">
+                    {% for facility in top_facilities %}
+                    <div class="progress-wrapper mb-3">
+                        <div class="progress-info">
+                            <div class="progress-label">
+                                <span>{{ facility.display_name }}</span>
+                            </div>
+                            <div class="progress-percentage">
+                                <span>{{ facility.total_emissions|floatformat:2 }}</span>
+                            </div>
+                        </div>
+                        <div class="progress">
+                            <div class="progress-bar bg-primary" role="progressbar" 
+                                 style="width: {{ facility.percentage }}%">
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Policy Impact Analysis -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card shadow">
+                <div class="card-header bg-primary text-white">
+                    <h4 class="mb-0">Policy Impact Analysis</h4>
+                </div>
+                <div class="card-body">
+                    <ul class="nav nav-tabs" id="interventionTabs" role="tablist">
+                        {% for analysis in intervention_analysis %}
+                        <li class="nav-item">
+                            <a class="nav-link {% if forloop.first %}active{% endif %}" 
+                               id="tab-{{ forloop.counter }}" 
+                               data-bs-toggle="tab" 
+                               href="#intervention-{{ forloop.counter }}" 
+                               role="tab">
+                                {{ analysis.name }} - {{ analysis.facility }}
+                            </a>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    
+                    <div class="tab-content mt-4" id="interventionContent">
+                        {% for analysis in intervention_analysis %}
+                        <div class="tab-pane fade {% if forloop.first %}show active{% endif %}" 
+                             id="intervention-{{ forloop.counter }}" 
+                             role="tabpanel">
+                            <div class="row">
+                                <!-- Financial Metrics -->
+                                <div class="col-md-4 mb-4">
+                                    <div class="card h-100">
+                                        <div class="card-header bg-success text-white">
+                                            <h5 class="mb-0">Financial Impact</h5>
+                                        </div>
+                                        <div class="card-body">
+                                            <ul class="list-group list-group-flush">
+                                                <li class="list-group-item d-flex justify-content-between">
+                                                    <span>Implementation Cost:</span>
+                                                    <strong>${{ analysis.financial_metrics.implementation_cost|floatformat:2 }}</strong>
+                                                </li>
+                                                <li class="list-group-item d-flex justify-content-between">
+                                                    <span>Annual Savings:</span>
+                                                    <strong>${{ analysis.financial_metrics.annual_savings|floatformat:2 }}</strong>
+                                                </li>
+                                                <li class="list-group-item d-flex justify-content-between">
+                                                    <span>ROI:</span>
+                                                    <strong>{{ analysis.financial_metrics.roi|floatformat:1 }}%</strong>
+                                                </li>
+                                                <li class="list-group-item d-flex justify-content-between">
+                                                    <span>NPV:</span>
+                                                    <strong>${{ analysis.financial_metrics.npv|floatformat:2 }}</strong>
+                                                </li>
+                                                <li class="list-group-item d-flex justify-content-between">
+                                                    <span>Payback Period:</span>
+                                                    <strong>{{ analysis.financial_metrics.payback_period|floatformat:1 }} years</strong>
+                                                </li>
+                                                <li class="list-group-item d-flex justify-content-between">
+                                                    <span>Carbon Credits:</span>
+                                                    <strong>${{ analysis.financial_metrics.carbon_credits|floatformat:2 }}</strong>
+                                                </li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Environmental Metrics -->
+                                <div class="col-md-4 mb-4">
+                                    <div class="card h-100">
+                                        <div class="card-header bg-info text-white">
+                                            <h5 class="mb-0">Environmental Impact</h5>
+                                        </div>
+                                        <div class="card-body">
+                                            <ul class="list-group list-group-flush">
+                                                <li class="list-group-item d-flex justify-content-between">
+                                                    <span>Emission Reduction:</span>
+                                                    <strong>{{ analysis.environmental_metrics.emission_reduction|floatformat:2 }} kg CO₂</strong>
+                                                </li>
+                                                <li class="list-group-item d-flex justify-content-between">
+                                                    <span>Trees Equivalent:</span>
+                                                    <strong>{{ analysis.environmental_metrics.trees_saved|floatformat:0 }} trees</strong>
+                                                </li>
+                                                <li class="list-group-item d-flex justify-content-between">
+                                                    <span>Water Saved:</span>
+                                                    <strong>{{ analysis.environmental_metrics.water_saved|floatformat:0 }} L</strong>
+                                                </li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Policy Metrics -->
+                                <div class="col-md-4 mb-4">
+                                    <div class="card h-100">
+                                        <div class="card-header bg-warning">
+                                            <h5 class="mb-0">Policy Alignment</h5>
+                                        </div>
+                                        <div class="card-body">
+                                            <h6 class="mb-3">SDG Impact</h6>
+                                            {% for sdg, score in analysis.policy_metrics.sdg_impact.items %}
+                                            <div class="mb-2">
+                                                <div class="d-flex justify-content-between mb-1">
+                                                    <small>{{ sdg }}</small>
+                                                    <small>{{ score|floatformat:1 }}%</small>
+                                                </div>
+                                                <div class="progress" style="height: 10px;">
+                                                    <div class="progress-bar bg-success" 
+                                                         role="progressbar" 
+                                                         style="width: {{ score }}%">
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            {% endfor %}
+
+                                            <h6 class="mb-3 mt-4">Policy Alignment</h6>
+                                            {% for policy, score in analysis.policy_metrics.policy_alignment.items %}
+                                            <div class="mb-2">
+                                                <div class="d-flex justify-content-between mb-1">
+                                                    <small>{{ policy }}</small>
+                                                    <small>{{ score|floatformat:1 }}%</small>
+                                                </div>
+                                                <div class="progress" style="height: 10px;">
+                                                    <div class="progress-bar bg-info" 
+                                                         role="progressbar" 
+                                                         style="width: {{ score }}%">
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            {% endfor %}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+<script>
+    // Parse the emissions data
+    const emissionsData = JSON.parse('{{ emissions_data|safe }}');
+    
+    // Create the emissions chart
+    Plotly.newPlot('emissionsChart', [{
+        x: emissionsData.labels,
+        y: emissionsData.values,
+        type: 'bar',
+        marker: {
+            color: '#5e72e4'
+        }
+    }], {
+        margin: { t: 20, b: 40, l: 40, r: 20 },
+        yaxis: {
+            title: 'Emissions (kg CO₂)'
+        }
+    });
+</script>
+
+<style>
+    .progress-metrics .progress {
+        background-color: rgba(0,0,0,0.1);
+    }
+    .nav-tabs .nav-link {
+        color: #495057;
+    }
+    .nav-tabs .nav-link.active {
+        font-weight: bold;
+    }
+    .card-header h5 {
+        margin-bottom: 0;
+    }
+    .list-group-item {
+        padding: 0.75rem 1.25rem;
+    }
+    .icon-shape {
+        width: 48px;
+        height: 48px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .progress-wrapper {
+        position: relative;
+    }
+    .progress-info {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 0.5rem;
+    }
+</style>
+{% endblock %}

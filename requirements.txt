@@ -1,0 +1,14 @@
+Django==5.1.4
+Pillow  # For image handling
+django-crispy-forms==2.1
+crispy-bootstrap5==2023.10
+pandas
+plotly
+django-plotly-dash==2.3.0
+dash
+dash-bootstrap-components
+gunicorn==21.2.0
+whitenoise==6.6.0
+python-dotenv==1.0.0
+dj-database-url==2.1.0
+psycopg2-binary==2.9.9

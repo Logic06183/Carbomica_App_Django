@@ -15,13 +15,9 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
-
-# urls.py outside of the app
-from django.urls import path, include, re_path
-from django.views.generic import RedirectView
+from django.urls import path, include
 
 urlpatterns = [
-    path("admin/", admin.site.urls),
-    path("appname/", include("appname.urls")),
-    re_path(r'^$', RedirectView.as_view(url='/appname/add_facility/', permanent=False)),  # Redirect root to add_facility
+    path('admin/', admin.site.urls),
+    path('', include('appname.urls')),
 ]

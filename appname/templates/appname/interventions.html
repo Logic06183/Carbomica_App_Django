@@ -1,0 +1,138 @@
+{% extends 'appname/base.html' %}
+{% load static %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h2 class="mb-4">Carbon Reduction Interventions</h2>
+            <p class="text-muted">Sustainable solutions tailored for Low and Middle-Income Countries (LMICs)</p>
+        </div>
+    </div>
+
+    <!-- Intervention Cards -->
+    <div class="row">
+        {% for intervention in interventions %}
+        <div class="col-lg-6 mb-4">
+            <div class="card h-100 shadow">
+                <div class="card-header bg-primary text-white">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">{{ intervention.name }}</h5>
+                        <span class="badge bg-light text-primary">{{ intervention.facility }}</span>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <!-- Financial Metrics -->
+                        <div class="col-md-6">
+                            <h6 class="text-primary mb-3">Financial Impact</h6>
+                            <ul class="list-unstyled">
+                                <li class="mb-2">
+                                    <strong>Implementation Cost:</strong>
+                                    ${{ intervention.financial_metrics.implementation_cost|floatformat:0 }}
+                                </li>
+                                <li class="mb-2">
+                                    <strong>Annual Savings:</strong>
+                                    ${{ intervention.financial_metrics.annual_savings|floatformat:0 }}
+                                </li>
+                                <li class="mb-2">
+                                    <strong>ROI:</strong>
+                                    {{ intervention.financial_metrics.roi|floatformat:1 }}%
+                                </li>
+                                <li class="mb-2">
+                                    <strong>Payback Period:</strong>
+                                    {{ intervention.financial_metrics.payback_period|floatformat:1 }} years
+                                </li>
+                            </ul>
+                        </div>
+
+                        <!-- Environmental Metrics -->
+                        <div class="col-md-6">
+                            <h6 class="text-success mb-3">Environmental Impact</h6>
+                            <ul class="list-unstyled">
+                                <li class="mb-2">
+                                    <strong>Emission Reduction:</strong>
+                                    {{ intervention.environmental_metrics.emission_reduction|floatformat:0 }} kg CO₂
+                                </li>
+                                <li class="mb-2">
+                                    <strong>Trees Equivalent:</strong>
+                                    {{ intervention.environmental_metrics.trees_saved|floatformat:0 }} trees
+                                </li>
+                                <li class="mb-2">
+                                    <strong>Water Saved:</strong>
+                                    {{ intervention.environmental_metrics.water_saved|floatformat:0 }} L
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <!-- Policy Metrics -->
+                    <div class="row mt-4">
+                        <div class="col-12">
+                            <h6 class="text-warning mb-3">Policy Alignment</h6>
+                            
+                            <!-- SDG Impact -->
+                            <div class="mb-4">
+                                <h6 class="text-muted mb-2">SDG Impact</h6>
+                                {% for sdg, score in intervention.policy_metrics.sdg_impact.items %}
+                                <div class="mb-2">
+                                    <div class="d-flex justify-content-between align-items-center mb-1">
+                                        <small>{{ sdg }}</small>
+                                        <small>{{ score }}%</small>
+                                    </div>
+                                    <div class="progress" style="height: 8px;">
+                                        <div class="progress-bar bg-success" role="progressbar" 
+                                             style="width: {{ score }}%" 
+                                             aria-valuenow="{{ score }}" 
+                                             aria-valuemin="0" 
+                                             aria-valuemax="100">
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+
+                            <!-- Policy Alignment -->
+                            <div>
+                                <h6 class="text-muted mb-2">Local Impact</h6>
+                                {% for policy, score in intervention.policy_metrics.policy_alignment.items %}
+                                <div class="mb-2">
+                                    <div class="d-flex justify-content-between align-items-center mb-1">
+                                        <small>{{ policy }}</small>
+                                        <small>{{ score }}%</small>
+                                    </div>
+                                    <div class="progress" style="height: 8px;">
+                                        <div class="progress-bar bg-info" role="progressbar" 
+                                             style="width: {{ score }}%" 
+                                             aria-valuenow="{{ score }}" 
+                                             aria-valuemin="0" 
+                                             aria-valuemax="100">
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<style>
+    .card {
+        transition: transform 0.2s;
+    }
+    .card:hover {
+        transform: translateY(-5px);
+    }
+    .progress {
+        background-color: rgba(0,0,0,0.1);
+    }
+    .badge {
+        font-weight: 500;
+    }
+</style>
+{% endblock %}
