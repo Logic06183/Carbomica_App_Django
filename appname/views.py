@@ -1,112 +1,212 @@
-from django.shortcuts import render, redirect
-from django.db.models import Sum
+from django.shortcuts import render, redirect, get_object_or_404
+from django.db.models import Sum, F
 from django.contrib import messages
 from decimal import Decimal
 from .forms import (
-    FacilityForm, 
-    EmissionDataForm, 
+    FacilityForm,
+    EmissionSourceForm,
+    InterventionForm,
+    EmissionDataForm,
+    PolicyForm,
     FacilityInterventionFormSet,
-    EmissionSourceForm
+    OptimizationScenarioForm,
+    EmissionDataUpdateForm
 )
 from .models import (
-    Facility, 
-    EmissionData, 
-    FacilityIntervention,
+    Facility,
     EmissionSource,
-    models
+    Intervention,
+    EmissionData,
+    Policy,
+    FacilityIntervention,
+    OptimizationScenario,
+    OptimizationResult
 )
-import json
 
 def calculate_npv(intervention, discount_rate=0.05, years=10):
     """Calculate Net Present Value for an intervention"""
-    initial_cost = float(intervention.implementation_cost)
-    annual_savings = float(intervention.annual_savings)
-    npv = -initial_cost
+    initial_cost = -intervention.implementation_cost
+    annual_savings = intervention.annual_savings
+    npv = initial_cost
+
     for year in range(1, years + 1):
         npv += annual_savings / ((1 + discount_rate) ** year)
+    
     return round(npv, 2)
 
 def dashboard(request):
-    # Dummy data for demonstration
-    facilities_data = [
-        {
-            'name': 'Central Hospital',
-            'total_emissions': 1200.5,
-            'scope1_emissions': 400.2,
-            'scope2_emissions': 600.1,
-            'scope3_emissions': 200.2
-        },
-        {
-            'name': 'North Clinic',
-            'total_emissions': 800.3,
-            'scope1_emissions': 300.1,
-            'scope2_emissions': 400.1,
-            'scope3_emissions': 100.1
-        },
-        {
-            'name': 'South Medical Center',
-            'total_emissions': 950.7,
-            'scope1_emissions': 350.3,
-            'scope2_emissions': 450.2,
-            'scope3_emissions': 150.2
-        },
-        {
-            'name': 'East Wing Hospital',
-            'total_emissions': 700.2,
-            'scope1_emissions': 250.1,
-            'scope2_emissions': 350.0,
-            'scope3_emissions': 100.1
-        },
-        {
-            'name': 'West Health Center',
-            'total_emissions': 600.8,
-            'scope1_emissions': 200.3,
-            'scope2_emissions': 300.3,
-            'scope3_emissions': 100.2
-        }
-    ]
-
-    # Calculate total emissions and percentages
-    total_emissions = sum(f['total_emissions'] for f in facilities_data)
-    max_emissions = max(f['total_emissions'] for f in facilities_data)
+    """Dashboard view showing overview of facilities, emissions, and interventions"""
+    facilities = Facility.objects.all()
     
-    for facility in facilities_data:
-        facility['percentage'] = (facility['total_emissions'] / max_emissions) * 100
-
-    # Prepare emissions data for chart
-    emissions_data = {
-        'labels': ['Scope 1', 'Scope 2', 'Scope 3'],
-        'values': [
-            sum(f['scope1_emissions'] for f in facilities_data),
-            sum(f['scope2_emissions'] for f in facilities_data),
-            sum(f['scope3_emissions'] for f in facilities_data)
-        ]
+    # Calculate total emissions from all emission data
+    total_emissions = EmissionData.objects.aggregate(
+        total=Sum(
+            F('grid_electricity') +
+            F('grid_gas') +
+            F('bottled_gas') +
+            F('liquid_fuel') +
+            F('vehicle_fuel_owned') +
+            F('business_travel') +
+            F('anaesthetic_gases') +
+            F('refrigeration_gases') +
+            F('waste_management') +
+            F('medical_inhalers')
+        )
+    )['total'] or 0
+    
+    active_interventions = FacilityIntervention.objects.filter(
+        intervention__status='In Progress'
+    ).count()
+    
+    total_investment = FacilityIntervention.objects.aggregate(
+        total=Sum('implementation_cost')
+    )['total'] or 0
+    
+    # Get recent optimization scenarios
+    optimization_scenarios = OptimizationScenario.objects.select_related('facility').order_by('-created_at')
+    
+    # Calculate emission source breakdown
+    source_breakdown = []
+    emission_sources = EmissionData.objects.values('emission_source__display_name').annotate(
+        total_emissions=Sum(
+            F('grid_electricity') +
+            F('grid_gas') +
+            F('bottled_gas') +
+            F('liquid_fuel') +
+            F('vehicle_fuel_owned') +
+            F('business_travel') +
+            F('anaesthetic_gases') +
+            F('refrigeration_gases') +
+            F('waste_management') +
+            F('medical_inhalers')
+        )
+    ).order_by('-total_emissions')
+    
+    total = emission_sources.aggregate(
+        total=Sum('total_emissions')
+    )['total'] or 0
+    
+    if total > 0:
+        for source in emission_sources:
+            percentage = (source['total_emissions'] / total) * 100
+            source_breakdown.append({
+                'name': source['emission_source__display_name'],
+                'amount': source['total_emissions'],
+                'percentage': percentage
+            })
+    
+    # Get facility emissions for the table
+    facility_emissions = []
+    for facility in facilities:
+        facility_total = EmissionData.objects.filter(
+            emission_source__facility=facility
+        ).aggregate(
+            total=Sum(
+                F('grid_electricity') +
+                F('grid_gas') +
+                F('bottled_gas') +
+                F('liquid_fuel') +
+                F('vehicle_fuel_owned') +
+                F('business_travel') +
+                F('anaesthetic_gases') +
+                F('refrigeration_gases') +
+                F('waste_management') +
+                F('medical_inhalers')
+            )
+        )['total'] or 0
+        
+        facility_emissions.append({
+            'id': facility.id,
+            'name': facility.display_name,
+            'emissions': facility_total,
+            'interventions_count': facility.facility_interventions.filter(
+                intervention__status='In Progress'
+            ).count()
+        })
+    
+    # Sort facilities by emissions
+    facility_emissions.sort(key=lambda x: x['emissions'], reverse=True)
+    
+    context = {
+        'facilities': facility_emissions,
+        'total_emissions': total_emissions,
+        'active_interventions': active_interventions,
+        'total_investment': total_investment,
+        'source_breakdown': source_breakdown,
+        'optimization_scenarios': optimization_scenarios,
     }
+    
+    return render(request, 'appname/dashboard.html', context)
 
-    # Update intervention analysis data with status and timeline information
+def facilities(request):
+    facilities = Facility.objects.all()
+    context = {
+        'facilities': facilities
+    }
+    return render(request, 'appname/facilities.html', context)
+
+def add_facility(request):
+    if request.method == 'POST':
+        facility_form = FacilityForm(request.POST)
+        emission_source_form = EmissionSourceForm(request.POST)
+        emission_data_form = EmissionDataForm(request.POST)
+        
+        if all([facility_form.is_valid(), emission_source_form.is_valid(), emission_data_form.is_valid()]):
+            facility = facility_form.save()
+            
+            emission_source = emission_source_form.save(commit=False)
+            emission_source.facility = facility
+            emission_source.save()
+            
+            emission_data = emission_data_form.save(commit=False)
+            emission_data.emission_source = emission_source
+            emission_data.save()
+            
+            messages.success(request, 'Facility added successfully!')
+            return redirect('facilities')
+    else:
+        facility_form = FacilityForm()
+        emission_source_form = EmissionSourceForm()
+        emission_data_form = EmissionDataForm()
+    
+    context = {
+        'facility_form': facility_form,
+        'emission_source_form': emission_source_form,
+        'emission_data_form': emission_data_form
+    }
+    
+    return render(request, 'appname/add_facility.html', context)
+
+def interventions(request):
+    """View and analyze interventions"""
+    
+    # Get all interventions
+    db_interventions = Intervention.objects.all()
+    
+    # Prepare intervention analysis
     intervention_analysis = [
         {
-            'name': 'Natural Ventilation Enhancement',
-            'facility': 'Central Hospital',
-            'status': 'Active',
-            'implementation_date': '2024-12-01',
+            'name': 'LED Lighting Upgrade',
+            'facility': 'Main Hospital',
+            'status': 'Completed',
+            'implementation_date': '2024-06-15',
             'time_to_benefit': {
-                'initial_benefits': '1 month',
-                'full_benefits': '3 months',
-                'progress': 75  # Percentage of full benefits achieved
+                'initial_benefits': 'Immediate',
+                'full_benefits': '1 month',
+                'progress': 100
             },
             'financial_metrics': {
-                'implementation_cost': 75000,  # Lower cost alternative to HVAC
+                'implementation_cost': 50000,
                 'annual_savings': 25000,
-                'roi': 33.3,
-                'npv': 125000,
-                'payback_period': 3.0,
+                'roi': 50.0,
+                'npv': 120000,
+                'payback_period': 2.0,
                 'carbon_credits': 15000
             },
             'environmental_metrics': {
-                'emission_reduction': 2500,
-                'trees_saved': 1250,
-                'water_saved': 50000
+                'emission_reduction': 3000,
+                'trees_saved': 1500,
+                'water_saved': 10000
             },
             'policy_metrics': {
                 'sdg_impact': {
@@ -116,157 +216,9 @@ def dashboard(request):
                     'REDUCED INEQUALITIES': 80
                 },
                 'policy_alignment': {
-                    'LOCAL MANUFACTURING': 95,
-                    'SKILLS DEVELOPMENT': 85,
-                    'COMMUNITY BENEFIT': 90
-                }
-            }
-        },
-        {
-            'name': 'Solar Water Heating',
-            'facility': 'North Clinic',
-            'status': 'Planning',
-            'implementation_date': '2025-02-01',
-            'time_to_benefit': {
-                'initial_benefits': '1 month',
-                'full_benefits': '2 months',
-                'progress': 0  # Not started yet
-            },
-            'financial_metrics': {
-                'implementation_cost': 120000,
-                'annual_savings': 45000,
-                'roi': 37.5,
-                'npv': 185000,
-                'payback_period': 2.7,
-                'carbon_credits': 25000
-            },
-            'environmental_metrics': {
-                'emission_reduction': 3500,
-                'trees_saved': 1750,
-                'water_saved': 75000
-            },
-            'policy_metrics': {
-                'sdg_impact': {
-                    'AFFORDABLE CLEAN ENERGY': 90,
-                    'GOOD HEALTH & WELLBEING': 75,
-                    'CLIMATE ACTION': 85,
-                    'REDUCED INEQUALITIES': 70
-                },
-                'policy_alignment': {
-                    'LOCAL MANUFACTURING': 90,
+                    'LOCAL MANUFACTURING': 75,
                     'SKILLS DEVELOPMENT': 80,
-                    'COMMUNITY BENEFIT': 75
-                }
-            }
-        },
-        {
-            'name': 'Medical Waste Segregation',
-            'facility': 'South Medical Center',
-            'status': 'Active',
-            'implementation_date': '2024-11-15',
-            'time_to_benefit': {
-                'initial_benefits': 'Immediate',
-                'full_benefits': '1 month',
-                'progress': 100  # Fully implemented
-            },
-            'financial_metrics': {
-                'implementation_cost': 45000,
-                'annual_savings': 20000,
-                'roi': 44.4,
-                'npv': 95000,
-                'payback_period': 2.25,
-                'carbon_credits': 10000
-            },
-            'environmental_metrics': {
-                'emission_reduction': 1500,
-                'trees_saved': 750,
-                'water_saved': 25000
-            },
-            'policy_metrics': {
-                'sdg_impact': {
-                    'AFFORDABLE CLEAN ENERGY': 60,
-                    'GOOD HEALTH & WELLBEING': 95,
-                    'CLIMATE ACTION': 80,
-                    'REDUCED INEQUALITIES': 85
-                },
-                'policy_alignment': {
-                    'LOCAL MANUFACTURING': 100,
-                    'SKILLS DEVELOPMENT': 90,
                     'COMMUNITY BENEFIT': 85
-                }
-            }
-        },
-        {
-            'name': 'Energy-Efficient Lighting',
-            'facility': 'East Wing Hospital',
-            'status': 'Active',
-            'implementation_date': '2024-12-15',
-            'time_to_benefit': {
-                'initial_benefits': 'Immediate',
-                'full_benefits': '2 weeks',
-                'progress': 100  # Fully implemented
-            },
-            'financial_metrics': {
-                'implementation_cost': 35000,
-                'annual_savings': 15000,
-                'roi': 42.9,
-                'npv': 75000,
-                'payback_period': 2.33,
-                'carbon_credits': 8000
-            },
-            'environmental_metrics': {
-                'emission_reduction': 1200,
-                'trees_saved': 600,
-                'water_saved': 20000
-            },
-            'policy_metrics': {
-                'sdg_impact': {
-                    'AFFORDABLE CLEAN ENERGY': 85,
-                    'GOOD HEALTH & WELLBEING': 70,
-                    'CLIMATE ACTION': 75,
-                    'REDUCED INEQUALITIES': 80
-                },
-                'policy_alignment': {
-                    'LOCAL MANUFACTURING': 85,
-                    'SKILLS DEVELOPMENT': 75,
-                    'COMMUNITY BENEFIT': 80
-                }
-            }
-        },
-        {
-            'name': 'Rainwater Harvesting',
-            'facility': 'West Health Center',
-            'status': 'Implementation',
-            'implementation_date': '2025-01-01',
-            'time_to_benefit': {
-                'initial_benefits': '1 month',
-                'full_benefits': '6 months',  # Depends on rainy season
-                'progress': 25  # Recently started
-            },
-            'financial_metrics': {
-                'implementation_cost': 55000,
-                'annual_savings': 22000,
-                'roi': 40.0,
-                'npv': 105000,
-                'payback_period': 2.5,
-                'carbon_credits': 12000
-            },
-            'environmental_metrics': {
-                'emission_reduction': 1800,
-                'trees_saved': 900,
-                'water_saved': 150000
-            },
-            'policy_metrics': {
-                'sdg_impact': {
-                    'AFFORDABLE CLEAN ENERGY': 70,
-                    'GOOD HEALTH & WELLBEING': 85,
-                    'CLIMATE ACTION': 80,
-                    'REDUCED INEQUALITIES': 90
-                },
-                'policy_alignment': {
-                    'LOCAL MANUFACTURING': 95,
-                    'SKILLS DEVELOPMENT': 85,
-                    'COMMUNITY BENEFIT': 95
                 }
             }
         }
@@ -295,145 +247,34 @@ def dashboard(request):
             'environmental_metrics': {
                 'emission_reduction': 4200,
                 'trees_saved': 2100,
-                'water_saved': 30000
+                'water_saved': 15000
             },
             'policy_metrics': {
                 'sdg_impact': {
-                    'AFFORDABLE CLEAN ENERGY': 95,
-                    'GOOD HEALTH & WELLBEING': 100,
-                    'CLIMATE ACTION': 85,
+                    'AFFORDABLE CLEAN ENERGY': 90,
+                    'GOOD HEALTH & WELLBEING': 95,
+                    'CLIMATE ACTION': 80,
                     'REDUCED INEQUALITIES': 90
                 },
                 'policy_alignment': {
                     'LOCAL MANUFACTURING': 80,
                     'SKILLS DEVELOPMENT': 85,
-                    'COMMUNITY BENEFIT': 100
-                }
-            }
-        },
-        {
-            'name': 'Biogas from Medical Waste',
-            'facility': 'District Hospital',
-            'status': 'Implementation',
-            'implementation_date': '2025-01-15',
-            'time_to_benefit': {
-                'initial_benefits': '2 months',
-                'full_benefits': '6 months',
-                'progress': 15
-            },
-            'financial_metrics': {
-                'implementation_cost': 180000,
-                'annual_savings': 65000,
-                'roi': 36.1,
-                'npv': 250000,
-                'payback_period': 2.8,
-                'carbon_credits': 35000
-            },
-            'environmental_metrics': {
-                'emission_reduction': 5500,
-                'trees_saved': 2750,
-                'water_saved': 45000
-            },
-            'policy_metrics': {
-                'sdg_impact': {
-                    'AFFORDABLE CLEAN ENERGY': 90,
-                    'GOOD HEALTH & WELLBEING': 85,
-                    'CLIMATE ACTION': 95,
-                    'REDUCED INEQUALITIES': 75
-                },
-                'policy_alignment': {
-                    'LOCAL MANUFACTURING': 90,
-                    'SKILLS DEVELOPMENT': 95,
-                    'COMMUNITY BENEFIT': 85
-                }
-            }
-        },
-        {
-            'name': 'Water-Efficient Medical Equipment',
-            'facility': 'Community Clinic',
-            'status': 'Active',
-            'implementation_date': '2024-12-01',
-            'time_to_benefit': {
-                'initial_benefits': 'Immediate',
-                'full_benefits': '2 weeks',
-                'progress': 100
-            },
-            'financial_metrics': {
-                'implementation_cost': 25000,
-                'annual_savings': 12000,
-                'roi': 48.0,
-                'npv': 65000,
-                'payback_period': 2.1,
-                'carbon_credits': 5000
-            },
-            'environmental_metrics': {
-                'emission_reduction': 800,
-                'trees_saved': 400,
-                'water_saved': 180000
-            },
-            'policy_metrics': {
-                'sdg_impact': {
-                    'AFFORDABLE CLEAN ENERGY': 70,
-                    'GOOD HEALTH & WELLBEING': 85,
-                    'CLIMATE ACTION': 75,
-                    'REDUCED INEQUALITIES': 90
-                },
-                'policy_alignment': {
-                    'LOCAL MANUFACTURING': 100,
-                    'SKILLS DEVELOPMENT': 70,
-                    'COMMUNITY BENEFIT': 85
-                }
-            }
-        },
-        {
-            'name': 'Healthcare Waste Composting',
-            'facility': 'Primary Health Center',
-            'status': 'Planning',
-            'implementation_date': '2025-02-15',
-            'time_to_benefit': {
-                'initial_benefits': '1 month',
-                'full_benefits': '3 months',
-                'progress': 0
-            },
-            'financial_metrics': {
-                'implementation_cost': 30000,
-                'annual_savings': 18000,
-                'roi': 60.0,
-                'npv': 85000,
-                'payback_period': 1.7,
-                'carbon_credits': 9000
-            },
-            'environmental_metrics': {
-                'emission_reduction': 1600,
-                'trees_saved': 800,
-                'water_saved': 15000
-            },
-            'policy_metrics': {
-                'sdg_impact': {
-                    'AFFORDABLE CLEAN ENERGY': 75,
-                    'GOOD HEALTH & WELLBEING': 90,
-                    'CLIMATE ACTION': 85,
-                    'REDUCED INEQUALITIES': 85
-                },
-                'policy_alignment': {
-                    'LOCAL MANUFACTURING': 100,
-                    'SKILLS DEVELOPMENT': 90,
                     'COMMUNITY BENEFIT': 95
                 }
             }
         },
         {
-            'name': 'Mobile Solar Medical Units',
-            'facility': 'Rural Outreach Program',
-            'status': 'Planning',
-            'implementation_date': '2025-04-01',
+            'name': 'Waste Management System',
+            'facility': 'District Hospital',
+            'status': 'In Progress',
+            'implementation_date': '2024-09-01',
             'time_to_benefit': {
-                'initial_benefits': 'Immediate',
-                'full_benefits': '1 month',
-                'progress': 0
+                'initial_benefits': '2 weeks',
+                'full_benefits': '3 months',
+                'progress': 60
             },
             'financial_metrics': {
-                'implementation_cost': 150000,
+                'implementation_cost': 75000,
                 'annual_savings': 55000,
                 'roi': 36.7,
                 'npv': 200000,
@@ -461,472 +302,119 @@ def dashboard(request):
         }
     ])
 
-    # Calculate prioritization metrics for each intervention
-    for intervention in intervention_analysis:
-        # Cost per ton of CO2 reduced (lower is better)
-        intervention['prioritization_metrics'] = {
-            'cost_per_ton_co2': round(intervention['financial_metrics']['implementation_cost'] / 
-                                    (intervention['environmental_metrics']['emission_reduction'] / 1000), 2),
-            'annual_savings_per_cost': round((intervention['financial_metrics']['annual_savings'] / 
-                                            intervention['financial_metrics']['implementation_cost']) * 100, 2),
-            'emission_reduction_score': round((intervention['environmental_metrics']['emission_reduction'] / 1000) * 
-                                            (intervention['financial_metrics']['annual_savings'] / 
-                                             intervention['financial_metrics']['implementation_cost']), 2),
-            'implementation_complexity': 'Low' if intervention['time_to_benefit']['full_benefits'] in ['2 weeks', '1 month'] 
-                                      else 'Medium' if intervention['time_to_benefit']['full_benefits'] in ['2 months', '3 months']
-                                      else 'High'
-        }
-    
-    # Sort interventions by different metrics
-    prioritized_interventions = {
-        'cost_effective': sorted(intervention_analysis, 
-                               key=lambda x: x['prioritization_metrics']['cost_per_ton_co2']),
-        'quick_wins': sorted(intervention_analysis, 
-                           key=lambda x: (-x['prioritization_metrics']['annual_savings_per_cost'], 
-                                        x['time_to_benefit']['full_benefits'])),
-        'highest_impact': sorted(intervention_analysis, 
-                               key=lambda x: -x['environmental_metrics']['emission_reduction'])
-    }
-
-    context = {
-        'total_facilities': len(facilities_data),
-        'total_emissions': total_emissions,
-        'active_interventions': len(intervention_analysis),
-        'potential_savings': sum(i['financial_metrics']['annual_savings'] for i in intervention_analysis),
-        'top_facilities': facilities_data,
-        'emissions_data': json.dumps(emissions_data),
-        'intervention_analysis': intervention_analysis,
-        'prioritized_interventions': prioritized_interventions,
-        'total_emission_reduction': sum(intervention['environmental_metrics']['emission_reduction'] for intervention in intervention_analysis),
-        'total_investment_needed': sum(intervention['financial_metrics']['implementation_cost'] for intervention in intervention_analysis)
-    }
-
-    return render(request, 'appname/dashboard.html', context)
-
-def add_facility(request):
-    if request.method == 'POST':
-        facility_form = FacilityForm(request.POST)
-        emission_form = EmissionDataForm(request.POST)
-        
-        if facility_form.is_valid():
-            facility = facility_form.save()
-            
-            # Create a default emission source for the facility
-            emission_source = EmissionSource.objects.create(
-                facility=facility,
-                code_name=f"{facility.code_name}_main",
-                display_name=f"{facility.display_name} Main Source"
-            )
-            
-            if emission_form.is_valid():
-                emission_data = emission_form.save(commit=False)
-                emission_data.emission_source = emission_source
-                emission_data.save()
-
-                intervention_formset = FacilityInterventionFormSet(request.POST, instance=facility)
-                if intervention_formset.is_valid():
-                    intervention_formset.save()
-                    messages.success(request, 'Facility added successfully!')
-                    return redirect('dashboard')
-                else:
-                    messages.error(request, 'Error in intervention data.')
-            else:
-                messages.error(request, 'Error in emission data.')
-                facility.delete()  # Clean up if emission data is invalid
-        else:
-            messages.error(request, 'Error in facility data.')
-    else:
-        facility_form = FacilityForm()
-        emission_form = EmissionDataForm()
-        intervention_formset = FacilityInterventionFormSet()
-
-    return render(request, 'appname/add_facility.html', {
-        'facility_form': facility_form,
-        'emission_form': emission_form,
-        'intervention_formset': intervention_formset
-    })
-
-def interventions(request):
-    # Update intervention analysis data with status and timeline information
-    intervention_analysis = [
-        {
-            'name': 'Natural Ventilation Enhancement',
-            'facility': 'Central Hospital',
-            'status': 'Active',
-            'implementation_date': '2024-12-01',
-            'time_to_benefit': {
-                'initial_benefits': '1 month',
-                'full_benefits': '3 months',
-                'progress': 75  # Percentage of full benefits achieved
-            },
-            'financial_metrics': {
-                'implementation_cost': 75000,
-                'annual_savings': 25000,
-                'roi': 33.3,
-                'npv': 125000,
-                'payback_period': 3.0,
-                'carbon_credits': 15000
-            },
-            'environmental_metrics': {
-                'emission_reduction': 2500,
-                'trees_saved': 1250,
-                'water_saved': 50000
-            },
-            'policy_metrics': {
-                'sdg_impact': {
-                    'AFFORDABLE CLEAN ENERGY': 85,
-                    'GOOD HEALTH & WELLBEING': 90,
-                    'CLIMATE ACTION': 75,
-                    'REDUCED INEQUALITIES': 80
-                },
-                'policy_alignment': {
-                    'LOCAL MANUFACTURING': 95,
-                    'SKILLS DEVELOPMENT': 85,
-                    'COMMUNITY BENEFIT': 90
-                }
-            }
-        },
-        {
-            'name': 'Solar Water Heating',
-            'facility': 'North Clinic',
-            'status': 'Planning',
-            'implementation_date': '2025-02-01',
-            'time_to_benefit': {
-                'initial_benefits': '1 month',
-                'full_benefits': '2 months',
-                'progress': 0  # Not started yet
-            },
-            'financial_metrics': {
-                'implementation_cost': 120000,
-                'annual_savings': 45000,
-                'roi': 37.5,
-                'npv': 185000,
-                'payback_period': 2.7,
-                'carbon_credits': 25000
-            },
-            'environmental_metrics': {
-                'emission_reduction': 3500,
-                'trees_saved': 1750,
-                'water_saved': 75000
-            },
-            'policy_metrics': {
-                'sdg_impact': {
-                    'AFFORDABLE CLEAN ENERGY': 90,
-                    'GOOD HEALTH & WELLBEING': 75,
-                    'CLIMATE ACTION': 85,
-                    'REDUCED INEQUALITIES': 70
-                },
-                'policy_alignment': {
-                    'LOCAL MANUFACTURING': 90,
-                    'SKILLS DEVELOPMENT': 80,
-                    'COMMUNITY BENEFIT': 75
-                }
-            }
-        },
-        {
-            'name': 'Medical Waste Segregation',
-            'facility': 'South Medical Center',
-            'status': 'Active',
-            'implementation_date': '2024-11-15',
-            'time_to_benefit': {
-                'initial_benefits': 'Immediate',
-                'full_benefits': '1 month',
-                'progress': 100  # Fully implemented
-            },
-            'financial_metrics': {
-                'implementation_cost': 45000,
-                'annual_savings': 20000,
-                'roi': 44.4,
-                'npv': 95000,
-                'payback_period': 2.25,
-                'carbon_credits': 10000
-            },
-            'environmental_metrics': {
-                'emission_reduction': 1500,
-                'trees_saved': 750,
-                'water_saved': 25000
-            },
-            'policy_metrics': {
-                'sdg_impact': {
-                    'AFFORDABLE CLEAN ENERGY': 60,
-                    'GOOD HEALTH & WELLBEING': 95,
-                    'CLIMATE ACTION': 80,
-                    'REDUCED INEQUALITIES': 85
-                },
-                'policy_alignment': {
-                    'LOCAL MANUFACTURING': 100,
-                    'SKILLS DEVELOPMENT': 90,
-                    'COMMUNITY BENEFIT': 85
-                }
-            }
-        },
-        {
-            'name': 'Energy-Efficient Lighting',
-            'facility': 'East Wing Hospital',
-            'status': 'Active',
-            'implementation_date': '2024-12-15',
-            'time_to_benefit': {
-                'initial_benefits': 'Immediate',
-                'full_benefits': '2 weeks',
-                'progress': 100  # Fully implemented
-            },
-            'financial_metrics': {
-                'implementation_cost': 35000,
-                'annual_savings': 15000,
-                'roi': 42.9,
-                'npv': 75000,
-                'payback_period': 2.33,
-                'carbon_credits': 8000
-            },
-            'environmental_metrics': {
-                'emission_reduction': 1200,
-                'trees_saved': 600,
-                'water_saved': 20000
-            },
-            'policy_metrics': {
-                'sdg_impact': {
-                    'AFFORDABLE CLEAN ENERGY': 85,
-                    'GOOD HEALTH & WELLBEING': 70,
-                    'CLIMATE ACTION': 75,
-                    'REDUCED INEQUALITIES': 80
-                },
-                'policy_alignment': {
-                    'LOCAL MANUFACTURING': 85,
-                    'SKILLS DEVELOPMENT': 75,
-                    'COMMUNITY BENEFIT': 80
-                }
-            }
-        },
-        {
-            'name': 'Rainwater Harvesting',
-            'facility': 'West Health Center',
-            'status': 'Implementation',
-            'implementation_date': '2025-01-01',
-            'time_to_benefit': {
-                'initial_benefits': '1 month',
-                'full_benefits': '6 months',  # Depends on rainy season
-                'progress': 25  # Recently started
-            },
-            'financial_metrics': {
-                'implementation_cost': 55000,
-                'annual_savings': 22000,
-                'roi': 40.0,
-                'npv': 105000,
-                'payback_period': 2.5,
-                'carbon_credits': 12000
-            },
-            'environmental_metrics': {
-                'emission_reduction': 1800,
-                'trees_saved': 900,
-                'water_saved': 150000
-            },
-            'policy_metrics': {
-                'sdg_impact': {
-                    'AFFORDABLE CLEAN ENERGY': 70,
-                    'GOOD HEALTH & WELLBEING': 85,
-                    'CLIMATE ACTION': 80,
-                    'REDUCED INEQUALITIES': 90
-                },
-                'policy_alignment': {
-                    'LOCAL MANUFACTURING': 95,
-                    'SKILLS DEVELOPMENT': 85,
-                    'COMMUNITY BENEFIT': 95
-                }
-            }
-        }
-    ]
-
-    # Additional LMIC-relevant interventions
-    intervention_analysis.extend([
-        {
-            'name': 'Solar-Powered Vaccine Storage',
-            'facility': 'Rural Health Center',
-            'status': 'Planning',
-            'implementation_date': '2025-03-01',
-            'time_to_benefit': {
-                'initial_benefits': '1 week',
-                'full_benefits': '1 month',
-                'progress': 0
-            },
-            'financial_metrics': {
-                'implementation_cost': 85000,
-                'annual_savings': 35000,
-                'roi': 41.2,
-                'npv': 155000,
-                'payback_period': 2.4,
-                'carbon_credits': 18000
-            },
-            'environmental_metrics': {
-                'emission_reduction': 4200,
-                'trees_saved': 2100,
-                'water_saved': 30000
-            },
-            'policy_metrics': {
-                'sdg_impact': {
-                    'AFFORDABLE CLEAN ENERGY': 95,
-                    'GOOD HEALTH & WELLBEING': 100,
-                    'CLIMATE ACTION': 85,
-                    'REDUCED INEQUALITIES': 90
-                },
-                'policy_alignment': {
-                    'LOCAL MANUFACTURING': 80,
-                    'SKILLS DEVELOPMENT': 85,
-                    'COMMUNITY BENEFIT': 100
-                }
-            }
-        },
-        {
-            'name': 'Biogas from Medical Waste',
-            'facility': 'District Hospital',
-            'status': 'Implementation',
-            'implementation_date': '2025-01-15',
-            'time_to_benefit': {
-                'initial_benefits': '2 months',
-                'full_benefits': '6 months',
-                'progress': 15
-            },
-            'financial_metrics': {
-                'implementation_cost': 180000,
-                'annual_savings': 65000,
-                'roi': 36.1,
-                'npv': 250000,
-                'payback_period': 2.8,
-                'carbon_credits': 35000
-            },
-            'environmental_metrics': {
-                'emission_reduction': 5500,
-                'trees_saved': 2750,
-                'water_saved': 45000
-            },
-            'policy_metrics': {
-                'sdg_impact': {
-                    'AFFORDABLE CLEAN ENERGY': 90,
-                    'GOOD HEALTH & WELLBEING': 85,
-                    'CLIMATE ACTION': 95,
-                    'REDUCED INEQUALITIES': 75
-                },
-                'policy_alignment': {
-                    'LOCAL MANUFACTURING': 90,
-                    'SKILLS DEVELOPMENT': 95,
-                    'COMMUNITY BENEFIT': 85
-                }
-            }
-        },
-        {
-            'name': 'Water-Efficient Medical Equipment',
-            'facility': 'Community Clinic',
-            'status': 'Active',
-            'implementation_date': '2024-12-01',
-            'time_to_benefit': {
-                'initial_benefits': 'Immediate',
-                'full_benefits': '2 weeks',
-                'progress': 100
-            },
-            'financial_metrics': {
-                'implementation_cost': 25000,
-                'annual_savings': 12000,
-                'roi': 48.0,
-                'npv': 65000,
-                'payback_period': 2.1,
-                'carbon_credits': 5000
-            },
-            'environmental_metrics': {
-                'emission_reduction': 800,
-                'trees_saved': 400,
-                'water_saved': 180000
-            },
-            'policy_metrics': {
-                'sdg_impact': {
-                    'AFFORDABLE CLEAN ENERGY': 70,
-                    'GOOD HEALTH & WELLBEING': 85,
-                    'CLIMATE ACTION': 75,
-                    'REDUCED INEQUALITIES': 90
-                },
-                'policy_alignment': {
-                    'LOCAL MANUFACTURING': 100,
-                    'SKILLS DEVELOPMENT': 70,
-                    'COMMUNITY BENEFIT': 85
-                }
-            }
-        },
-        {
-            'name': 'Healthcare Waste Composting',
-            'facility': 'Primary Health Center',
-            'status': 'Planning',
-            'implementation_date': '2025-02-15',
-            'time_to_benefit': {
-                'initial_benefits': '1 month',
-                'full_benefits': '3 months',
-                'progress': 0
-            },
-            'financial_metrics': {
-                'implementation_cost': 30000,
-                'annual_savings': 18000,
-                'roi': 60.0,
-                'npv': 85000,
-                'payback_period': 1.7,
-                'carbon_credits': 9000
-            },
-            'environmental_metrics': {
-                'emission_reduction': 1600,
-                'trees_saved': 800,
-                'water_saved': 15000
-            },
-            'policy_metrics': {
-                'sdg_impact': {
-                    'AFFORDABLE CLEAN ENERGY': 75,
-                    'GOOD HEALTH & WELLBEING': 90,
-                    'CLIMATE ACTION': 85,
-                    'REDUCED INEQUALITIES': 85
-                },
-                'policy_alignment': {
-                    'LOCAL MANUFACTURING': 100,
-                    'SKILLS DEVELOPMENT': 90,
-                    'COMMUNITY BENEFIT': 95
-                }
-            }
-        },
-        {
-            'name': 'Mobile Solar Medical Units',
-            'facility': 'Rural Outreach Program',
-            'status': 'Planning',
-            'implementation_date': '2025-04-01',
-            'time_to_benefit': {
-                'initial_benefits': 'Immediate',
-                'full_benefits': '1 month',
-                'progress': 0
-            },
-            'financial_metrics': {
-                'implementation_cost': 150000,
-                'annual_savings': 55000,
-                'roi': 36.7,
-                'npv': 200000,
-                'payback_period': 2.7,
-                'carbon_credits': 28000
-            },
-            'environmental_metrics': {
-                'emission_reduction': 3800,
-                'trees_saved': 1900,
-                'water_saved': 25000
-            },
-            'policy_metrics': {
-                'sdg_impact': {
-                    'AFFORDABLE CLEAN ENERGY': 95,
-                    'GOOD HEALTH & WELLBEING': 100,
-                    'CLIMATE ACTION': 85,
-                    'REDUCED INEQUALITIES': 100
-                },
-                'policy_alignment': {
-                    'LOCAL MANUFACTURING': 85,
-                    'SKILLS DEVELOPMENT': 90,
-                    'COMMUNITY BENEFIT': 100
-                }
-            }
-        }
-    ]
-
     context = {
         'interventions': intervention_analysis
     }
     
     return render(request, 'appname/interventions.html', context)
+
+def optimize_interventions(request, facility_id):
+    facility = get_object_or_404(Facility, id=facility_id)
+    
+    if request.method == 'POST':
+        scenario_form = OptimizationScenarioForm(request.POST)
+        emission_form = EmissionDataUpdateForm(request.POST)
+        
+        if scenario_form.is_valid() and emission_form.is_valid():
+            # Create optimization scenario
+            scenario = scenario_form.save(commit=False)
+            scenario.facility = facility
+            scenario.save()
+            
+            # Update emission data
+            emission_data = EmissionData.objects.create(
+                emission_source=facility.emission_sources.first(),
+                **emission_form.cleaned_data
+            )
+            
+            # Calculate total current emissions
+            total_emissions = sum(
+                getattr(emission_data, field)
+                for field in EmissionDataUpdateForm.Meta.fields
+            )
+            
+            # Get all available interventions
+            available_interventions = Intervention.objects.all()
+            
+            # Initialize optimization results
+            results = []
+            remaining_budget = scenario.budget
+            total_reduction = Decimal('0')
+            
+            # Simple greedy optimization algorithm
+            sorted_interventions = sorted(
+                available_interventions,
+                key=lambda x: (x.emission_reduction_percentage / x.payback_period),
+                reverse=True
+            )
+            
+            for intervention in sorted_interventions:
+                implementation_cost = Decimal('50000')  # Example cost, should be based on facility size
+                if implementation_cost <= remaining_budget:
+                    emission_reduction = (intervention.emission_reduction_percentage / 100) * total_emissions
+                    annual_savings = intervention.energy_savings * Decimal('0.15')  # Example electricity rate
+                    roi = (annual_savings / implementation_cost) * 100
+                    
+                    # Create optimization result
+                    OptimizationResult.objects.create(
+                        scenario=scenario,
+                        intervention=intervention,
+                        priority=len(results) + 1,
+                        expected_roi=roi,
+                        emission_reduction=emission_reduction,
+                        implementation_cost=implementation_cost,
+                        annual_savings=annual_savings,
+                        payback_months=intervention.payback_period
+                    )
+                    
+                    remaining_budget -= implementation_cost
+                    total_reduction += emission_reduction
+                    
+                    if total_reduction >= (scenario.target_reduction / 100) * total_emissions:
+                        break
+            
+            scenario.status = 'Optimized'
+            scenario.save()
+            
+            return redirect('optimization_results', scenario_id=scenario.id)
+    else:
+        scenario_form = OptimizationScenarioForm()
+        emission_form = EmissionDataUpdateForm()
+        
+        # Get latest emission data if available
+        latest_emission = EmissionData.objects.filter(
+            emission_source__facility=facility
+        ).order_by('-date').first()
+        
+        if latest_emission:
+            emission_form = EmissionDataUpdateForm(instance=latest_emission)
+    
+    context = {
+        'facility': facility,
+        'scenario_form': scenario_form,
+        'emission_form': emission_form
+    }
+    
+    return render(request, 'appname/optimize_interventions.html', context)
+
+def optimization_results(request, scenario_id):
+    scenario = get_object_or_404(OptimizationScenario, id=scenario_id)
+    results = scenario.results.all().order_by('priority')
+    
+    # Calculate cumulative metrics
+    total_reduction = sum(result.emission_reduction for result in results)
+    total_cost = sum(result.implementation_cost for result in results)
+    total_savings = sum(result.annual_savings for result in results)
+    average_roi = sum(result.expected_roi for result in results) / len(results) if results else 0
+    
+    context = {
+        'scenario': scenario,
+        'results': results,
+        'total_reduction': total_reduction,
+        'total_cost': total_cost,
+        'total_savings': total_savings,
+        'average_roi': average_roi,
+        'remaining_budget': scenario.budget - total_cost
+    }
+    
+    return render(request, 'appname/optimization_results.html', context)

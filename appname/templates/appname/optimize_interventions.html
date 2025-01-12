@@ -1,0 +1,56 @@
+{% extends 'appname/base.html' %}
+{% load crispy_forms_tags %}
+
+{% block content %}
+<div class="container py-4">
+    <h2 class="mb-4">Optimize Interventions for {{ facility.display_name }}</h2>
+    
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card shadow-sm mb-4">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Optimization Parameters</h5>
+                </div>
+                <div class="card-body">
+                    <form method="post">
+                        {% csrf_token %}
+                        {{ scenario_form|crispy }}
+                        
+                        <h5 class="mt-4">Current Emissions</h5>
+                        {{ emission_form|crispy }}
+                        
+                        <button type="submit" class="btn btn-primary mt-3">
+                            Run Optimization
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6">
+            <div class="card shadow-sm">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Optimization Guide</h5>
+                </div>
+                <div class="card-body">
+                    <h6>How it works:</h6>
+                    <ol>
+                        <li>Enter your budget and emission reduction target</li>
+                        <li>Update your current emission values if needed</li>
+                        <li>The system will analyze possible interventions</li>
+                        <li>Results will show optimal interventions within your budget</li>
+                    </ol>
+                    
+                    <h6 class="mt-4">Tips:</h6>
+                    <ul>
+                        <li>Higher budgets allow for more comprehensive solutions</li>
+                        <li>Be realistic with emission reduction targets</li>
+                        <li>Make sure emission data is up to date</li>
+                        <li>Consider maintenance costs in your budget</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

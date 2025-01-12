@@ -1,0 +1,97 @@
+{% extends 'appname/base.html' %}
+{% load humanize %}
+
+{% block content %}
+<div class="container py-4">
+    <h2 class="mb-4">Optimization Results for {{ scenario.facility.display_name }}</h2>
+    
+    <div class="row mb-4">
+        <!-- Summary Cards -->
+        <div class="col-md-3">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <h6 class="text-muted">Total Cost</h6>
+                    <h3>R{{ total_cost|intcomma }}</h3>
+                    <small class="text-muted">Budget: R{{ scenario.budget|intcomma }}</small>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-3">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <h6 class="text-muted">Emission Reduction</h6>
+                    <h3>{{ total_reduction|floatformat:1 }} tCO2e</h3>
+                    <small class="text-muted">Target: {{ scenario.target_reduction }}%</small>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-3">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <h6 class="text-muted">Annual Savings</h6>
+                    <h3>R{{ total_savings|intcomma }}</h3>
+                    <small class="text-muted">Average ROI: {{ average_roi|floatformat:1 }}%</small>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-3">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <h6 class="text-muted">Remaining Budget</h6>
+                    <h3>R{{ remaining_budget|intcomma }}</h3>
+                    <small class="text-muted">{{ results.count }} interventions selected</small>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Recommended Interventions -->
+    <div class="card shadow-sm">
+        <div class="card-header">
+            <h5 class="card-title mb-0">Recommended Interventions</h5>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Priority</th>
+                            <th>Intervention</th>
+                            <th>Cost</th>
+                            <th>Annual Savings</th>
+                            <th>ROI</th>
+                            <th>Emission Reduction</th>
+                            <th>Payback Period</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for result in results %}
+                        <tr>
+                            <td>{{ result.priority }}</td>
+                            <td>{{ result.intervention.display_name }}</td>
+                            <td>R{{ result.implementation_cost|intcomma }}</td>
+                            <td>R{{ result.annual_savings|intcomma }}</td>
+                            <td>{{ result.expected_roi|floatformat:1 }}%</td>
+                            <td>{{ result.emission_reduction|floatformat:1 }} tCO2e</td>
+                            <td>{{ result.payback_months }} months</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mt-4">
+        <a href="{% url 'optimize_interventions' scenario.facility.id %}" class="btn btn-secondary">
+            Create New Scenario
+        </a>
+        <a href="{% url 'dashboard' %}" class="btn btn-primary">
+            Back to Dashboard
+        </a>
+    </div>
+</div>
+{% endblock %}

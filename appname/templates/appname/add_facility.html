@@ -4,66 +4,27 @@
 {% block content %}
 <div class="container py-4">
     <div class="row justify-content-center">
-        <div class="col-md-10">
-            <div class="card shadow">
-                <div class="card-header bg-primary text-white">
-                    <h4 class="mb-0"><i class="fas fa-hospital-alt me-2"></i>Add New Facility</h4>
+        <div class="col-md-8">
+            <div class="card shadow-sm">
+                <div class="card-header">
+                    <h4 class="mb-0">Add New Healthcare Facility</h4>
                 </div>
                 <div class="card-body">
-                    <form method="post" class="form">
+                    <form method="post">
                         {% csrf_token %}
                         
-                        <div class="row mb-4">
-                            <div class="col-md-6">
-                                <div class="card h-100">
-                                    <div class="card-header bg-light">
-                                        <h5 class="mb-0"><i class="fas fa-building me-2"></i>Facility Details</h5>
-                                    </div>
-                                    <div class="card-body">
-                                        {{ facility_form|crispy }}
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="card h-100">
-                                    <div class="card-header bg-light">
-                                        <h5 class="mb-0"><i class="fas fa-chart-line me-2"></i>Emission Data</h5>
-                                    </div>
-                                    <div class="card-body">
-                                        {{ emission_form|crispy }}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="card mb-4">
-                            <div class="card-header bg-light">
-                                <h5 class="mb-0"><i class="fas fa-tools me-2"></i>Facility Interventions</h5>
-                            </div>
-                            <div class="card-body">
-                                {{ intervention_formset.management_form }}
-                                <div class="row">
-                                    {% for form in intervention_formset %}
-                                        <div class="col-md-6 mb-3">
-                                            <div class="card">
-                                                <div class="card-body">
-                                                    <h6 class="card-subtitle mb-3 text-muted">Intervention #{{ forloop.counter }}</h6>
-                                                    {{ form|crispy }}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    {% endfor %}
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="text-end">
-                            <a href="{% url 'dashboard' %}" class="btn btn-secondary me-2">
-                                <i class="fas fa-times me-2"></i>Cancel
-                            </a>
-                            <button type="submit" class="btn btn-primary">
-                                <i class="fas fa-save me-2"></i>Save Facility
-                            </button>
+                        <h5 class="mb-3">Facility Details</h5>
+                        {{ facility_form|crispy }}
+                        
+                        <h5 class="mb-3 mt-4">Emission Source</h5>
+                        {{ emission_source_form|crispy }}
+                        
+                        <h5 class="mb-3 mt-4">Initial Emission Data</h5>
+                        {{ emission_data_form|crispy }}
+                        
+                        <div class="mt-4">
+                            <button type="submit" class="btn btn-primary">Add Facility</button>
+                            <a href="{% url 'facilities' %}" class="btn btn-secondary">Cancel</a>
                         </div>
                     </form>
                 </div>
@@ -71,31 +32,4 @@
         </div>
     </div>
 </div>
-
-<style>
-    .form-group {
-        margin-bottom: 1rem;
-    }
-    .card {
-        border-radius: 8px;
-        border: 1px solid rgba(0,0,0,.125);
-    }
-    .card-header {
-        border-radius: 7px 7px 0 0 !important;
-    }
-    .form-control {
-        border-radius: 6px;
-    }
-    .btn {
-        border-radius: 6px;
-        padding: 8px 16px;
-    }
-    .form-label {
-        font-weight: 500;
-        color: #495057;
-    }
-    .text-muted {
-        color: #6c757d !important;
-    }
-</style>
 {% endblock %}

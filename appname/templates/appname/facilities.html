@@ -1,0 +1,84 @@
+{% extends 'appname/base.html' %}
+{% load humanize %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>Healthcare Facilities</h2>
+        <a href="{% url 'add_facility' %}" class="btn btn-primary">
+            <i class="fas fa-plus"></i> Add Facility
+        </a>
+    </div>
+    
+    <div class="row">
+        {% for facility in facilities %}
+        <div class="col-md-6 mb-4">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <h5 class="card-title">{{ facility.display_name }}</h5>
+                            <p class="text-muted mb-2">Code: {{ facility.code_name }}</p>
+                        </div>
+                        <div class="dropdown">
+                            <button class="btn btn-light btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                Actions
+                            </button>
+                            <ul class="dropdown-menu">
+                                <li>
+                                    <a class="dropdown-item" href="{% url 'optimize_interventions' facility.id %}">
+                                        <i class="fas fa-chart-line"></i> Optimize Interventions
+                                    </a>
+                                </li>
+                                <li>
+                                    <a class="dropdown-item" href="#">
+                                        <i class="fas fa-edit"></i> Edit Details
+                                    </a>
+                                </li>
+                                <li>
+                                    <a class="dropdown-item" href="#">
+                                        <i class="fas fa-chart-bar"></i> View Reports
+                                    </a>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                    
+                    {% with latest_emission=facility.emission_sources.first.emission_data.last %}
+                    {% if latest_emission %}
+                    <div class="row mt-3">
+                        <div class="col-6">
+                            <small class="text-muted d-block">Total Emissions</small>
+                            <span class="h6">
+                                {{ latest_emission.total_emissions|floatformat:1 }} tCO2e
+                            </span>
+                        </div>
+                        <div class="col-6">
+                            <small class="text-muted d-block">Last Updated</small>
+                            <span class="h6">
+                                {{ latest_emission.date|date:"M d, Y" }}
+                            </span>
+                        </div>
+                    </div>
+                    {% else %}
+                    <p class="text-muted mt-3">No emission data available</p>
+                    {% endif %}
+                    {% endwith %}
+                    
+                    <div class="mt-3">
+                        <small class="text-muted d-block">Active Interventions</small>
+                        <div class="d-flex flex-wrap gap-2 mt-1">
+                            {% for intervention in facility.facility_interventions.all %}
+                            {% if intervention.intervention.status == 'In Progress' %}
+                            <span class="badge bg-primary">{{ intervention.intervention.display_name }}</span>
+                            {% endif %}
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

@@ -2,7 +2,7 @@
 
 from django import forms
 from django.forms import inlineformset_factory
-from .models import Facility, EmissionData, FacilityIntervention, Intervention, EmissionSource
+from .models import Facility, EmissionData, FacilityIntervention, Intervention, EmissionSource, Policy, OptimizationScenario
 
 class FacilityForm(forms.ModelForm):
     class Meta:
@@ -87,3 +87,45 @@ FacilityInterventionFormSet = inlineformset_factory(
     extra=1,
     can_delete=True
 )
+
+class PolicyForm(forms.ModelForm):
+    class Meta:
+        model = Policy
+        fields = ['name', 'description', 'compliance_score', 'implementation_date', 'status']
+        widgets = {
+            'name': forms.TextInput(attrs={'class': 'form-control'}),
+            'description': forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
+            'compliance_score': forms.NumberInput(attrs={'class': 'form-control', 'min': 0, 'max': 100}),
+            'implementation_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
+            'status': forms.Select(attrs={'class': 'form-control'})
+        }
+
+class OptimizationScenarioForm(forms.ModelForm):
+    class Meta:
+        model = OptimizationScenario
+        fields = ['name', 'budget', 'target_reduction']
+        widgets = {
+            'name': forms.TextInput(attrs={'class': 'form-control'}),
+            'budget': forms.NumberInput(attrs={'class': 'form-control'}),
+            'target_reduction': forms.NumberInput(attrs={'class': 'form-control'})
+        }
+
+class EmissionDataUpdateForm(forms.ModelForm):
+    class Meta:
+        model = EmissionData
+        fields = [
+            'grid_electricity', 'grid_gas', 'bottled_gas', 'liquid_fuel',
+            'vehicle_fuel_owned', 'business_travel', 'anaesthetic_gases',
+            'refrigeration_gases', 'waste_management', 'medical_inhalers'
+        ]
+        widgets = {field: forms.NumberInput(attrs={'class': 'form-control'}) 
+                  for field in fields}
+
+class EmissionSourceForm(forms.ModelForm):
+    class Meta:
+        model = EmissionSource
+        fields = ['code_name', 'display_name']
+        widgets = {
+            'code_name': forms.TextInput(attrs={'class': 'form-control'}),
+            'display_name': forms.TextInput(attrs={'class': 'form-control'})
+        }
