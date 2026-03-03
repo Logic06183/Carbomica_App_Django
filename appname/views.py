@@ -1,5 +1,8 @@
+import json
+
 from django.shortcuts import render, redirect, get_object_or_404
-from django.db.models import Sum, F
+from django.db.models import Sum, F, Avg, Count
+from django.db.models.functions import TruncMonth
 from django.contrib import messages
 from decimal import Decimal
 from .forms import (
@@ -23,6 +26,78 @@ from .models import (
     OptimizationResult
 )
 
+
+def emission_total_expression():
+    return (
+        F('grid_electricity') +
+        F('grid_gas') +
+        F('bottled_gas') +
+        F('liquid_fuel') +
+        F('vehicle_fuel_owned') +
+        F('business_travel') +
+        F('anaesthetic_gases') +
+        F('refrigeration_gases') +
+        F('waste_management') +
+        F('medical_inhalers')
+    )
+
+
+def get_total_emissions():
+    """Return the summed emissions across all sources."""
+    return EmissionData.objects.aggregate(
+        total=Sum(emission_total_expression())
+    )['total'] or 0
+
+
+def home(request):
+    """Landing page that guides health managers into the tool."""
+    facility_count = Facility.objects.count()
+    total_emissions = get_total_emissions()
+    active_interventions = FacilityIntervention.objects.filter(
+        intervention__status__in=['Planned', 'In Progress']
+    ).count()
+    optimized_scenarios = OptimizationScenario.objects.filter(status='Optimized').count()
+
+    recent_facilities = Facility.objects.order_by('-id')[:3]
+    recent_scenarios = OptimizationScenario.objects.select_related('facility').order_by('-created_at')[:3]
+    upcoming_interventions = FacilityIntervention.objects.select_related('facility', 'intervention').filter(
+        implementation_date__isnull=False
+    ).order_by('implementation_date')[:3]
+
+    call_to_actions = [
+        {
+            'title': 'Add a facility',
+            'description': 'Capture your site data and baseline emissions.',
+            'icon': 'hospital',
+            'url_name': 'add_facility'
+        },
+        {
+            'title': 'Review emissions',
+            'description': 'Track hotspots and progress from the dashboard.',
+            'icon': 'chart-line',
+            'url_name': 'dashboard'
+        },
+        {
+            'title': 'Plan interventions',
+            'description': 'Model ROI, SDG impact and policy alignment.',
+            'icon': 'tools',
+            'url_name': 'interventions'
+        }
+    ]
+
+    context = {
+        'facility_count': facility_count,
+        'total_emissions': total_emissions,
+        'active_interventions': active_interventions,
+        'optimized_scenarios': optimized_scenarios,
+        'recent_facilities': recent_facilities,
+        'recent_scenarios': recent_scenarios,
+        'upcoming_interventions': upcoming_interventions,
+        'call_to_actions': call_to_actions,
+    }
+
+    return render(request, 'appname/home.html', context)
+
 def calculate_npv(intervention, discount_rate=0.05, years=10):
     """Calculate Net Present Value for an intervention"""
     initial_cost = -intervention.implementation_cost
@@ -39,20 +114,7 @@ def dashboard(request):
     facilities = Facility.objects.all()
     
     # Calculate total emissions from all emission data
-    total_emissions = EmissionData.objects.aggregate(
-        total=Sum(
-            F('grid_electricity') +
-            F('grid_gas') +
-            F('bottled_gas') +
-            F('liquid_fuel') +
-            F('vehicle_fuel_owned') +
-            F('business_travel') +
-            F('anaesthetic_gases') +
-            F('refrigeration_gases') +
-            F('waste_management') +
-            F('medical_inhalers')
-        )
-    )['total'] or 0
+    total_emissions = get_total_emissions()
     
     active_interventions = FacilityIntervention.objects.filter(
         intervention__status='In Progress'
@@ -68,18 +130,7 @@ def dashboard(request):
     # Calculate emission source breakdown
     source_breakdown = []
     emission_sources = EmissionData.objects.values('emission_source__display_name').annotate(
-        total_emissions=Sum(
-            F('grid_electricity') +
-            F('grid_gas') +
-            F('bottled_gas') +
-            F('liquid_fuel') +
-            F('vehicle_fuel_owned') +
-            F('business_travel') +
-            F('anaesthetic_gases') +
-            F('refrigeration_gases') +
-            F('waste_management') +
-            F('medical_inhalers')
-        )
+        total_emissions=Sum(emission_total_expression())
     ).order_by('-total_emissions')
     
     total = emission_sources.aggregate(
@@ -101,18 +152,7 @@ def dashboard(request):
         facility_total = EmissionData.objects.filter(
             emission_source__facility=facility
         ).aggregate(
-            total=Sum(
-                F('grid_electricity') +
-                F('grid_gas') +
-                F('bottled_gas') +
-                F('liquid_fuel') +
-                F('vehicle_fuel_owned') +
-                F('business_travel') +
-                F('anaesthetic_gases') +
-                F('refrigeration_gases') +
-                F('waste_management') +
-                F('medical_inhalers')
-            )
+            total=Sum(emission_total_expression())
         )['total'] or 0
         
         facility_emissions.append({
@@ -126,7 +166,38 @@ def dashboard(request):
     
     # Sort facilities by emissions
     facility_emissions.sort(key=lambda x: x['emissions'], reverse=True)
-    
+
+    # Build Plotly-ready datasets
+    source_chart_data = json.dumps({
+        'labels': [source['name'] for source in source_breakdown],
+        'values': [float(source['amount']) if source['amount'] is not None else 0 for source in source_breakdown]
+    })
+
+    top_facilities = facility_emissions[:5]
+    facility_chart_data = json.dumps({
+        'labels': [facility['name'] for facility in top_facilities],
+        'values': [float(facility['emissions']) for facility in top_facilities]
+    })
+
+    monthly_trends = (
+        EmissionData.objects.annotate(month=TruncMonth('date'))
+        .values('month')
+        .order_by('month')
+        .annotate(total=Sum(emission_total_expression()))
+    )
+
+    monthly_labels = []
+    monthly_values = []
+    for entry in monthly_trends:
+        month = entry['month']
+        monthly_labels.append(month.strftime('%b %Y') if month else 'Unknown')
+        monthly_values.append(float(entry['total']) if entry['total'] is not None else 0)
+
+    monthly_chart_data = json.dumps({
+        'labels': monthly_labels,
+        'values': monthly_values
+    })
+
     context = {
         'facilities': facility_emissions,
         'total_emissions': total_emissions,
@@ -134,6 +205,9 @@ def dashboard(request):
         'total_investment': total_investment,
         'source_breakdown': source_breakdown,
         'optimization_scenarios': optimization_scenarios,
+        'source_chart_data': source_chart_data,
+        'facility_chart_data': facility_chart_data,
+        'monthly_chart_data': monthly_chart_data,
     }
     
     return render(request, 'appname/dashboard.html', context)
@@ -178,134 +252,88 @@ def add_facility(request):
     return render(request, 'appname/add_facility.html', context)
 
 def interventions(request):
-    """View and analyze interventions"""
-    
-    # Get all interventions
-    db_interventions = Intervention.objects.all()
-    
-    # Prepare intervention analysis
-    intervention_analysis = [
-        {
-            'name': 'LED Lighting Upgrade',
-            'facility': 'Main Hospital',
-            'status': 'Completed',
-            'implementation_date': '2024-06-15',
-            'time_to_benefit': {
-                'initial_benefits': 'Immediate',
-                'full_benefits': '1 month',
-                'progress': 100
-            },
-            'financial_metrics': {
-                'implementation_cost': 50000,
-                'annual_savings': 25000,
-                'roi': 50.0,
-                'npv': 120000,
-                'payback_period': 2.0,
-                'carbon_credits': 15000
-            },
-            'environmental_metrics': {
-                'emission_reduction': 3000,
-                'trees_saved': 1500,
-                'water_saved': 10000
-            },
-            'policy_metrics': {
-                'sdg_impact': {
-                    'AFFORDABLE CLEAN ENERGY': 85,
-                    'GOOD HEALTH & WELLBEING': 90,
-                    'CLIMATE ACTION': 75,
-                    'REDUCED INEQUALITIES': 80
-                },
-                'policy_alignment': {
-                    'LOCAL MANUFACTURING': 75,
-                    'SKILLS DEVELOPMENT': 80,
-                    'COMMUNITY BENEFIT': 85
-                }
-            }
-        }
-    ]
+    """View and analyze interventions from the live dataset."""
+    facility_interventions = FacilityIntervention.objects.select_related('facility', 'intervention').order_by(
+        'facility__display_name', 'intervention__display_name'
+    )
 
-    # Additional LMIC-relevant interventions
-    intervention_analysis.extend([
-        {
-            'name': 'Solar-Powered Vaccine Storage',
-            'facility': 'Rural Health Center',
-            'status': 'Planning',
-            'implementation_date': '2025-03-01',
-            'time_to_benefit': {
-                'initial_benefits': '1 week',
-                'full_benefits': '1 month',
-                'progress': 0
+    aggregates = facility_interventions.aggregate(
+        total_annual_savings=Sum('annual_savings'),
+        total_investment=Sum(F('implementation_cost') + F('maintenance_cost')),
+        average_roi=Avg('roi')
+    )
+
+    status_qs = facility_interventions.values('intervention__status').annotate(
+        count=Count('id')
+    )
+
+    intervention_cards = []
+    for record in facility_interventions:
+        implementation_cost = record.implementation_cost or Decimal('0')
+        maintenance_cost = record.maintenance_cost or Decimal('0')
+        total_cost = implementation_cost + maintenance_cost
+        annual_savings = record.annual_savings or Decimal('0')
+        payback_years = None
+        if annual_savings > 0:
+            payback_years = total_cost / annual_savings
+
+        roi_value = record.calculate_roi()
+        npv_value = calculate_npv(record) if annual_savings else None
+
+        intervention_cards.append({
+            'id': record.id,
+            'name': record.intervention.display_name,
+            'facility': record.facility.display_name,
+            'facility_id': record.facility.id,
+            'status': record.intervention.status,
+            'implementation_date': record.implementation_date,
+            'financial': {
+                'implementation_cost': implementation_cost,
+                'maintenance_cost': maintenance_cost,
+                'annual_savings': annual_savings,
+                'total_cost': total_cost,
+                'roi': roi_value,
+                'payback_years': payback_years,
+                'npv': npv_value,
             },
-            'financial_metrics': {
-                'implementation_cost': 85000,
-                'annual_savings': 35000,
-                'roi': 41.2,
-                'npv': 155000,
-                'payback_period': 2.4,
-                'carbon_credits': 18000
+            'environmental': {
+                'expected_reduction_pct': record.intervention.emission_reduction_percentage,
+                'achieved_reduction': record.emission_reduction_achieved,
+                'energy_savings': record.intervention.energy_savings,
             },
-            'environmental_metrics': {
-                'emission_reduction': 4200,
-                'trees_saved': 2100,
-                'water_saved': 15000
-            },
-            'policy_metrics': {
-                'sdg_impact': {
-                    'AFFORDABLE CLEAN ENERGY': 90,
-                    'GOOD HEALTH & WELLBEING': 95,
-                    'CLIMATE ACTION': 80,
-                    'REDUCED INEQUALITIES': 90
-                },
-                'policy_alignment': {
-                    'LOCAL MANUFACTURING': 80,
-                    'SKILLS DEVELOPMENT': 85,
-                    'COMMUNITY BENEFIT': 95
-                }
+            'operational': {
+                'payback_target_months': record.intervention.payback_period,
+                'policy_alignment': record.intervention.description,
             }
-        },
-        {
-            'name': 'Waste Management System',
-            'facility': 'District Hospital',
-            'status': 'In Progress',
-            'implementation_date': '2024-09-01',
-            'time_to_benefit': {
-                'initial_benefits': '2 weeks',
-                'full_benefits': '3 months',
-                'progress': 60
-            },
-            'financial_metrics': {
-                'implementation_cost': 75000,
-                'annual_savings': 55000,
-                'roi': 36.7,
-                'npv': 200000,
-                'payback_period': 2.7,
-                'carbon_credits': 28000
-            },
-            'environmental_metrics': {
-                'emission_reduction': 3800,
-                'trees_saved': 1900,
-                'water_saved': 25000
-            },
-            'policy_metrics': {
-                'sdg_impact': {
-                    'AFFORDABLE CLEAN ENERGY': 95,
-                    'GOOD HEALTH & WELLBEING': 100,
-                    'CLIMATE ACTION': 85,
-                    'REDUCED INEQUALITIES': 100
-                },
-                'policy_alignment': {
-                    'LOCAL MANUFACTURING': 85,
-                    'SKILLS DEVELOPMENT': 90,
-                    'COMMUNITY BENEFIT': 100
-                }
-            }
-        }
-    ])
+        })
+
+    summary = {
+        'count': facility_interventions.count(),
+        'total_annual_savings': aggregates['total_annual_savings'] or Decimal('0'),
+        'total_investment': aggregates['total_investment'] or Decimal('0'),
+        'average_roi': aggregates['average_roi'] or Decimal('0'),
+    }
+    if summary['total_annual_savings'] > 0:
+        summary['portfolio_payback'] = summary['total_investment'] / summary['total_annual_savings']
+    else:
+        summary['portfolio_payback'] = None
+
+    status_breakdown = []
+    for entry in status_qs:
+        count = entry['count']
+        percentage = (count / summary['count'] * 100) if summary['count'] else 0
+        status_breakdown.append({
+            'status': entry['intervention__status'],
+            'count': count,
+            'percentage': percentage,
+        })
 
     context = {
-        'interventions': intervention_analysis
+        'intervention_cards': intervention_cards,
+        'summary': summary,
+        'status_breakdown': status_breakdown,
     }
-    
+
     return render(request, 'appname/interventions.html', context)
 
 def optimize_interventions(request, facility_id):

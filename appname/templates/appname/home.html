@@ -1,0 +1,192 @@
+{% extends 'appname/base.html' %}
+
+{% block content %}
+<div class="hero-panel mb-5">
+    <div class="row align-items-center">
+        <div class="col-lg-7">
+            <span class="badge-eu mb-3">EU Climate &amp; Health Mission</span>
+            <h1 class="fw-bold mb-3">Evidence-grade insights for decarbonising care pathways</h1>
+            <p class="text-white-50 lead mb-4">
+                Monitor facility footprints, translate interventions into policy-ready impact stories, and show climate-health
+                co-benefits backed by CARBOMICA models.
+            </p>
+            <div class="d-flex flex-wrap gap-3 mb-3">
+                <div class="data-chip"><i class="fas fa-database"></i> {{ facility_count }} facilities</div>
+                <div class="data-chip"><i class="fas fa-seedling"></i> {{ total_emissions|floatformat:0 }} tCO2e modelled</div>
+                <div class="data-chip"><i class="fas fa-rocket"></i> {{ optimized_scenarios }} optimisation runs</div>
+            </div>
+            <a href="{% url 'dashboard' %}" class="btn btn-primary btn-lg me-2">
+                <i class="fas fa-chart-line me-2"></i>Open dashboard
+            </a>
+            <a href="{% url 'add_facility' %}" class="btn btn-outline-light btn-lg">
+                <i class="fas fa-plus me-2"></i>Add facility
+            </a>
+        </div>
+        <div class="col-lg-5">
+            <div class="card bg-white border-0 mb-0">
+                <div class="card-body">
+                    <p class="section-label mb-2">Current coverage</p>
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <div>
+                            <p class="mb-0 text-muted">Active interventions</p>
+                            <h3 class="mb-0">{{ active_interventions }}</h3>
+                        </div>
+                        <div>
+                            <p class="mb-0 text-muted">Total annual emissions</p>
+                            <h3 class="mb-0">{{ total_emissions|floatformat:0 }} tCO2e</h3>
+                        </div>
+                    </div>
+                    <div class="border-top pt-3">
+                        <p class="text-muted small mb-1">Priority next steps</p>
+                        <p class="mb-2"><strong>1.</strong> Upload facility baselines</p>
+                        <p class="mb-0"><strong>2.</strong> Link interventions to SDG &amp; policy narratives</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-5">
+    {% for card in call_to_actions %}
+    <div class="col-md-4 mb-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="d-flex align-items-center mb-3">
+                    <div class="bg-light rounded-circle p-3 me-3">
+                        <i class="fas fa-{{ card.icon }} fa-lg text-secondary"></i>
+                    </div>
+                    <h5 class="mb-0">{{ card.title }}</h5>
+                </div>
+                <p class="text-muted">{{ card.description }}</p>
+                <a href="{% url card.url_name %}" class="stretched-link text-decoration-none">Go there <i class="fas fa-arrow-right ms-1"></i></a>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<p class="section-label mb-2">Operational intelligence</p>
+<div class="row">
+    <div class="col-lg-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>Recently added facilities</span>
+                <a href="{% url 'facilities' %}" class="text-white text-decoration-none small">View all</a>
+            </div>
+            <div class="card-body">
+                {% if recent_facilities %}
+                    {% for facility in recent_facilities %}
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <div>
+                                <h6 class="mb-0">{{ facility.display_name }}</h6>
+                                <small class="text-muted">{{ facility.code_name }}</small>
+                            </div>
+                            <a href="{% url 'optimize_interventions' facility.id %}" class="btn btn-sm btn-outline-primary">Optimise</a>
+                        </div>
+                    {% endfor %}
+                {% else %}
+                    <p class="text-muted mb-0">Add your first facility to get started.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header">Optimisation scenarios</div>
+            <div class="card-body">
+                {% if recent_scenarios %}
+                    <ul class="list-group list-group-flush">
+                        {% for scenario in recent_scenarios %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <div>
+                                <strong>{{ scenario.name }}</strong>
+                                <p class="mb-0 small text-muted">{{ scenario.facility.display_name }} - {{ scenario.get_status_display }}</p>
+                            </div>
+                            <a href="{% url 'optimization_results' scenario.id %}" class="btn btn-sm btn-outline-secondary">View</a>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                {% else %}
+                    <p class="text-muted mb-0">No optimisation runs yet.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-5">
+    <div class="col-12">
+        <p class="section-label mb-2">Climate-health focus areas</p>
+    </div>
+    <div class="col-md-4 mb-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5>Energy reliability</h5>
+                <p class="text-muted">
+                    Track renewable deployments that protect cold chains and surgical suites from grid instability while
+                    cutting fossil reliance.
+                </p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 mb-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5>Clinical procurement</h5>
+                <p class="text-muted">
+                    Use the intervention ledger to evidence low-waste anaesthetics, circular waste management, and
+                    equitable local manufacturing.
+                </p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 mb-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5>Population co-benefits</h5>
+                <p class="text-muted">
+                    Surface SDG-aligned narratives that connect emission cuts to maternal health, infectious disease
+                    resilience, and equity outcomes.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-5">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">Upcoming implementations</div>
+            <div class="card-body">
+                {% if upcoming_interventions %}
+                <div class="table-responsive">
+                    <table class="table align-middle">
+                        <thead>
+                            <tr>
+                                <th scope="col">Intervention</th>
+                                <th scope="col">Facility</th>
+                                <th scope="col">Implementation date</th>
+                                <th scope="col">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for fi in upcoming_interventions %}
+                            <tr>
+                                <td>{{ fi.intervention.display_name }}</td>
+                                <td>{{ fi.facility.display_name }}</td>
+                                <td>{{ fi.implementation_date|date:"d M Y" }}</td>
+                                <td><span class="badge bg-primary">{{ fi.intervention.status }}</span></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-muted mb-0">Schedule your next intervention to see it here.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

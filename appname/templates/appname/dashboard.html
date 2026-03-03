@@ -9,7 +9,7 @@
             <div class="card shadow-sm">
                 <div class="card-body">
                     <h6 class="text-muted">Total Facilities</h6>
-                    <h3>{{ facilities.count }}</h3>
+                    <h3>{{ facilities|length }}</h3>
                 </div>
             </div>
         </div>
@@ -40,12 +40,46 @@
         </div>
     </div>
 
-    <!-- Charts Row -->
+    <!-- Data Visualisations -->
     <div class="row mb-4">
-        <div class="col-md-8">
+        <div class="col-lg-4 mb-4 mb-lg-0">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0">Emissions by source</h5>
+                </div>
+                <div class="card-body">
+                    <div id="emissionSourceChart" class="chart-container"></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-4 mb-4 mb-lg-0">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0">Top emitting facilities</h5>
+                </div>
+                <div class="card-body">
+                    <div id="facilityBarChart" class="chart-container"></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0">Footprint trend</h5>
+                </div>
+                <div class="card-body">
+                    <div id="emissionTrendChart" class="chart-container"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Details Row -->
+    <div class="row mb-4">
+        <div class="col-lg-7">
             <div class="card shadow-sm">
                 <div class="card-header bg-white">
-                    <h5 class="mb-0">Emissions by Source</h5>
+                    <h5 class="mb-0">Emission source detail</h5>
                 </div>
                 <div class="card-body">
                     <div class="table-responsive">
@@ -53,7 +87,7 @@
                             <thead>
                                 <tr>
                                     <th>Source</th>
-                                    <th>Amount (CO₂e)</th>
+                                    <th>Amount (tCO2e)</th>
                                     <th>Percentage</th>
                                 </tr>
                             </thead>
@@ -73,6 +107,10 @@
                                         </div>
                                     </td>
                                 </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="3" class="text-center text-muted">No emission data captured yet.</td>
+                                </tr>
                                 {% endfor %}
                             </tbody>
                         </table>
@@ -80,10 +118,10 @@
                 </div>
             </div>
         </div>
-        <div class="col-md-4">
+        <div class="col-lg-5">
             <div class="card shadow-sm">
                 <div class="card-header bg-white">
-                    <h5 class="mb-0">Top Facilities</h5>
+                    <h5 class="mb-0">Facilities snapshot</h5>
                 </div>
                 <div class="card-body">
                     <div class="table-responsive">
@@ -91,7 +129,7 @@
                             <thead>
                                 <tr>
                                     <th>Facility</th>
-                                    <th>Emissions (CO₂e)</th>
+                                    <th>Emissions (tCO2e)</th>
                                     <th>Interventions</th>
                                     <th>Actions</th>
                                 </tr>
@@ -104,9 +142,13 @@
                                     <td>{{ facility.interventions_count }}</td>
                                     <td>
                                         <a href="{% url 'optimize_interventions' facility.id %}" class="btn btn-sm btn-success">
-                                            <i class="fas fa-chart-line"></i> Optimize
+                                            <i class="fas fa-chart-line"></i> Optimise
                                         </a>
                                     </td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="4" class="text-center text-muted">Add facilities to view their footprint.</td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
@@ -148,5 +190,63 @@
     .list-group-item:last-child {
         border-bottom: none;
     }
+    .chart-container {
+        min-height: 320px;
+    }
 </style>
+{% endblock %}
+
+{% block extra_js %}
+{{ block.super }}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const sourceData = JSON.parse('{{ source_chart_data|escapejs }}');
+    const facilityData = JSON.parse('{{ facility_chart_data|escapejs }}');
+    const trendData = JSON.parse('{{ monthly_chart_data|escapejs }}');
+
+    if (document.getElementById('emissionSourceChart')) {
+        Plotly.newPlot('emissionSourceChart', [{
+            type: 'pie',
+            hole: 0.55,
+            labels: sourceData.labels,
+            values: sourceData.values,
+            textinfo: 'label+percent',
+            hovertemplate: '%{label}: %{value:.2f} tCO2e<extra></extra>'
+        }], {
+            margin: {t: 20, b: 20, l: 20, r: 20},
+            showlegend: false
+        }, {displayModeBar: false});
+    }
+
+    if (document.getElementById('facilityBarChart')) {
+        Plotly.newPlot('facilityBarChart', [{
+            type: 'bar',
+            x: facilityData.labels,
+            y: facilityData.values,
+            marker: {color: '#27ae60'},
+            hovertemplate: '%{x}: %{y:.1f} tCO2e<extra></extra>'
+        }], {
+            margin: {t: 20, b: 60},
+            xaxis: {title: 'Facility', automargin: true},
+            yaxis: {title: 'Emissions (tCO2e)'},
+        }, {displayModeBar: false, responsive: true});
+    }
+
+    if (document.getElementById('emissionTrendChart')) {
+        Plotly.newPlot('emissionTrendChart', [{
+            type: 'scatter',
+            mode: 'lines+markers',
+            x: trendData.labels,
+            y: trendData.values,
+            line: {color: '#0d6efd'},
+            marker: {size: 6},
+            hovertemplate: '%{x}: %{y:.1f} tCO2e<extra></extra>'
+        }], {
+            margin: {t: 20, b: 60},
+            xaxis: {title: 'Month'},
+            yaxis: {title: 'Total emissions (tCO2e)'},
+        }, {displayModeBar: false, responsive: true});
+    }
+});
+</script>
 {% endblock %}
