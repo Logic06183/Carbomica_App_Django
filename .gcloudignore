@@ -1,0 +1,16 @@
+# gcloudignore — excludes these from the Cloud Run build context
+.gcloudignore
+.git
+.gitignore
+**/*.pyc
+**/__pycache__/
+*.sqlite3
+db.sqlite3
+.env
+.env.*
+!.env.example
+staticfiles/
+media/
+node_modules/
+*.log
+.DS_Store

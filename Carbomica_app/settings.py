@@ -27,10 +27,28 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', '(j=&pjt1#^j(005!8vb!)%=^o2#=!76*r0w*%wjefp__nrmc%f')
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+# Debug is off unless explicitly enabled
+DEBUG = os.getenv('DEBUG', 'False') == 'True'
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', '.herokuapp.com']
+# Localhost + Heroku legacy + Firebase Hosting + Cloud Run
+ALLOWED_HOSTS = [
+    'localhost',
+    '127.0.0.1',
+    '.herokuapp.com',
+    'carbomica-tool.web.app',
+    'carbomica-tool.firebaseapp.com',
+    '.run.app',          # Cloud Run preview URLs (*.run.app)
+]
+
+# Trust HTTPS from Firebase Hosting and Cloud Run load balancer
+CSRF_TRUSTED_ORIGINS = [
+    'https://carbomica-tool.web.app',
+    'https://carbomica-tool.firebaseapp.com',
+    'https://*.run.app',
+]
+
+# Cloud Run sets X-Forwarded-Proto; tell Django to trust it for HTTPS detection
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 # Application definition
 
@@ -45,8 +63,7 @@ INSTALLED_APPS = [
     "appname",
     "crispy_forms",
     "crispy_bootstrap5",
-    "django_plotly_dash",
-    "whitenoise",  # Add whitenoise
+    "whitenoise",
 ]
 
 CRISPY_ALLOWED_TEMPLATE_PACKS = "bootstrap5"
@@ -89,14 +106,11 @@ WSGI_APPLICATION = "Carbomica_app.wsgi.application"
 
 DATABASES = {
     'default': dj_database_url.config(
-        default='sqlite:///db.sqlite3',
-        conn_max_age=600
+        default=f'sqlite:///{BASE_DIR / "db.sqlite3"}',
+        conn_max_age=600,
+        conn_health_checks=True,
     )
 }
-
-# Update database configuration from $DATABASE_URL.
-db_from_env = dj_database_url.config(conn_max_age=500)
-DATABASES['default'].update(db_from_env)
 
 
 # Password validation
@@ -145,17 +159,18 @@ MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 # Security settings for production
-if not DEBUG:
-    SECURE_SSL_REDIRECT = True
-    SESSION_COOKIE_SECURE = True
-    CSRF_COOKIE_SECURE = True
-    SECURE_BROWSER_XSS_FILTER = True
-    SECURE_CONTENT_TYPE_NOSNIFF = True
-    X_FRAME_OPTIONS = 'DENY'
-else:
-    SECURE_SSL_REDIRECT = False
-    SESSION_COOKIE_SECURE = False
-    CSRF_COOKIE_SECURE = False
+# SECURE_SSL_REDIRECT stays False — Cloud Run / Firebase terminates TLS at
+# the load balancer before requests reach Django (enabling it causes redirect loops).
+# SECURE_HSTS_SECONDS is also omitted because the LB enforces HTTPS already.
+# Django's deploy check warnings for these two are suppressed via SILENCED_SYSTEM_CHECKS.
+SECURE_SSL_REDIRECT = False
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
+SECURE_BROWSER_XSS_FILTER = True
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = 'DENY'
+
+SILENCED_SYSTEM_CHECKS = ['security.W004', 'security.W008']
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.0/ref/settings/#default-auto-field
