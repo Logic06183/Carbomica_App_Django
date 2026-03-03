@@ -2,96 +2,237 @@
 {% load humanize %}
 
 {% block content %}
-<div class="container py-4">
-    <h2 class="mb-4">Optimization Results for {{ scenario.facility.display_name }}</h2>
-    
-    <div class="row mb-4">
-        <!-- Summary Cards -->
-        <div class="col-md-3">
-            <div class="card shadow-sm">
-                <div class="card-body">
-                    <h6 class="text-muted">Total Cost</h6>
-                    <h3>R{{ total_cost|intcomma }}</h3>
-                    <small class="text-muted">Budget: R{{ scenario.budget|intcomma }}</small>
-                </div>
-            </div>
-        </div>
-        
-        <div class="col-md-3">
-            <div class="card shadow-sm">
-                <div class="card-body">
-                    <h6 class="text-muted">Emission Reduction</h6>
-                    <h3>{{ total_reduction|floatformat:1 }} tCO2e</h3>
-                    <small class="text-muted">Target: {{ scenario.target_reduction }}%</small>
-                </div>
-            </div>
-        </div>
-        
-        <div class="col-md-3">
-            <div class="card shadow-sm">
-                <div class="card-body">
-                    <h6 class="text-muted">Annual Savings</h6>
-                    <h3>R{{ total_savings|intcomma }}</h3>
-                    <small class="text-muted">Average ROI: {{ average_roi|floatformat:1 }}%</small>
-                </div>
-            </div>
-        </div>
-        
-        <div class="col-md-3">
-            <div class="card shadow-sm">
-                <div class="card-body">
-                    <h6 class="text-muted">Remaining Budget</h6>
-                    <h3>R{{ remaining_budget|intcomma }}</h3>
-                    <small class="text-muted">{{ results.count }} interventions selected</small>
-                </div>
-            </div>
-        </div>
+<div class="row mb-4 align-items-center">
+    <div class="col">
+        <p class="section-label mb-1">CARBOMICA · Optimisation results</p>
+        <h2 class="fw-bold mb-0">{{ scenario.facility.display_name }}</h2>
+        <p class="text-muted mt-1 mb-0">
+            Scenario: <strong>{{ scenario.name }}</strong> &nbsp;·&nbsp;
+            Budget: <strong>${{ scenario.budget|floatformat:0|intcomma }}</strong> &nbsp;·&nbsp;
+            Target reduction: <strong>{{ scenario.target_reduction }}%</strong>
+        </p>
     </div>
-    
-    <!-- Recommended Interventions -->
-    <div class="card shadow-sm">
-        <div class="card-header">
-            <h5 class="card-title mb-0">Recommended Interventions</h5>
-        </div>
-        <div class="card-body">
-            <div class="table-responsive">
-                <table class="table">
-                    <thead>
-                        <tr>
-                            <th>Priority</th>
-                            <th>Intervention</th>
-                            <th>Cost</th>
-                            <th>Annual Savings</th>
-                            <th>ROI</th>
-                            <th>Emission Reduction</th>
-                            <th>Payback Period</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for result in results %}
-                        <tr>
-                            <td>{{ result.priority }}</td>
-                            <td>{{ result.intervention.display_name }}</td>
-                            <td>R{{ result.implementation_cost|intcomma }}</td>
-                            <td>R{{ result.annual_savings|intcomma }}</td>
-                            <td>{{ result.expected_roi|floatformat:1 }}%</td>
-                            <td>{{ result.emission_reduction|floatformat:1 }} tCO2e</td>
-                            <td>{{ result.payback_months }} months</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-    
-    <div class="mt-4">
-        <a href="{% url 'optimize_interventions' scenario.facility.id %}" class="btn btn-secondary">
-            Create New Scenario
+    <div class="col-auto">
+        <a href="{% url 'optimize_interventions' scenario.facility.id %}" class="btn btn-outline-primary me-2">
+            <i class="fas fa-redo me-1"></i>New scenario
         </a>
-        <a href="{% url 'dashboard' %}" class="btn btn-primary">
-            Back to Dashboard
+        <a href="{% url 'facilities' %}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left me-1"></i>Facilities
         </a>
     </div>
 </div>
+
+<!-- ── Help banner ── -->
+<div class="alert mb-4" style="background:#f0f7ff;border:1px solid rgba(38,141,205,.2);border-radius:10px;">
+    <div class="row align-items-center">
+        <div class="col-auto"><i class="fas fa-info-circle fa-lg" style="color:var(--hh-blue);"></i></div>
+        <div class="col">
+            <strong>How to read these results</strong> &mdash;
+            CARBOMICA runs three scenarios to show the trade-offs.
+            The <span style="color:var(--hh-success);font-weight:600;">Optimised</span> scenario selects interventions by
+            <em>tCO₂e reduced per dollar spent</em> (greedy knapsack), giving the best bang-for-buck within your budget.
+            Compare it with <em>Full coverage</em> (all interventions) and <em>Fixed budget</em> (cheapest first) to make your decision.
+        </div>
+    </div>
+</div>
+
+<!-- ── Scenario comparison chart ── -->
+{% with opt=scenarios.optimised.summary full=scenarios.full_coverage.summary fixed=scenarios.fixed_budget.summary %}
+<div class="card mb-4">
+    <div class="card-header">Scenario comparison — tCO₂e reduction and cost</div>
+    <div class="card-body">
+        <div id="scenarioChart" style="min-height:280px;"></div>
+    </div>
+</div>
+
+<!-- ── Summary cards ── -->
+<div class="row g-3 mb-4">
+    <!-- Full coverage -->
+    <div class="col-md-4">
+        <div class="card h-100" style="border-top:4px solid var(--hh-blue);">
+            <div class="card-body">
+                <p class="section-label mb-1">Scenario 1</p>
+                <h5 class="fw-bold mb-3">Full coverage</h5>
+                <p class="text-muted small mb-3">All interventions applied regardless of budget — shows the theoretical maximum.</p>
+                <div class="d-flex justify-content-between border-top pt-3">
+                    <div>
+                        <div class="text-muted small">Reduction</div>
+                        <div class="fw-bold">{{ full.total_reduction|floatformat:1 }} tCO₂e</div>
+                        <div class="text-muted" style="font-size:.78rem;">({{ full.pct_of_baseline|floatformat:1 }}% of baseline)</div>
+                    </div>
+                    <div class="text-end">
+                        <div class="text-muted small">Total cost</div>
+                        <div class="fw-bold">${{ full.total_cost|floatformat:0|intcomma }}</div>
+                        <div class="text-muted" style="font-size:.78rem;">{{ full.count }} intervention{{ full.count|pluralize }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Fixed budget -->
+    <div class="col-md-4">
+        <div class="card h-100" style="border-top:4px solid #f0a030;">
+            <div class="card-body">
+                <p class="section-label mb-1">Scenario 2</p>
+                <h5 class="fw-bold mb-3">Fixed budget</h5>
+                <p class="text-muted small mb-3">Cheapest interventions first until the budget is exhausted.</p>
+                <div class="d-flex justify-content-between border-top pt-3">
+                    <div>
+                        <div class="text-muted small">Reduction</div>
+                        <div class="fw-bold">{{ fixed.total_reduction|floatformat:1 }} tCO₂e</div>
+                        <div class="text-muted" style="font-size:.78rem;">({{ fixed.pct_of_baseline|floatformat:1 }}% of baseline)</div>
+                    </div>
+                    <div class="text-end">
+                        <div class="text-muted small">Spent</div>
+                        <div class="fw-bold">${{ fixed.total_cost|floatformat:0|intcomma }}</div>
+                        <div class="text-muted" style="font-size:.78rem;">{{ fixed.count }} intervention{{ fixed.count|pluralize }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Optimised -->
+    <div class="col-md-4">
+        <div class="card h-100" style="border-top:4px solid var(--hh-success);">
+            <div class="card-body">
+                <p class="section-label mb-1">Scenario 3 — Recommended</p>
+                <h5 class="fw-bold mb-3" style="color:var(--hh-success);">Optimised</h5>
+                <p class="text-muted small mb-3">Greedy knapsack — maximises tCO₂e reduced per dollar spent.</p>
+                <div class="d-flex justify-content-between border-top pt-3">
+                    <div>
+                        <div class="text-muted small">Reduction</div>
+                        <div class="fw-bold" style="color:var(--hh-success);">{{ opt.total_reduction|floatformat:1 }} tCO₂e</div>
+                        <div class="text-muted" style="font-size:.78rem;">({{ opt.pct_of_baseline|floatformat:1 }}% of baseline)</div>
+                    </div>
+                    <div class="text-end">
+                        <div class="text-muted small">Spent</div>
+                        <div class="fw-bold">${{ opt.total_cost|floatformat:0|intcomma }}</div>
+                        <div class="text-muted" style="font-size:.78rem;">${{ opt.budget_remaining|floatformat:0|intcomma }} remaining</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endwith %}
+
+<!-- ── Tabbed intervention tables ── -->
+<div class="card mb-4">
+    <div class="card-header p-0">
+        <ul class="nav nav-tabs px-3 pt-2" id="scenarioTabs">
+            <li class="nav-item">
+                <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-optimised">
+                    <i class="fas fa-star me-1" style="color:var(--hh-success);"></i>Optimised
+                    <span class="badge ms-1" style="background:var(--hh-success);">{{ scenarios.optimised.results|length }}</span>
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-fixed">
+                    Fixed budget
+                    <span class="badge ms-1 bg-warning text-dark">{{ scenarios.fixed_budget.results|length }}</span>
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-full">
+                    Full coverage
+                    <span class="badge ms-1 bg-primary">{{ scenarios.full_coverage.results|length }}</span>
+                </button>
+            </li>
+        </ul>
+    </div>
+    <div class="card-body p-0">
+        <div class="tab-content">
+            <div class="tab-pane fade show active" id="tab-optimised">
+                {% include "appname/_results_table.html" with results=scenarios.optimised.results highlight=True %}
+            </div>
+            <div class="tab-pane fade" id="tab-fixed">
+                {% include "appname/_results_table.html" with results=scenarios.fixed_budget.results highlight=False %}
+            </div>
+            <div class="tab-pane fade" id="tab-full">
+                {% include "appname/_results_table.html" with results=scenarios.full_coverage.results highlight=False %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── Interpretation guide ── -->
+<div class="card mb-4">
+    <div class="card-body p-4">
+        <h6 class="fw-bold mb-3"><i class="fas fa-graduation-cap me-2" style="color:var(--hh-blue);"></i>Interpreting your results</h6>
+        <div class="row g-4 small text-muted">
+            <div class="col-md-3">
+                <strong class="d-block mb-1">tCO₂e reduction</strong>
+                Tonnes of CO₂-equivalent avoided per year if the intervention is implemented.
+                This is the primary impact metric.
+            </div>
+            <div class="col-md-3">
+                <strong class="d-block mb-1">ROI (10-year)</strong>
+                Return on investment over 10 years relative to total implementation + maintenance cost.
+                Positive = financially viable without carbon credit income.
+            </div>
+            <div class="col-md-3">
+                <strong class="d-block mb-1">Payback period</strong>
+                Years until cumulative annual savings equal the upfront cost.
+                Interventions under 5 years are considered strong performers in LMIC contexts.
+            </div>
+            <div class="col-md-3">
+                <strong class="d-block mb-1">SDG alignment</strong>
+                Which UN Sustainable Development Goals this intervention contributes to —
+                useful for grant reporting and policy narratives.
+            </div>
+        </div>
+    </div>
+</div>
+
+{% block extra_js %}{{ block.super }}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const scenarios = {
+        labels: ['Full coverage', 'Fixed budget', 'Optimised'],
+        reduction: [
+            {{ scenarios.full_coverage.summary.total_reduction|default:0 }},
+            {{ scenarios.fixed_budget.summary.total_reduction|default:0 }},
+            {{ scenarios.optimised.summary.total_reduction|default:0 }}
+        ],
+        cost: [
+            {{ scenarios.full_coverage.summary.total_cost|default:0 }},
+            {{ scenarios.fixed_budget.summary.total_cost|default:0 }},
+            {{ scenarios.optimised.summary.total_cost|default:0 }}
+        ]
+    };
+
+    Plotly.newPlot('scenarioChart', [
+        {
+            name: 'tCO₂e reduction',
+            x: scenarios.labels,
+            y: scenarios.reduction,
+            type: 'bar',
+            marker: { color: ['#268dcd', '#f0a030', '#2e8b57'] },
+            yaxis: 'y',
+            hovertemplate: '%{x}: <b>%{y:.1f} tCO₂e</b><extra></extra>'
+        },
+        {
+            name: 'Total cost (USD)',
+            x: scenarios.labels,
+            y: scenarios.cost,
+            type: 'scatter',
+            mode: 'markers+lines',
+            marker: { size: 10, color: '#d33421' },
+            line: { color: '#d33421', dash: 'dot' },
+            yaxis: 'y2',
+            hovertemplate: '%{x}: <b>$%{y:,.0f}</b><extra></extra>'
+        }
+    ], {
+        yaxis: { title: 'Emission reduction (tCO₂e)', gridcolor: '#eee' },
+        yaxis2: { title: 'Cost (USD)', overlaying: 'y', side: 'right', gridcolor: '#eee' },
+        legend: { orientation: 'h', y: -0.2 },
+        margin: { t: 20, b: 60 },
+        plot_bgcolor: 'white',
+        paper_bgcolor: 'white'
+    }, { displayModeBar: false, responsive: true });
+});
+</script>
+{% endblock %}
 {% endblock %}

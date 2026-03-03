@@ -1,192 +1,314 @@
 {% extends 'appname/base.html' %}
+{% load humanize %}
 
 {% block content %}
-<div class="hero-panel mb-5">
+
+{% if not facility_count %}
+{# ══════════════════════════════════════════════════════════════════════ #}
+{#  EMPTY STATE — first-time user, no facilities yet                     #}
+{# ══════════════════════════════════════════════════════════════════════ #}
+
+<div class="hh-hero mb-5">
     <div class="row align-items-center">
         <div class="col-lg-7">
-            <span class="badge-eu mb-3">EU Climate &amp; Health Mission</span>
-            <h1 class="fw-bold mb-3">Evidence-grade insights for decarbonising care pathways</h1>
-            <p class="text-white-50 lead mb-4">
-                Monitor facility footprints, translate interventions into policy-ready impact stories, and show climate-health
-                co-benefits backed by CARBOMICA models.
+            <p class="section-label mb-2" style="color:rgba(255,255,255,.6);">HIGH Horizons · EU Horizon Europe · Grant 101057843</p>
+            <h1 class="fw-bold mb-3" style="font-size:1.9rem;">Optimise carbon investments<br>in your health facility</h1>
+            <p class="mb-4" style="color:rgba(255,255,255,.8);font-size:.95rem;max-width:460px;">
+                CARBOMICA helps health managers find the carbon-reduction interventions
+                that deliver the most tCO₂e per dollar within a real budget —
+                across Kenya, South Africa and Zimbabwe.
             </p>
-            <div class="d-flex flex-wrap gap-3 mb-3">
-                <div class="data-chip"><i class="fas fa-database"></i> {{ facility_count }} facilities</div>
-                <div class="data-chip"><i class="fas fa-seedling"></i> {{ total_emissions|floatformat:0 }} tCO2e modelled</div>
-                <div class="data-chip"><i class="fas fa-rocket"></i> {{ optimized_scenarios }} optimisation runs</div>
-            </div>
-            <a href="{% url 'dashboard' %}" class="btn btn-primary btn-lg me-2">
-                <i class="fas fa-chart-line me-2"></i>Open dashboard
+            <a href="{% url 'add_facility' %}" class="btn btn-light fw-bold me-2">
+                <i class="fas fa-plus me-1"></i>Add your first facility
             </a>
-            <a href="{% url 'add_facility' %}" class="btn btn-outline-light btn-lg">
-                <i class="fas fa-plus me-2"></i>Add facility
-            </a>
+            <button class="btn btn-outline-light" onclick="startTour()">
+                <i class="fas fa-play-circle me-1"></i>Take the tour
+            </button>
         </div>
-        <div class="col-lg-5">
-            <div class="card bg-white border-0 mb-0">
-                <div class="card-body">
-                    <p class="section-label mb-2">Current coverage</p>
-                    <div class="d-flex justify-content-between align-items-center mb-3">
-                        <div>
-                            <p class="mb-0 text-muted">Active interventions</p>
-                            <h3 class="mb-0">{{ active_interventions }}</h3>
-                        </div>
-                        <div>
-                            <p class="mb-0 text-muted">Total annual emissions</p>
-                            <h3 class="mb-0">{{ total_emissions|floatformat:0 }} tCO2e</h3>
-                        </div>
-                    </div>
-                    <div class="border-top pt-3">
-                        <p class="text-muted small mb-1">Priority next steps</p>
-                        <p class="mb-2"><strong>1.</strong> Upload facility baselines</p>
-                        <p class="mb-0"><strong>2.</strong> Link interventions to SDG &amp; policy narratives</p>
-                    </div>
-                </div>
+        <div class="col-lg-5 d-none d-lg-flex justify-content-center">
+            <div class="text-white text-center" style="opacity:.6;">
+                <i class="fas fa-hospital-symbol fa-5x d-block mb-2"></i>
+                <small>No facilities added yet</small>
             </div>
         </div>
     </div>
 </div>
 
+<!-- 4-step guide -->
 <div class="row mb-5">
-    {% for card in call_to_actions %}
-    <div class="col-md-4 mb-4">
+    <div class="col-12 mb-3"><p class="section-label">Getting started — four steps</p></div>
+
+    <div class="col-md-6 col-lg-3 mb-3" id="tour-step-1">
+        <div class="card h-100" style="border:2px solid var(--hh-blue);">
+            <div class="card-body">
+                <div class="d-flex align-items-center mb-3">
+                    <div class="step-badge me-3">1</div>
+                    <h6 class="mb-0">Add a facility</h6>
+                </div>
+                <p class="text-muted small mb-3">
+                    Register your health facility — country, type, and a short code name.
+                    Each facility gets its own carbon profile and intervention portfolio.
+                </p>
+                <a href="{% url 'add_facility' %}" class="btn btn-primary btn-sm w-100">
+                    <i class="fas fa-hospital me-1"></i>Add facility
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6 col-lg-3 mb-3" id="tour-step-2">
         <div class="card h-100">
             <div class="card-body">
                 <div class="d-flex align-items-center mb-3">
-                    <div class="bg-light rounded-circle p-3 me-3">
-                        <i class="fas fa-{{ card.icon }} fa-lg text-secondary"></i>
-                    </div>
-                    <h5 class="mb-0">{{ card.title }}</h5>
+                    <div class="step-badge me-3" style="background:#b0bec5;">2</div>
+                    <h6 class="mb-0">Upload emissions</h6>
                 </div>
-                <p class="text-muted">{{ card.description }}</p>
-                <a href="{% url card.url_name %}" class="stretched-link text-decoration-none">Go there <i class="fas fa-arrow-right ms-1"></i></a>
+                <p class="text-muted small mb-3">
+                    Enter annual emission figures across 10 categories, or upload a CSV
+                    from the AKDN Carbon Management Tool. A blank template is provided.
+                </p>
+                <a href="{% url 'upload_emissions' %}" class="btn btn-outline-primary btn-sm w-100">
+                    <i class="fas fa-smog me-1"></i>Upload emissions
+                </a>
             </div>
         </div>
     </div>
-    {% endfor %}
+
+    <div class="col-md-6 col-lg-3 mb-3" id="tour-step-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="d-flex align-items-center mb-3">
+                    <div class="step-badge me-3" style="background:#b0bec5;">3</div>
+                    <h6 class="mb-0">Add interventions</h6>
+                </div>
+                <p class="text-muted small mb-3">
+                    Choose from the CARBOMICA library (solar PV, low-GWP anaesthetics,
+                    LED lighting, waste segregation…) and enter site-specific costs.
+                </p>
+                <a href="{% url 'upload_interventions' %}" class="btn btn-outline-primary btn-sm w-100">
+                    <i class="fas fa-seedling me-1"></i>Add interventions
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6 col-lg-3 mb-3" id="tour-step-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="d-flex align-items-center mb-3">
+                    <div class="step-badge me-3" style="background:#b0bec5;">4</div>
+                    <h6 class="mb-0">Run optimisation</h6>
+                </div>
+                <p class="text-muted small mb-3">
+                    Set a budget. CARBOMICA compares three scenarios — full coverage,
+                    fixed budget, and optimised greedy knapsack — so you can see
+                    the best use of every dollar.
+                </p>
+                <a href="{% url 'facilities' %}" class="btn btn-outline-primary btn-sm w-100">
+                    <i class="fas fa-chart-bar me-1"></i>Go to facilities
+                </a>
+            </div>
+        </div>
+    </div>
 </div>
 
-<p class="section-label mb-2">Operational intelligence</p>
-<div class="row">
-    <div class="col-lg-6 mb-4">
+<!-- Methodology -->
+<div class="row mb-5">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-body p-4">
+                <p class="section-label mb-2">Methodology</p>
+                <h5 class="fw-bold mb-3">How the optimisation works</h5>
+                <p class="text-muted small">
+                    CARBOMICA adapts the <strong>ATOMICA</strong> resource-allocation framework for healthcare sustainability.
+                    Interventions are ranked by <strong>tCO₂e reduced per USD spent</strong> and selected greedily
+                    until the budget is exhausted. Three scenarios are compared side-by-side:
+                </p>
+                <div class="row g-3 mt-1">
+                    <div class="col-md-4">
+                        <div class="p-3 rounded" style="background:#f0f7ff;border-left:3px solid var(--hh-blue);">
+                            <strong class="small d-block mb-1">Full coverage</strong>
+                            <span class="small text-muted">All interventions — theoretical maximum reduction</span>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="p-3 rounded" style="background:#fff8f0;border-left:3px solid #f0a030;">
+                            <strong class="small d-block mb-1">Fixed budget</strong>
+                            <span class="small text-muted">Cheapest first — maximises count within budget</span>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="p-3 rounded" style="background:#f0fff4;border-left:3px solid var(--hh-success);">
+                            <strong class="small d-block mb-1">Optimised</strong>
+                            <span class="small text-muted">Greedy knapsack — max tCO₂e per dollar</span>
+                        </div>
+                    </div>
+                </div>
+                <p class="mt-3 mb-0" style="font-size:.78rem;color:#90a0b0;">
+                    Reference: <a href="https://zenodo.org/records/12730527" target="_blank">HIGH Horizons D3.7</a>
+                    (Luchters et al., 2024, DOI: 10.5281/zenodo.12730527)
+                </p>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card h-100">
+            <div class="card-body p-4">
+                <p class="section-label mb-2">Intervention library</p>
+                <h6 class="fw-bold mb-3">8 evidence-based interventions</h6>
+                <ul class="list-unstyled mb-0" style="font-size:.82rem;">
+                    <li class="mb-2"><i class="fas fa-solar-panel me-2" style="color:var(--hh-blue);width:16px;"></i>Solar PV System &mdash; <span class="text-muted">SDG 7, 13</span></li>
+                    <li class="mb-2"><i class="fas fa-wind me-2" style="color:var(--hh-blue);width:16px;"></i>Low-GWP Anaesthetic Gases &mdash; <span class="text-muted">SDG 3, 13</span></li>
+                    <li class="mb-2"><i class="fas fa-lightbulb me-2" style="color:#f0a030;width:16px;"></i>LED Lighting Upgrade &mdash; <span class="text-muted">SDG 7, 11</span></li>
+                    <li class="mb-2"><i class="fas fa-recycle me-2" style="color:var(--hh-success);width:16px;"></i>Medical Waste Segregation &mdash; <span class="text-muted">SDG 3, 12</span></li>
+                    <li class="mb-2"><i class="fas fa-tint me-2" style="color:var(--hh-blue);width:16px;"></i>Water-Efficient Fixtures &mdash; <span class="text-muted">SDG 6, 11</span></li>
+                    <li class="mb-2"><i class="fas fa-snowflake me-2" style="color:#5bc8ef;width:16px;"></i>Low-GWP Refrigerant Swap &mdash; <span class="text-muted">SDG 13</span></li>
+                    <li class="mb-2"><i class="fas fa-lungs me-2" style="color:var(--hh-red);width:16px;"></i>Dry-Powder Inhalers &mdash; <span class="text-muted">SDG 3, 13</span></li>
+                    <li class="mb-0"><i class="fas fa-car me-2" style="color:var(--hh-success);width:16px;"></i>Fleet &amp; Travel Optimisation &mdash; <span class="text-muted">SDG 11, 13</span></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% else %}
+{# ══════════════════════════════════════════════════════════════════════ #}
+{#  ACTIVE STATE — facilities exist                                      #}
+{# ══════════════════════════════════════════════════════════════════════ #}
+
+<div class="hh-hero mb-5">
+    <div class="row align-items-center">
+        <div class="col-lg-7">
+            <p class="section-label mb-2" style="color:rgba(255,255,255,.6);">HIGH Horizons · EU Horizon Europe</p>
+            <h2 class="fw-bold mb-3">CARBOMICA Dashboard</h2>
+            <p class="mb-4" style="color:rgba(255,255,255,.8);font-size:.93rem;">
+                Carbon mitigation resource allocation for health facilities — Kenya, South Africa &amp; Zimbabwe.
+            </p>
+            <div class="d-flex flex-wrap gap-3">
+                <div class="stat-chip"><i class="fas fa-hospital"></i> {{ facility_count }} facilit{{ facility_count|pluralize:"y,ies" }}</div>
+                <div class="stat-chip"><i class="fas fa-smog"></i> {{ total_emissions|floatformat:0|intcomma }} tCO₂e</div>
+                <div class="stat-chip"><i class="fas fa-seedling"></i> {{ active_interventions }} active</div>
+                <div class="stat-chip"><i class="fas fa-chart-bar"></i> {{ optimized_scenarios }} scenario{{ optimized_scenarios|pluralize }}</div>
+            </div>
+        </div>
+        <div class="col-lg-5 mt-3 mt-lg-0 d-flex flex-wrap gap-2 justify-content-lg-end">
+            <a href="{% url 'dashboard' %}" class="btn btn-light fw-bold"><i class="fas fa-chart-line me-1"></i>Dashboard</a>
+            <a href="{% url 'add_facility' %}" class="btn btn-outline-light"><i class="fas fa-plus me-1"></i>Add facility</a>
+            <a href="{% url 'upload_emissions' %}" class="btn btn-outline-light"><i class="fas fa-upload me-1"></i>Upload data</a>
+        </div>
+    </div>
+</div>
+
+<!-- Progress checklist -->
+<div class="row mb-4">
+    <div class="col-12 mb-2"><p class="section-label">Setup progress</p></div>
+    <div class="col-md-3 mb-3">
+        <div class="card h-100"><div class="card-body d-flex align-items-center gap-3">
+            <div class="step-badge done"><i class="fas fa-check"></i></div>
+            <div><div class="fw-semibold small">Facilities added</div><div class="text-muted" style="font-size:.78rem;">{{ facility_count }} registered</div></div>
+        </div></div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card h-100"><div class="card-body d-flex align-items-center gap-3">
+            <div class="step-badge {% if total_emissions %}done{% endif %}">{% if total_emissions %}<i class="fas fa-check"></i>{% else %}2{% endif %}</div>
+            <div><div class="fw-semibold small">Emissions entered</div><div class="text-muted" style="font-size:.78rem;">{% if total_emissions %}{{ total_emissions|floatformat:0|intcomma }} tCO₂e{% else %}<a href="{% url 'upload_emissions' %}">Upload now →</a>{% endif %}</div></div>
+        </div></div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card h-100"><div class="card-body d-flex align-items-center gap-3">
+            <div class="step-badge {% if active_interventions %}done{% endif %}">{% if active_interventions %}<i class="fas fa-check"></i>{% else %}3{% endif %}</div>
+            <div><div class="fw-semibold small">Interventions linked</div><div class="text-muted" style="font-size:.78rem;">{% if active_interventions %}{{ active_interventions }} active{% else %}<a href="{% url 'upload_interventions' %}">Add now →</a>{% endif %}</div></div>
+        </div></div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card h-100"><div class="card-body d-flex align-items-center gap-3">
+            <div class="step-badge {% if optimized_scenarios %}done{% endif %}">{% if optimized_scenarios %}<i class="fas fa-check"></i>{% else %}4{% endif %}</div>
+            <div><div class="fw-semibold small">Optimisation run</div><div class="text-muted" style="font-size:.78rem;">{% if optimized_scenarios %}{{ optimized_scenarios }} scenario{{ optimized_scenarios|pluralize }}{% else %}<a href="{% url 'facilities' %}">Run now →</a>{% endif %}</div></div>
+        </div></div>
+    </div>
+</div>
+
+<!-- Recent activity -->
+<div class="row g-4">
+    <div class="col-lg-4">
         <div class="card h-100">
             <div class="card-header d-flex justify-content-between align-items-center">
-                <span>Recently added facilities</span>
-                <a href="{% url 'facilities' %}" class="text-white text-decoration-none small">View all</a>
+                <span>Facilities</span>
+                <a href="{% url 'facilities' %}" class="btn btn-outline-primary btn-sm">View all</a>
             </div>
-            <div class="card-body">
+            <div class="card-body p-0">
                 {% if recent_facilities %}
-                    {% for facility in recent_facilities %}
-                        <div class="d-flex justify-content-between align-items-center mb-3">
-                            <div>
-                                <h6 class="mb-0">{{ facility.display_name }}</h6>
-                                <small class="text-muted">{{ facility.code_name }}</small>
-                            </div>
-                            <a href="{% url 'optimize_interventions' facility.id %}" class="btn btn-sm btn-outline-primary">Optimise</a>
+                <ul class="list-group list-group-flush">
+                    {% for f in recent_facilities %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center px-3 py-3">
+                        <div>
+                            <div class="fw-semibold small">{{ f.display_name }}</div>
+                            <div class="text-muted" style="font-size:.76rem;">{{ f.get_country_display }} · {{ f.get_facility_type_display }}</div>
                         </div>
+                        <a href="{% url 'optimize_interventions' f.id %}" class="btn btn-sm btn-outline-primary">Optimise</a>
+                    </li>
                     {% endfor %}
+                </ul>
                 {% else %}
-                    <p class="text-muted mb-0">Add your first facility to get started.</p>
+                <div class="empty-state py-4"><i class="fas fa-hospital d-block"></i><p class="small mb-0">No facilities yet</p></div>
                 {% endif %}
             </div>
         </div>
     </div>
-    <div class="col-lg-6 mb-4">
-        <div class="card h-100">
-            <div class="card-header">Optimisation scenarios</div>
-            <div class="card-body">
-                {% if recent_scenarios %}
-                    <ul class="list-group list-group-flush">
-                        {% for scenario in recent_scenarios %}
-                        <li class="list-group-item d-flex justify-content-between align-items-center">
-                            <div>
-                                <strong>{{ scenario.name }}</strong>
-                                <p class="mb-0 small text-muted">{{ scenario.facility.display_name }} - {{ scenario.get_status_display }}</p>
-                            </div>
-                            <a href="{% url 'optimization_results' scenario.id %}" class="btn btn-sm btn-outline-secondary">View</a>
-                        </li>
-                        {% endfor %}
-                    </ul>
-                {% else %}
-                    <p class="text-muted mb-0">No optimisation runs yet.</p>
-                {% endif %}
-            </div>
-        </div>
-    </div>
-</div>
 
-<div class="row mb-5">
-    <div class="col-12">
-        <p class="section-label mb-2">Climate-health focus areas</p>
-    </div>
-    <div class="col-md-4 mb-4">
+    <div class="col-lg-4">
         <div class="card h-100">
-            <div class="card-body">
-                <h5>Energy reliability</h5>
-                <p class="text-muted">
-                    Track renewable deployments that protect cold chains and surgical suites from grid instability while
-                    cutting fossil reliance.
-                </p>
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>Upcoming implementations</span>
+                <a href="{% url 'interventions' %}" class="btn btn-outline-primary btn-sm">All</a>
             </div>
-        </div>
-    </div>
-    <div class="col-md-4 mb-4">
-        <div class="card h-100">
-            <div class="card-body">
-                <h5>Clinical procurement</h5>
-                <p class="text-muted">
-                    Use the intervention ledger to evidence low-waste anaesthetics, circular waste management, and
-                    equitable local manufacturing.
-                </p>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-4 mb-4">
-        <div class="card h-100">
-            <div class="card-body">
-                <h5>Population co-benefits</h5>
-                <p class="text-muted">
-                    Surface SDG-aligned narratives that connect emission cuts to maternal health, infectious disease
-                    resilience, and equity outcomes.
-                </p>
-            </div>
-        </div>
-    </div>
-</div>
-
-<div class="row mb-5">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header">Upcoming implementations</div>
-            <div class="card-body">
+            <div class="card-body p-0">
                 {% if upcoming_interventions %}
-                <div class="table-responsive">
-                    <table class="table align-middle">
-                        <thead>
-                            <tr>
-                                <th scope="col">Intervention</th>
-                                <th scope="col">Facility</th>
-                                <th scope="col">Implementation date</th>
-                                <th scope="col">Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for fi in upcoming_interventions %}
-                            <tr>
-                                <td>{{ fi.intervention.display_name }}</td>
-                                <td>{{ fi.facility.display_name }}</td>
-                                <td>{{ fi.implementation_date|date:"d M Y" }}</td>
-                                <td><span class="badge bg-primary">{{ fi.intervention.status }}</span></td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
+                <ul class="list-group list-group-flush">
+                    {% for fi in upcoming_interventions %}
+                    <li class="list-group-item px-3 py-3">
+                        <div class="fw-semibold small">{{ fi.intervention.display_name }}</div>
+                        <div class="text-muted" style="font-size:.76rem;">{{ fi.facility.display_name }} · {{ fi.implementation_date|date:"d M Y" }}</div>
+                    </li>
+                    {% endfor %}
+                </ul>
                 {% else %}
-                <p class="text-muted mb-0">Schedule your next intervention to see it here.</p>
+                <div class="empty-state py-4"><i class="fas fa-calendar-plus d-block"></i><p class="small mb-0">No scheduled implementations</p></div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>Recent scenarios</span>
+                <a href="{% url 'dashboard' %}" class="btn btn-outline-primary btn-sm">Dashboard</a>
+            </div>
+            <div class="card-body p-0">
+                {% if recent_scenarios %}
+                <ul class="list-group list-group-flush">
+                    {% for s in recent_scenarios %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center px-3 py-3">
+                        <div>
+                            <div class="fw-semibold small">{{ s.name }}</div>
+                            <div class="text-muted" style="font-size:.76rem;">{{ s.facility.display_name }}</div>
+                        </div>
+                        <a href="{% url 'optimization_results' s.id %}" class="btn btn-sm btn-outline-primary">View</a>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <div class="empty-state py-4">
+                    <i class="fas fa-chart-bar d-block"></i>
+                    <p class="small mb-2">No scenarios run yet</p>
+                    <a href="{% url 'facilities' %}" class="btn btn-primary btn-sm">Run optimisation</a>
+                </div>
                 {% endif %}
             </div>
         </div>
     </div>
 </div>
+
+{% endif %}
 {% endblock %}

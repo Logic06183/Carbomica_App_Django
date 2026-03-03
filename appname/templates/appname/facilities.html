@@ -2,83 +2,165 @@
 {% load humanize %}
 
 {% block content %}
-<div class="container py-4">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2>Healthcare Facilities</h2>
+<div class="row mb-4 align-items-center">
+    <div class="col">
+        <p class="section-label mb-1">CARBOMICA · Facilities</p>
+        <h2 class="fw-bold mb-0">Healthcare Facilities</h2>
+        <p class="text-muted mt-1 mb-0">Manage facilities and run three-scenario carbon optimisation.</p>
+    </div>
+    <div class="col-auto">
         <a href="{% url 'add_facility' %}" class="btn btn-primary">
-            <i class="fas fa-plus"></i> Add Facility
+            <i class="fas fa-plus me-1"></i>Add facility
         </a>
     </div>
-    
-    <div class="row">
-        {% for facility in facilities %}
-        <div class="col-md-6 mb-4">
-            <div class="card shadow-sm">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-start">
-                        <div>
-                            <h5 class="card-title">{{ facility.display_name }}</h5>
-                            <p class="text-muted mb-2">Code: {{ facility.code_name }}</p>
-                        </div>
-                        <div class="dropdown">
-                            <button class="btn btn-light btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown">
-                                Actions
-                            </button>
-                            <ul class="dropdown-menu">
-                                <li>
-                                    <a class="dropdown-item" href="{% url 'optimize_interventions' facility.id %}">
-                                        <i class="fas fa-chart-line"></i> Optimize Interventions
-                                    </a>
-                                </li>
-                                <li>
-                                    <a class="dropdown-item" href="#">
-                                        <i class="fas fa-edit"></i> Edit Details
-                                    </a>
-                                </li>
-                                <li>
-                                    <a class="dropdown-item" href="#">
-                                        <i class="fas fa-chart-bar"></i> View Reports
-                                    </a>
-                                </li>
-                            </ul>
-                        </div>
-                    </div>
-                    
-                    {% with latest_emission=facility.emission_sources.first.emission_data.last %}
-                    {% if latest_emission %}
-                    <div class="row mt-3">
-                        <div class="col-6">
-                            <small class="text-muted d-block">Total Emissions</small>
-                            <span class="h6">
-                                {{ latest_emission.total_emissions|floatformat:1 }} tCO2e
+</div>
+
+{% if facilities %}
+<div class="row g-3">
+    {% for facility in facilities %}
+    <div class="col-md-6">
+        <div class="card h-100" style="border-top: 3px solid var(--hh-blue);">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <div>
+                        <h5 class="fw-bold mb-1">{{ facility.display_name }}</h5>
+                        <div class="d-flex gap-2 flex-wrap">
+                            <span class="stat-chip-dark">
+                                <i class="fas fa-globe-africa" style="font-size:.8rem;"></i>
+                                {{ facility.get_country_display }}
                             </span>
-                        </div>
-                        <div class="col-6">
-                            <small class="text-muted d-block">Last Updated</small>
-                            <span class="h6">
-                                {{ latest_emission.date|date:"M d, Y" }}
+                            <span class="stat-chip-dark">
+                                <i class="fas fa-hospital" style="font-size:.8rem;"></i>
+                                {{ facility.get_facility_type_display }}
                             </span>
                         </div>
                     </div>
+                    <div class="dropdown">
+                        <button class="btn btn-light btn-sm dropdown-toggle" type="button"
+                                data-bs-toggle="dropdown" aria-expanded="false">
+                            Actions
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end">
+                            <li>
+                                <a class="dropdown-item" href="{% url 'optimize_interventions' facility.id %}">
+                                    <i class="fas fa-bolt me-2" style="color:var(--hh-success);"></i>Run optimisation
+                                </a>
+                            </li>
+                            <li>
+                                <a class="dropdown-item" href="{% url 'upload_emissions' %}">
+                                    <i class="fas fa-smog me-2" style="color:var(--hh-red);"></i>Upload emissions
+                                </a>
+                            </li>
+                            <li>
+                                <a class="dropdown-item" href="{% url 'upload_interventions' %}">
+                                    <i class="fas fa-leaf me-2" style="color:#2e8b57;"></i>Add interventions
+                                </a>
+                            </li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li>
+                                <a class="dropdown-item" href="{% url 'dashboard' %}">
+                                    <i class="fas fa-chart-bar me-2" style="color:var(--hh-blue);"></i>View dashboard
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <hr class="my-3">
+
+                <div class="row g-3 text-center">
+                    <!-- Emission data -->
+                    {% with latest=facility.emission_sources.first %}
+                    {% if latest and latest.emission_data.exists %}
+                        {% with ed=latest.emission_data.last %}
+                        <div class="col-4">
+                            <div class="text-muted small mb-1">Latest emissions</div>
+                            <div class="fw-bold">{{ ed.total_emissions|floatformat:1 }}</div>
+                            <div class="text-muted" style="font-size:.75rem;">tCO₂e</div>
+                        </div>
+                        <div class="col-4">
+                            <div class="text-muted small mb-1">Data period</div>
+                            <div class="fw-bold" style="font-size:.9rem;">{{ ed.date|date:"M Y" }}</div>
+                            <div class="text-muted" style="font-size:.75rem;">last record</div>
+                        </div>
+                        {% endwith %}
                     {% else %}
-                    <p class="text-muted mt-3">No emission data available</p>
+                        <div class="col-8">
+                            <div class="text-muted small">
+                                <i class="fas fa-exclamation-circle me-1"></i>
+                                No emission data yet —
+                                <a href="{% url 'upload_emissions' %}" class="text-decoration-none">upload now</a>
+                            </div>
+                        </div>
                     {% endif %}
                     {% endwith %}
-                    
-                    <div class="mt-3">
-                        <small class="text-muted d-block">Active Interventions</small>
-                        <div class="d-flex flex-wrap gap-2 mt-1">
-                            {% for intervention in facility.facility_interventions.all %}
-                            {% if intervention.intervention.status == 'In Progress' %}
-                            <span class="badge bg-primary">{{ intervention.intervention.display_name }}</span>
-                            {% endif %}
-                            {% endfor %}
-                        </div>
+
+                    <!-- Intervention count -->
+                    <div class="col-4">
+                        <div class="text-muted small mb-1">Interventions</div>
+                        <div class="fw-bold">{{ facility.facility_interventions.count }}</div>
+                        <div class="text-muted" style="font-size:.75rem;">linked</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card-footer bg-transparent border-top-0 pt-0 pb-3 px-3">
+                <a href="{% url 'optimize_interventions' facility.id %}"
+                   class="btn btn-success btn-sm w-100">
+                    <i class="fas fa-bolt me-1"></i>Run optimisation
+                </a>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+{% else %}
+<!-- ── Empty state ── -->
+<div class="card">
+    <div class="card-body text-center py-5">
+        <i class="fas fa-hospital fa-3x mb-3" style="color:var(--hh-blue);opacity:.4;"></i>
+        <h4 class="fw-bold mb-2">No facilities yet</h4>
+        <p class="text-muted mb-4">
+            Add your first healthcare facility to start tracking emissions<br>
+            and modelling carbon reduction interventions.
+        </p>
+        <a href="{% url 'add_facility' %}" class="btn btn-primary">
+            <i class="fas fa-plus me-1"></i>Add your first facility
+        </a>
+
+        <hr class="my-4">
+
+        <div class="row g-4 text-start">
+            <div class="col-md-4">
+                <div class="d-flex gap-3">
+                    <div class="step-badge flex-shrink-0">1</div>
+                    <div>
+                        <strong class="d-block">Add a facility</strong>
+                        <span class="text-muted small">Register the site with country and facility type.</span>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="d-flex gap-3">
+                    <div class="step-badge flex-shrink-0">2</div>
+                    <div>
+                        <strong class="d-block">Upload emission data</strong>
+                        <span class="text-muted small">Enter annual tCO₂e figures across 10 AKDN categories.</span>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="d-flex gap-3">
+                    <div class="step-badge flex-shrink-0">3</div>
+                    <div>
+                        <strong class="d-block">Run optimisation</strong>
+                        <span class="text-muted small">Set a budget and CARBOMICA models three investment scenarios.</span>
                     </div>
                 </div>
             </div>
         </div>
-        {% endfor %}
     </div>
 </div>
+{% endif %}
 {% endblock %}

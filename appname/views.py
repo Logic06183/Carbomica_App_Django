@@ -11,7 +11,6 @@ from datetime import date
 
 from .forms import (
     FacilityForm,
-    EmissionSourceForm,
     InterventionForm,
     EmissionDataForm,
     PolicyForm,
@@ -239,31 +238,27 @@ def facilities(request):
 def add_facility(request):
     if request.method == 'POST':
         facility_form = FacilityForm(request.POST)
-        emission_source_form = EmissionSourceForm(request.POST)
         emission_data_form = EmissionDataForm(request.POST)
 
-        if all([
-            facility_form.is_valid(),
-            emission_source_form.is_valid(),
-            emission_data_form.is_valid(),
-        ]):
+        if facility_form.is_valid() and emission_data_form.is_valid():
             facility = facility_form.save()
-            emission_source = emission_source_form.save(commit=False)
-            emission_source.facility = facility
-            emission_source.save()
+            # Auto-create the emission source — users don't need to configure this
+            emission_source = EmissionSource.objects.create(
+                facility=facility,
+                code_name=f'{facility.code_name}_BASELINE',
+                display_name=f'{facility.display_name} — Baseline',
+            )
             emission_data = emission_data_form.save(commit=False)
             emission_data.emission_source = emission_source
             emission_data.save()
-            messages.success(request, 'Facility added successfully!')
+            messages.success(request, f'{facility.display_name} added successfully!')
             return redirect('facilities')
     else:
         facility_form = FacilityForm()
-        emission_source_form = EmissionSourceForm()
         emission_data_form = EmissionDataForm()
 
     return render(request, 'appname/add_facility.html', {
         'facility_form': facility_form,
-        'emission_source_form': emission_source_form,
         'emission_data_form': emission_data_form,
     })
 

@@ -1,35 +1,210 @@
 {% extends 'appname/base.html' %}
-{% load crispy_forms_tags %}
 
 {% block content %}
-<div class="container py-4">
-    <div class="row justify-content-center">
-        <div class="col-md-8">
-            <div class="card shadow-sm">
-                <div class="card-header">
-                    <h4 class="mb-0">Add New Healthcare Facility</h4>
-                </div>
-                <div class="card-body">
-                    <form method="post">
-                        {% csrf_token %}
-                        
-                        <h5 class="mb-3">Facility Details</h5>
-                        {{ facility_form|crispy }}
-                        
-                        <h5 class="mb-3 mt-4">Emission Source</h5>
-                        {{ emission_source_form|crispy }}
-                        
-                        <h5 class="mb-3 mt-4">Initial Emission Data</h5>
-                        {{ emission_data_form|crispy }}
-                        
-                        <div class="mt-4">
-                            <button type="submit" class="btn btn-primary">Add Facility</button>
-                            <a href="{% url 'facilities' %}" class="btn btn-secondary">Cancel</a>
-                        </div>
-                    </form>
-                </div>
-            </div>
+<div class="row mb-4 align-items-center">
+    <div class="col">
+        <p class="section-label mb-1">CARBOMICA · Setup</p>
+        <h2 class="fw-bold mb-0">Add Healthcare Facility</h2>
+        <p class="text-muted mt-1 mb-0">
+            Register the facility and enter its annual emission baseline across the 10 AKDN categories.
+        </p>
+    </div>
+    <div class="col-auto">
+        <a href="{% url 'facilities' %}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left me-1"></i>Facilities
+        </a>
+    </div>
+</div>
+
+<!-- Step indicator -->
+<div class="alert mb-4" style="background:#f0f7ff;border:1px solid rgba(38,141,205,.2);border-radius:10px;">
+    <div class="row align-items-center g-3">
+        <div class="col-auto">
+            <span class="step-badge done"><i class="fas fa-hospital" style="font-size:.75rem;"></i></span>
+        </div>
+        <div class="col">
+            <strong>Step 1 of 3 — Facility details &amp; baseline emissions.</strong>
+            After saving, upload intervention options via <em>Upload data → Facility interventions</em>,
+            then run optimisation from the Facilities page.
         </div>
     </div>
 </div>
+
+<form method="post">
+    {% csrf_token %}
+
+    <div class="row g-4">
+        <!-- ── Left column: facility + source ── -->
+        <div class="col-lg-5">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="fas fa-hospital me-2" style="color:var(--hh-blue);"></i>Facility details
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Facility name <span class="text-danger">*</span></label>
+                        {{ facility_form.display_name }}
+                        {% if facility_form.display_name.errors %}
+                        <div class="text-danger small mt-1">{{ facility_form.display_name.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Facility code
+                            <i class="fas fa-question-circle help-icon"
+                               data-bs-toggle="popover" data-bs-placement="right"
+                               data-bs-content="A short identifier used internally (e.g. HOSP001, CHC_KE). Alphanumeric, no spaces."></i>
+                        </label>
+                        {{ facility_form.code_name }}
+                        {% if facility_form.code_name.errors %}
+                        <div class="text-danger small mt-1">{{ facility_form.code_name.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-6">
+                            <label class="form-label fw-semibold">Country <span class="text-danger">*</span></label>
+                            {{ facility_form.country }}
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label fw-semibold">Type <span class="text-danger">*</span></label>
+                            {{ facility_form.facility_type }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- ── Right column: emission data ── -->
+        <div class="col-lg-7">
+            <div class="card">
+                <div class="card-header">
+                    <i class="fas fa-smog me-2" style="color:var(--hh-red);"></i>Annual emission baseline
+                    <span class="text-muted small fw-normal ms-2">(tCO₂e per year — enter 0 for unknown categories)</span>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+
+                        <!-- Grid electricity -->
+                        <div class="col-6">
+                            <label class="form-label fw-semibold small">
+                                Grid electricity (kWh)
+                                <i class="fas fa-question-circle help-icon"
+                                   data-bs-toggle="popover" data-bs-placement="top"
+                                   data-bs-content="<strong>Scope 2.</strong> Electricity drawn from the national or regional grid. Enter annual consumption in kWh. Source of ~50–60% of hospital emissions in SSA contexts."></i>
+                            </label>
+                            {{ emission_data_form.grid_electricity }}
+                        </div>
+
+                        <!-- Grid gas -->
+                        <div class="col-6">
+                            <label class="form-label fw-semibold small">
+                                Grid gas (m³)
+                                <i class="fas fa-question-circle help-icon"
+                                   data-bs-toggle="popover" data-bs-placement="top"
+                                   data-bs-content="<strong>Scope 1.</strong> Piped natural gas from the distribution network used for heating, sterilisation or cooking. Enter annual volume in cubic metres."></i>
+                            </label>
+                            {{ emission_data_form.grid_gas }}
+                        </div>
+
+                        <!-- Bottled gas -->
+                        <div class="col-6">
+                            <label class="form-label fw-semibold small">
+                                Bottled gas / LPG (kg)
+                                <i class="fas fa-question-circle help-icon"
+                                   data-bs-toggle="popover" data-bs-placement="top"
+                                   data-bs-content="<strong>Scope 1.</strong> Liquid petroleum gas (LPG) in cylinders used for cooking, heating or medical equipment. Enter annual consumption in kilograms."></i>
+                            </label>
+                            {{ emission_data_form.bottled_gas }}
+                        </div>
+
+                        <!-- Liquid fuel -->
+                        <div class="col-6">
+                            <label class="form-label fw-semibold small">
+                                Liquid fuel (litres)
+                                <i class="fas fa-question-circle help-icon"
+                                   data-bs-toggle="popover" data-bs-placement="top"
+                                   data-bs-content="<strong>Scope 1.</strong> Diesel, petrol or fuel oil burned on-site in generators, boilers or incinerators. Enter total litres per year."></i>
+                            </label>
+                            {{ emission_data_form.liquid_fuel }}
+                        </div>
+
+                        <!-- Vehicle fuel -->
+                        <div class="col-6">
+                            <label class="form-label fw-semibold small">
+                                Vehicle fuel — owned (litres)
+                                <i class="fas fa-question-circle help-icon"
+                                   data-bs-toggle="popover" data-bs-placement="top"
+                                   data-bs-content="<strong>Scope 1.</strong> Fuel used by ambulances, delivery trucks or staff vehicles <em>owned by the facility</em>. Enter litres per year. Excludes hired transport."></i>
+                            </label>
+                            {{ emission_data_form.vehicle_fuel_owned }}
+                        </div>
+
+                        <!-- Business travel -->
+                        <div class="col-6">
+                            <label class="form-label fw-semibold small">
+                                Business travel (km)
+                                <i class="fas fa-question-circle help-icon"
+                                   data-bs-toggle="popover" data-bs-placement="top"
+                                   data-bs-content="<strong>Scope 3.</strong> Staff air, rail or hired-vehicle travel not operated by the facility. Enter total kilometres per year across all modes."></i>
+                            </label>
+                            {{ emission_data_form.business_travel }}
+                        </div>
+
+                        <!-- Anaesthetic gases -->
+                        <div class="col-6">
+                            <label class="form-label fw-semibold small">
+                                Anaesthetic gases (kg)
+                                <i class="fas fa-question-circle help-icon"
+                                   data-bs-toggle="popover" data-bs-placement="top"
+                                   data-bs-content="<strong>Scope 1.</strong> Halogenated volatile agents released to atmosphere — primarily isoflurane (~500× CO₂), desflurane (~2,500× CO₂), sevoflurane (~130× CO₂). Enter kg consumed per year. Often the single largest clinical emission source."></i>
+                            </label>
+                            {{ emission_data_form.anaesthetic_gases }}
+                        </div>
+
+                        <!-- Refrigeration gases -->
+                        <div class="col-6">
+                            <label class="form-label fw-semibold small">
+                                Refrigeration gases (kg)
+                                <i class="fas fa-question-circle help-icon"
+                                   data-bs-toggle="popover" data-bs-placement="top"
+                                   data-bs-content="<strong>Scope 1.</strong> HFCs leaked from air conditioning units, cold-chain fridges and medical refrigerators (e.g. R-410A, R-134a). Enter kg of refrigerant lost or replaced per year."></i>
+                            </label>
+                            {{ emission_data_form.refrigeration_gases }}
+                        </div>
+
+                        <!-- Waste management -->
+                        <div class="col-6">
+                            <label class="form-label fw-semibold small">
+                                Waste management (tonnes)
+                                <i class="fas fa-question-circle help-icon"
+                                   data-bs-toggle="popover" data-bs-placement="top"
+                                   data-bs-content="<strong>Scope 3.</strong> Medical and general waste treated by incineration, autoclaving, landfill or open burning. Enter total tonnes per year. Proper segregation can cut this by up to 80%."></i>
+                            </label>
+                            {{ emission_data_form.waste_management }}
+                        </div>
+
+                        <!-- Medical inhalers -->
+                        <div class="col-6">
+                            <label class="form-label fw-semibold small">
+                                Medical inhalers (units)
+                                <i class="fas fa-question-circle help-icon"
+                                   data-bs-toggle="popover" data-bs-placement="top"
+                                   data-bs-content="<strong>Scope 3.</strong> Pressurised metered-dose inhalers (pMDIs) dispensed annually. HFC propellant (typically HFC-134a, GWP ~1,430) is released when the inhaler is used or disposed of. Switching to dry-powder inhalers (DPIs) eliminates this source."></i>
+                            </label>
+                            {{ emission_data_form.medical_inhalers }}
+                        </div>
+
+                    </div><!-- /row -->
+                </div>
+            </div>
+        </div>
+    </div><!-- /row -->
+
+    <div class="mt-4 d-flex gap-3">
+        <button type="submit" class="btn btn-primary">
+            <i class="fas fa-save me-1"></i>Save facility &amp; emissions
+        </button>
+        <a href="{% url 'facilities' %}" class="btn btn-outline-secondary">Cancel</a>
+    </div>
+</form>
 {% endblock %}

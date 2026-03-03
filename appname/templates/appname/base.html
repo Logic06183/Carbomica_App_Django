@@ -4,202 +4,368 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Carbomica - Health Facility Carbon Management</title>
-    <!-- Bootstrap CSS -->
+    <title>CARBOMICA — Carbon Mitigation for Health Facilities</title>
+
+    <!-- Open Sans (HIGH Horizons brand font) -->
+    <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+    <!-- Bootstrap 5 -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Font Awesome -->
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <!-- Custom CSS -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <!-- Intro.js (guided tour) -->
+    <link rel="stylesheet" href="https://unpkg.com/intro.js/minified/introjs.min.css">
+
     <style>
+        /* ── HIGH Horizons brand palette ── */
         :root {
-            --primary-color: #173753;
-            --secondary-color: #36c2b4;
-            --accent-color: #f1c40f;
-            --background-color: #f4f6fb;
-            --text-muted: #6c7a89;
+            --hh-blue:    #268dcd;
+            --hh-red:     #d33421;
+            --hh-dark:    #3a3a3a;
+            --hh-body:    #4B4F58;
+            --hh-bg:      #F2F5F7;
+            --hh-white:   #ffffff;
+            --hh-border:  #e0e6ed;
+            --hh-success: #2e8b57;
         }
 
         body {
-            background: radial-gradient(circle at top, rgba(54,194,180,0.15), transparent 65%),
-                        radial-gradient(circle at 20% 20%, rgba(241,196,15,0.12), transparent 50%);
-            background-color: var(--background-color);
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            color: #1b2a3d;
+            font-family: 'Open Sans', sans-serif;
+            font-size: 15px;
+            color: var(--hh-body);
+            background-color: var(--hh-bg);
         }
 
-        .navbar {
-            background-color: var(--primary-color);
-            box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+        /* ── Navbar ── */
+        .hh-navbar {
+            background: var(--hh-white);
+            border-bottom: 3px solid var(--hh-blue);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+            padding: 0.6rem 0;
         }
-
-        .navbar-brand {
-            color: white !important;
-            font-weight: bold;
+        .hh-navbar .navbar-brand img { height: 44px; }
+        .hh-navbar .nav-link {
+            color: var(--hh-dark) !important;
+            font-weight: 600;
+            font-size: 0.88rem;
+            letter-spacing: 0.02em;
+            padding: 0.5rem 0.85rem !important;
+            border-radius: 6px;
+            transition: background 0.15s;
         }
+        .hh-navbar .nav-link:hover,
+        .hh-navbar .nav-link.active { background: rgba(38,141,205,0.08); color: var(--hh-blue) !important; }
+        .hh-navbar .dropdown-menu { border: 1px solid var(--hh-border); border-radius: 8px; }
+        .hh-navbar .dropdown-item { font-size: 0.88rem; padding: 0.5rem 1rem; }
+        .hh-navbar .dropdown-item:hover { background: rgba(38,141,205,0.08); }
 
-        .nav-link {
-            color: rgba(255,255,255,0.8) !important;
-        }
-
-        .nav-link:hover {
-            color: white !important;
-        }
-
+        /* ── Cards ── */
         .card {
-            border: none;
-            border-radius: 16px;
-            box-shadow: 0 25px 45px rgba(15,20,34,0.08);
-            margin-bottom: 20px;
-            background: white;
+            border: 1px solid var(--hh-border);
+            border-radius: 12px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+            background: var(--hh-white);
+        }
+        .card-header {
+            background: transparent;
+            border-bottom: 1px solid var(--hh-border);
+            font-weight: 600;
+            color: var(--hh-dark);
+            padding: 1rem 1.25rem;
         }
 
-        .card-header {
-            background-color: transparent;
-            color: var(--primary-color);
-            border: none;
+        /* ── Buttons ── */
+        .btn-primary {
+            background: var(--hh-blue);
+            border-color: var(--hh-blue);
             font-weight: 600;
         }
+        .btn-primary:hover { background: #1f7ab5; border-color: #1f7ab5; }
+        .btn-danger  { background: var(--hh-red); border-color: var(--hh-red); }
+        .btn-outline-primary { color: var(--hh-blue); border-color: var(--hh-blue); font-weight: 600; }
+        .btn-outline-primary:hover { background: var(--hh-blue); border-color: var(--hh-blue); }
 
-        .btn-primary {
-            background-color: var(--secondary-color);
-            border-color: var(--secondary-color);
-            box-shadow: 0 10px 20px rgba(54,194,180,0.35);
-        }
-
-        .btn-primary:hover {
-            background-color: #1c9d91;
-            border-color: #1c9d91;
-        }
-
-        .hero-panel {
-            background: linear-gradient(135deg, #173753 0%, #1d5a81 45%, #36c2b4 120%);
+        /* ── Hero / step panels ── */
+        .hh-hero {
+            background: linear-gradient(135deg, #1a6fa0 0%, var(--hh-blue) 55%, #4aaee0 100%);
             color: white;
-            border-radius: 24px;
-            padding: 40px;
+            border-radius: 16px;
+            padding: 2.5rem 2.5rem;
             position: relative;
             overflow: hidden;
         }
-
-        .hero-panel::after {
+        .hh-hero::after {
             content: '';
-            position: absolute;
-            top: -40px;
-            right: -40px;
-            width: 180px;
-            height: 180px;
-            border: 2px solid rgba(255,255,255,0.35);
+            position: absolute; top: -60px; right: -60px;
+            width: 220px; height: 220px;
+            border: 2px solid rgba(255,255,255,0.2);
             border-radius: 50%;
         }
 
-        .data-chip {
+        /* ── Step badge ── */
+        .step-badge {
+            width: 36px; height: 36px;
+            background: var(--hh-blue);
+            color: white;
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 700; font-size: 0.9rem;
+            flex-shrink: 0;
+        }
+        .step-badge.done { background: var(--hh-success); }
+
+        /* ── Section label ── */
+        .section-label {
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            font-size: 0.7rem;
+            color: #90a0b0;
+            font-weight: 600;
+        }
+
+        /* ── Stat chips ── */
+        .stat-chip {
             background: rgba(255,255,255,0.15);
             border-radius: 999px;
-            padding: 0.5rem 1rem;
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
-            font-size: 0.9rem;
+            padding: 0.4rem 0.9rem;
+            display: inline-flex; align-items: center; gap: 0.5rem;
+            font-size: 0.85rem;
         }
-
-        .section-label {
-            letter-spacing: 0.2em;
-            text-transform: uppercase;
-            font-size: 0.75rem;
-            color: var(--text-muted);
-        }
-
-        .badge-eu {
-            background: rgba(54,194,180,0.15);
-            color: var(--primary-color);
+        .stat-chip-dark {
+            background: rgba(38,141,205,0.08);
+            border: 1px solid rgba(38,141,205,0.2);
             border-radius: 999px;
-            padding: 0.35rem 0.9rem;
-            font-size: 0.8rem;
+            padding: 0.35rem 0.85rem;
+            display: inline-flex; align-items: center; gap: 0.4rem;
+            font-size: 0.82rem;
+            color: var(--hh-blue);
+            font-weight: 600;
+        }
+
+        /* ── Charts ── */
+        .chart-container { min-height: 300px; }
+
+        /* ── Intro.js custom theme ── */
+        .introjs-tooltip {
+            border-radius: 12px !important;
+            font-family: 'Open Sans', sans-serif !important;
+            max-width: 320px !important;
+        }
+        .introjs-button {
+            background: var(--hh-blue) !important;
+            border: none !important;
+            border-radius: 6px !important;
+            color: white !important;
+            font-weight: 600 !important;
+            text-shadow: none !important;
+        }
+        .introjs-button:hover { background: #1f7ab5 !important; }
+        .introjs-skipbutton { color: var(--hh-body) !important; }
+        .introjs-helperLayer { border-radius: 8px !important; }
+
+        /* ── Help popover trigger ── */
+        .help-icon {
+            color: #90a0b0;
+            cursor: pointer;
+            font-size: 0.85rem;
+            margin-left: 4px;
+        }
+        .help-icon:hover { color: var(--hh-blue); }
+
+        /* ── Empty state ── */
+        .empty-state {
+            text-align: center;
+            padding: 3rem 2rem;
+            color: #90a0b0;
+        }
+        .empty-state i { font-size: 3rem; margin-bottom: 1rem; opacity: 0.4; }
+
+        /* ── Footer ── */
+        .hh-footer {
+            border-top: 1px solid var(--hh-border);
+            background: var(--hh-white);
+            padding: 1.5rem 0;
+            margin-top: 4rem;
         }
     </style>
     {% block extra_css %}{% endblock %}
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg navbar-dark mb-4">
-        <div class="container">
-            <a class="navbar-brand" href="{% url 'home' %}">
-                <i class="fas fa-leaf me-2"></i>Carbomica
-            </a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav ms-auto">
-                    <li class="nav-item">
-                        <a class="nav-link" href="{% url 'home' %}">
-                            <i class="fas fa-house me-1"></i>Home
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{% url 'dashboard' %}">
-                            <i class="fas fa-chart-line me-1"></i>Dashboard
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{% url 'add_facility' %}">
-                            <i class="fas fa-hospital me-1"></i>Add Facility
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{% url 'interventions' %}">
-                            <i class="fas fa-tools me-1"></i>Interventions
-                        </a>
-                    </li>
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
-                            <i class="fas fa-upload me-1"></i>Upload data
-                        </a>
-                        <ul class="dropdown-menu dropdown-menu-end">
-                            <li>
-                                <a class="dropdown-item" href="{% url 'upload_emissions' %}">
-                                    <i class="fas fa-smog me-2 text-warning"></i>Emission records
-                                </a>
-                            </li>
-                            <li>
-                                <a class="dropdown-item" href="{% url 'upload_interventions' %}">
-                                    <i class="fas fa-leaf me-2 text-success"></i>Facility interventions
-                                </a>
-                            </li>
-                        </ul>
-                    </li>
-                </ul>
-            </div>
-        </div>
-    </nav>
 
+<!-- ════════════════ NAVBAR ════════════════ -->
+<nav class="hh-navbar navbar navbar-expand-lg mb-4">
     <div class="container">
-        {% block content %}{% endblock %}
-    </div>
+        <a class="navbar-brand" href="{% url 'home' %}">
+            <img src="{% static 'img/high_horizons_logo.png' %}" alt="HIGH Horizons" class="me-2">
+        </a>
+        <span class="fw-bold text-secondary small d-none d-md-inline" style="font-size:0.8rem;letter-spacing:.05em;border-left:2px solid #ddd;padding-left:.75rem;color:#5a6678!important;">
+            CARBOMICA
+        </span>
 
-    <footer class="footer mt-auto py-3 bg-light">
-        <div class="container">
-            <div class="row">
-                <div class="col-md-8">
-                    <p class="text-muted">
-                        Developed in collaboration between 
-                        <a href="#" class="text-decoration-none">Wits Planetary Health</a>,
-                        <a href="#" class="text-decoration-none">Centre for Sexual Health and HIV AIDS Research Zimbabwe (CeSHHAR)</a>, and
-                        <a href="#" class="text-decoration-none">Burnet Institute</a>
-                    </p>
-                    <p class="text-muted small">
-                        Funded by the European Union through the High Horizons project
-                    </p>
-                </div>
-                <div class="col-md-4 text-end">
-                    <span class="text-muted">European Union</span>
-                </div>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav ms-auto align-items-lg-center gap-1">
+                <li class="nav-item">
+                    <a class="nav-link" href="{% url 'home' %}">
+                        <i class="fas fa-house me-1"></i>Home
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="{% url 'dashboard' %}">
+                        <i class="fas fa-chart-line me-1"></i>Dashboard
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="{% url 'facilities' %}">
+                        <i class="fas fa-hospital me-1"></i>Facilities
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="{% url 'interventions' %}">
+                        <i class="fas fa-seedling me-1"></i>Interventions
+                    </a>
+                </li>
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+                        <i class="fas fa-upload me-1"></i>Upload data
+                    </a>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li>
+                            <a class="dropdown-item" href="{% url 'upload_emissions' %}">
+                                <i class="fas fa-smog me-2" style="color:#d33421"></i>Emission records
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'upload_interventions' %}">
+                                <i class="fas fa-leaf me-2" style="color:#2e8b57"></i>Facility interventions
+                            </a>
+                        </li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'add_facility' %}">
+                                <i class="fas fa-plus me-2" style="color:#268dcd"></i>Add new facility
+                            </a>
+                        </li>
+                    </ul>
+                </li>
+                <li class="nav-item ms-2">
+                    <button class="btn btn-outline-primary btn-sm" id="startTourBtn" title="Guided tour">
+                        <i class="fas fa-question-circle me-1"></i>How it works
+                    </button>
+                </li>
+            </ul>
+        </div>
+    </div>
+</nav>
+
+<!-- ════════════════ MESSAGES ════════════════ -->
+{% if messages %}
+<div class="container mb-3">
+    {% for message in messages %}
+    <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+        <i class="fas fa-{% if message.tags == 'success' %}check-circle{% elif message.tags == 'error' or message.tags == 'danger' %}exclamation-circle{% else %}info-circle{% endif %} me-2"></i>
+        {{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<!-- ════════════════ PAGE CONTENT ════════════════ -->
+<div class="container">
+    {% block content %}{% endblock %}
+</div>
+
+<!-- ════════════════ FOOTER ════════════════ -->
+<footer class="hh-footer mt-5">
+    <div class="container">
+        <div class="row align-items-center">
+            <div class="col-md-6">
+                <p class="mb-1 small text-muted">
+                    <strong>CARBOMICA</strong> — CARBOn Mitigation Intervention for healthCare fAcilities
+                </p>
+                <p class="mb-0 small text-muted">
+                    Developed by
+                    <a href="https://wrhi.ac.za" target="_blank" class="text-decoration-none">Wits Planetary Health</a>,
+                    <a href="https://ceshhar.org" target="_blank" class="text-decoration-none">CeSHHAR Zimbabwe</a> &amp;
+                    <a href="https://burnet.edu.au" target="_blank" class="text-decoration-none">Burnet Institute</a>
+                    as part of the <a href="https://www.high-horizons.eu" target="_blank" class="text-decoration-none">HIGH Horizons</a> project.
+                </p>
+            </div>
+            <div class="col-md-3 text-md-center mt-3 mt-md-0">
+                <a href="https://www.high-horizons.eu" target="_blank">
+                    <img src="{% static 'img/high_horizons_logo.png' %}" alt="HIGH Horizons" style="height:36px;opacity:.75;">
+                </a>
+            </div>
+            <div class="col-md-3 text-md-end mt-3 mt-md-0">
+                <img src="{% static 'img/eu_funded_badge.jpg' %}" alt="Funded by the European Union"
+                     style="height:40px;" title="Horizon Europe Grant No. 101057843">
             </div>
         </div>
-    </footer>
+    </div>
+</footer>
 
-    <!-- Bootstrap JS -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <!-- Plotly -->
-    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
-    {% block extra_js %}{% endblock %}
+<!-- ════════════════ SCRIPTS ════════════════ -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+<script src="https://unpkg.com/intro.js/minified/intro.min.js"></script>
+
+<script>
+/* ── Bootstrap popovers (help icons) ── */
+document.querySelectorAll('[data-bs-toggle="popover"]').forEach(el => {
+    new bootstrap.Popover(el, { trigger: 'click', html: true });
+});
+
+/* ── Guided tour (Intro.js) ── */
+function startTour() {
+    introJs().setOptions({
+        steps: [
+            {
+                title: 'Welcome to CARBOMICA',
+                intro: '<strong>CARBOMICA</strong> helps health facility managers identify the best carbon-reduction investments within a real budget. This tour walks you through the four key steps.',
+            },
+            {
+                element: document.querySelector('[href*="add-facility"], [href*="facilities"]'),
+                title: 'Step 1 — Add your facility',
+                intro: 'Register your health facility with its country and type. Each facility gets its own carbon profile.',
+            },
+            {
+                element: document.querySelector('[href*="upload/emissions"]'),
+                title: 'Step 2 — Upload emission data',
+                intro: 'Enter annual emission figures across 10 categories (electricity, anaesthetic gases, waste, etc.) or upload a CSV from the AKDN Carbon Management Tool.',
+            },
+            {
+                element: document.querySelector('[href*="upload/interventions"]'),
+                title: 'Step 3 — Add interventions',
+                intro: 'Attach carbon-reduction interventions to your facility with site-specific costs. Choose from the CARBOMICA library (solar PV, low-GWP anaesthetics, LED lighting, etc.).',
+            },
+            {
+                element: document.querySelector('[href*="dashboard"]'),
+                title: 'Step 4 — Run optimisation',
+                intro: 'From the Facilities page, click <strong>Optimise</strong> on any facility. CARBOMICA runs three scenarios — full coverage, fixed budget, and optimised — so you can compare trade-offs and select the best investment package.',
+            },
+        ],
+        showProgress: true,
+        showBullets: false,
+        exitOnOverlayClick: false,
+        nextLabel: 'Next →',
+        prevLabel: '← Back',
+        doneLabel: 'Got it',
+        tooltipClass: 'hh-tour',
+    }).start();
+    localStorage.setItem('carbomica_tour_done', '1');
+}
+
+document.getElementById('startTourBtn').addEventListener('click', startTour);
+
+/* Auto-launch tour on first visit */
+if (!localStorage.getItem('carbomica_tour_done')) {
+    setTimeout(startTour, 800);
+}
+</script>
+
+{% block extra_js %}{% endblock %}
 </body>
 </html>

@@ -1,56 +1,228 @@
 {% extends 'appname/base.html' %}
-{% load crispy_forms_tags %}
+{% load humanize %}
 
 {% block content %}
-<div class="container py-4">
-    <h2 class="mb-4">Optimize Interventions for {{ facility.display_name }}</h2>
-    
-    <div class="row">
-        <div class="col-md-6">
-            <div class="card shadow-sm mb-4">
-                <div class="card-header">
-                    <h5 class="card-title mb-0">Optimization Parameters</h5>
-                </div>
-                <div class="card-body">
-                    <form method="post">
-                        {% csrf_token %}
-                        {{ scenario_form|crispy }}
-                        
-                        <h5 class="mt-4">Current Emissions</h5>
-                        {{ emission_form|crispy }}
-                        
-                        <button type="submit" class="btn btn-primary mt-3">
-                            Run Optimization
-                        </button>
-                    </form>
+<div class="row mb-4 align-items-center">
+    <div class="col">
+        <p class="section-label mb-1">CARBOMICA · Optimisation</p>
+        <h2 class="fw-bold mb-0">{{ facility.display_name }}</h2>
+        <p class="text-muted mt-1 mb-0">
+            {{ facility.get_facility_type_display }} &nbsp;·&nbsp; {{ facility.get_country_display }}
+        </p>
+    </div>
+    <div class="col-auto">
+        <a href="{% url 'facilities' %}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left me-1"></i>Facilities
+        </a>
+    </div>
+</div>
+
+<!-- ── How CARBOMICA works ── -->
+<div class="card mb-4" style="border-top:3px solid var(--hh-blue);">
+    <div class="card-body">
+        <h6 class="fw-bold mb-3">
+            <i class="fas fa-info-circle me-2" style="color:var(--hh-blue);"></i>How CARBOMICA optimises your investment
+        </h6>
+        <div class="row g-3">
+            <div class="col-md-4">
+                <div class="d-flex gap-3">
+                    <div class="step-badge flex-shrink-0" style="background:var(--hh-blue);">1</div>
+                    <div>
+                        <strong class="d-block small">Full coverage</strong>
+                        <span class="text-muted small">All linked interventions are applied — shows the theoretical maximum reduction regardless of budget.</span>
+                    </div>
                 </div>
             </div>
-        </div>
-        
-        <div class="col-md-6">
-            <div class="card shadow-sm">
-                <div class="card-header">
-                    <h5 class="card-title mb-0">Optimization Guide</h5>
+            <div class="col-md-4">
+                <div class="d-flex gap-3">
+                    <div class="step-badge flex-shrink-0" style="background:#f0a030;">2</div>
+                    <div>
+                        <strong class="d-block small">Fixed budget</strong>
+                        <span class="text-muted small">Cheapest interventions are selected first until the budget is exhausted (cost-minimising strategy).</span>
+                    </div>
                 </div>
-                <div class="card-body">
-                    <h6>How it works:</h6>
-                    <ol>
-                        <li>Enter your budget and emission reduction target</li>
-                        <li>Update your current emission values if needed</li>
-                        <li>The system will analyze possible interventions</li>
-                        <li>Results will show optimal interventions within your budget</li>
-                    </ol>
-                    
-                    <h6 class="mt-4">Tips:</h6>
-                    <ul>
-                        <li>Higher budgets allow for more comprehensive solutions</li>
-                        <li>Be realistic with emission reduction targets</li>
-                        <li>Make sure emission data is up to date</li>
-                        <li>Consider maintenance costs in your budget</li>
-                    </ul>
+            </div>
+            <div class="col-md-4">
+                <div class="d-flex gap-3">
+                    <div class="step-badge flex-shrink-0 done">3</div>
+                    <div>
+                        <strong class="d-block small" style="color:var(--hh-success);">Optimised — recommended</strong>
+                        <span class="text-muted small">Greedy knapsack ranks by <em>tCO₂e per USD</em> — maximum emission reduction within your budget.</span>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 </div>
+
+<!-- ── Pre-flight checks ── -->
+{% with fi_count=facility.facility_interventions.count %}
+{% if fi_count == 0 %}
+<div class="alert alert-warning mb-4">
+    <i class="fas fa-exclamation-triangle me-2"></i>
+    <strong>No interventions linked yet.</strong>
+    The optimiser needs at least one intervention to work with.
+    <a href="{% url 'upload_interventions' %}" class="alert-link ms-2">Add interventions →</a>
+</div>
+{% endif %}
+
+<div class="row g-4">
+    <!-- ── Optimisation parameters form ── -->
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-header">
+                <i class="fas fa-sliders-h me-2"></i>Optimisation parameters
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
+
+                    <!-- Scenario name -->
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Scenario name
+                            <i class="fas fa-question-circle help-icon"
+                               data-bs-toggle="popover" data-bs-placement="right"
+                               data-bs-content="A label for this run — e.g. 'FY2025 baseline' or 'Solar priority'. You can run multiple scenarios."></i>
+                        </label>
+                        {{ scenario_form.name }}
+                        {% if scenario_form.name.errors %}
+                        <div class="text-danger small mt-1">{{ scenario_form.name.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+
+                    <!-- Budget -->
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Budget (USD)
+                            <i class="fas fa-question-circle help-icon"
+                               data-bs-toggle="popover" data-bs-placement="right"
+                               data-bs-content="Maximum available capital for carbon reduction investments. Scenarios 2 and 3 will not exceed this amount. Scenario 1 (full coverage) is shown regardless for comparison. Tip: include multi-year grant budgets if applicable."></i>
+                        </label>
+                        {{ scenario_form.budget }}
+                        {% if scenario_form.budget.errors %}
+                        <div class="text-danger small mt-1">{{ scenario_form.budget.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+
+                    <!-- Target reduction -->
+                    <div class="mb-4">
+                        <label class="form-label fw-semibold">Target reduction (%)
+                            <i class="fas fa-question-circle help-icon"
+                               data-bs-toggle="popover" data-bs-placement="right"
+                               data-bs-content="Your desired percentage reduction in total facility emissions (e.g. 30 for 30%). This is used for reporting only — the optimiser maximises reduction within the budget, not the target. The results page will show how each scenario compares against this goal."></i>
+                        </label>
+                        {{ scenario_form.target_reduction }}
+                        {% if scenario_form.target_reduction.errors %}
+                        <div class="text-danger small mt-1">{{ scenario_form.target_reduction.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+
+                    <hr class="my-3">
+                    <p class="fw-semibold small mb-2">
+                        <i class="fas fa-smog me-1" style="color:var(--hh-red);"></i>
+                        Update emission baseline (optional)
+                        <i class="fas fa-question-circle help-icon"
+                           data-bs-toggle="popover" data-bs-placement="right"
+                           data-bs-content="Optionally update the facility's current annual emissions before running. If left at 0 the last saved figures are used. Values in tCO₂e per year."></i>
+                    </p>
+
+                    {% for field in emission_form %}
+                    <div class="mb-2">
+                        <label class="form-label small text-muted">{{ field.label }}</label>
+                        {{ field }}
+                        {% if field.errors %}
+                        <div class="text-danger small">{{ field.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+
+                    <div class="mt-4">
+                        <button type="submit" class="btn btn-success w-100"
+                                {% if fi_count == 0 %}disabled{% endif %}>
+                            <i class="fas fa-bolt me-1"></i>Run CARBOMICA optimisation
+                        </button>
+                        {% if fi_count == 0 %}
+                        <p class="text-muted small mt-2 text-center">
+                            Add interventions above to enable this button.
+                        </p>
+                        {% endif %}
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Right panel: facility context ── -->
+    <div class="col-lg-6">
+
+        <!-- Intervention library for this facility -->
+        <div class="card mb-3">
+            <div class="card-header">
+                <i class="fas fa-leaf me-2" style="color:var(--hh-success);"></i>
+                Linked interventions
+                <span class="badge ms-1 {% if fi_count > 0 %}bg-success{% else %}bg-secondary{% endif %}">
+                    {{ fi_count }}
+                </span>
+            </div>
+            {% if fi_count > 0 %}
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0 small">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Intervention</th>
+                                <th>Cost (USD)</th>
+                                <th>Annual savings</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for fi in facility.facility_interventions.all %}
+                            <tr>
+                                <td class="fw-semibold">{{ fi.intervention.display_name }}</td>
+                                <td>${{ fi.implementation_cost|floatformat:0|intcomma }}</td>
+                                <td>${{ fi.annual_savings|floatformat:0|intcomma }}/yr</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {% else %}
+            <div class="card-body">
+                <div class="empty-state py-3">
+                    <i class="fas fa-leaf d-block"></i>
+                    <p class="mb-2 small">No interventions linked to this facility yet.</p>
+                    <a href="{% url 'upload_interventions' %}" class="btn btn-outline-success btn-sm">
+                        <i class="fas fa-plus me-1"></i>Add interventions
+                    </a>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Methodology note -->
+        <div class="card">
+            <div class="card-body">
+                <h6 class="fw-bold mb-2">
+                    <i class="fas fa-graduation-cap me-2" style="color:var(--hh-blue);"></i>
+                    CARBOMICA methodology (D3.7)
+                </h6>
+                <p class="text-muted small mb-2">
+                    The optimised scenario uses a <strong>greedy knapsack algorithm</strong> that ranks interventions
+                    by <em>tCO₂e reduced per USD spent</em> — the most cost-effective first —
+                    and selects until the budget is exhausted.
+                </p>
+                <p class="text-muted small mb-2">
+                    Financial metrics use an <strong>8% discount rate</strong> (LMIC-appropriate)
+                    and a 10-year NPV horizon, aligned with the HIGH Horizons D3.7 reference model
+                    (Zenodo: 10.5281/zenodo.12730527).
+                </p>
+                <p class="text-muted small mb-0">
+                    The three-scenario comparison lets decision-makers see the trade-off between
+                    maximum impact (full coverage), lowest cost (fixed budget), and best efficiency (optimised).
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endwith %}
 {% endblock %}
