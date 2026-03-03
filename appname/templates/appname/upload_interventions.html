@@ -1,0 +1,160 @@
+{% extends 'appname/base.html' %}
+{% load humanize %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <p class="section-label mb-1">Data entry</p>
+        <h2 class="mb-0">Add interventions to a facility</h2>
+        <p class="text-muted mt-1">
+            Link interventions from the CARBOMICA library to a facility with site-specific costs.
+            Upload a CSV for bulk entry, or add one at a time manually.
+        </p>
+    </div>
+</div>
+
+{% if messages %}
+<div class="row mb-3">
+    <div class="col-12">
+        {% for message in messages %}
+        <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<div class="row g-4">
+    <!-- CSV upload -->
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="mb-3"><i class="fas fa-file-csv me-2 text-success"></i>CSV upload (bulk)</h5>
+                <p class="text-muted small mb-3">
+                    One row per intervention. The <strong>intervention_name</strong> column must
+                    match exactly one of the names in the CARBOMICA library (see list on the right).
+                </p>
+                <form method="post" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Facility</label>
+                        <select name="facility" class="form-select" required>
+                            <option value="">— select facility —</option>
+                            {% for f in facilities %}
+                            <option value="{{ f.id }}">{{ f.display_name }} ({{ f.country }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">CSV file</label>
+                        <input type="file" name="csv_file" accept=".csv,.txt" class="form-control" required>
+                    </div>
+                    <button type="submit" class="btn btn-success">
+                        <i class="fas fa-upload me-1"></i> Import CSV
+                    </button>
+                </form>
+
+                <hr class="my-4">
+                <h6>CSV format</h6>
+                <pre class="bg-light rounded p-3 small">intervention_name,implementation_cost,maintenance_cost,annual_savings,implementation_date
+Solar PV System,85000,3500,28000,2024-06-01
+LED Lighting Upgrade,8500,200,7200,2024-03-15</pre>
+                <p class="text-muted small">Costs in USD. Date is optional (YYYY-MM-DD).</p>
+                <a href="#" class="btn btn-outline-secondary btn-sm" id="downloadTemplate">
+                    <i class="fas fa-download me-1"></i> Download blank template
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Manual entry -->
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="mb-3"><i class="fas fa-plus-circle me-2 text-primary"></i>Add single intervention</h5>
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Facility</label>
+                        <select name="facility" class="form-select" required>
+                            <option value="">— select —</option>
+                            {% for f in facilities %}
+                            <option value="{{ f.id }}">{{ f.display_name }} ({{ f.country }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Intervention</label>
+                        <select name="intervention" class="form-select" required>
+                            <option value="">— select —</option>
+                            {% for i in interventions %}
+                            <option value="{{ i.id }}">{{ i.display_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="row g-2">
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold">Implementation cost (USD)</label>
+                            <input type="number" name="implementation_cost" class="form-control"
+                                   placeholder="e.g. 85000" min="0" step="0.01" required>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold">Annual maintenance cost (USD)</label>
+                            <input type="number" name="maintenance_cost" class="form-control"
+                                   placeholder="e.g. 3500" min="0" step="0.01">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold">Annual savings (USD)</label>
+                            <input type="number" name="annual_savings" class="form-control"
+                                   placeholder="e.g. 28000" min="0" step="0.01">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold">Implementation date (optional)</label>
+                            <input type="date" name="implementation_date" class="form-control">
+                        </div>
+                    </div>
+                    <div class="mt-3">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save me-1"></i> Save
+                        </button>
+                        <a href="{% url 'interventions' %}" class="btn btn-link text-muted ms-2">Cancel</a>
+                    </div>
+                </form>
+
+                <hr class="my-4">
+                <h6 class="mb-2">Available interventions in CARBOMICA library</h6>
+                <ul class="list-unstyled small">
+                    {% for i in interventions %}
+                    <li class="mb-1">
+                        <i class="fas fa-leaf text-success me-1"></i>
+                        <strong>{{ i.display_name }}</strong>
+                        {% if i.sdg_goals %}
+                        <span class="text-muted">— SDG {{ i.sdg_goals }}</span>
+                        {% endif %}
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('downloadTemplate').addEventListener('click', function(e) {
+    e.preventDefault();
+    const headers = 'intervention_name,implementation_cost,maintenance_cost,annual_savings,implementation_date\n';
+    const rows = [
+        {% for i in interventions %}"{{ i.display_name }},0,0,0,\n"{% if not forloop.last %},{% endif %}{% endfor %}
+    ].join('');
+    const blob = new Blob([headers + rows], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'carbomica_interventions_template.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+});
+</script>
+{% endblock %}

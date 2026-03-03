@@ -7,14 +7,18 @@ from .models import Facility, EmissionData, FacilityIntervention, Intervention, 
 class FacilityForm(forms.ModelForm):
     class Meta:
         model = Facility
-        fields = ['code_name', 'display_name']
+        fields = ['code_name', 'display_name', 'country', 'facility_type']
         labels = {
             'code_name': 'Facility Code',
             'display_name': 'Facility Name',
+            'country': 'Country',
+            'facility_type': 'Facility Type',
         }
         widgets = {
             'code_name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g., HOSP001'}),
-            'display_name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g., Central Hospital'})
+            'display_name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g., Central Hospital'}),
+            'country': forms.Select(attrs={'class': 'form-select'}),
+            'facility_type': forms.Select(attrs={'class': 'form-select'}),
         }
 
 class EmissionSourceForm(forms.ModelForm):
@@ -118,14 +122,5 @@ class EmissionDataUpdateForm(forms.ModelForm):
             'vehicle_fuel_owned', 'business_travel', 'anaesthetic_gases',
             'refrigeration_gases', 'waste_management', 'medical_inhalers'
         ]
-        widgets = {field: forms.NumberInput(attrs={'class': 'form-control'}) 
+        widgets = {field: forms.NumberInput(attrs={'class': 'form-control'})
                   for field in fields}
-
-class EmissionSourceForm(forms.ModelForm):
-    class Meta:
-        model = EmissionSource
-        fields = ['code_name', 'display_name']
-        widgets = {
-            'code_name': forms.TextInput(attrs={'class': 'form-control'}),
-            'display_name': forms.TextInput(attrs={'class': 'form-control'})
-        }

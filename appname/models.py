@@ -4,8 +4,27 @@ from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
 
 class Facility(models.Model):
+    COUNTRY_CHOICES = [
+        ('ZW', 'Zimbabwe'),
+        ('ZA', 'South Africa'),
+        ('KE', 'Kenya'),
+        ('OTHER', 'Other'),
+    ]
+    FACILITY_TYPE_CHOICES = [
+        ('district_hospital', 'District Hospital'),
+        ('provincial_hospital', 'Provincial Hospital'),
+        ('central_hospital', 'Central Hospital'),
+        ('health_centre', 'Health Centre / Clinic'),
+        ('maternity_unit', 'Maternity Unit'),
+        ('other', 'Other'),
+    ]
+
     code_name = models.CharField(max_length=100)
     display_name = models.CharField(max_length=100)
+    country = models.CharField(max_length=10, choices=COUNTRY_CHOICES, default='OTHER')
+    facility_type = models.CharField(
+        max_length=50, choices=FACILITY_TYPE_CHOICES, default='district_hospital'
+    )
 
     class Meta:
         verbose_name = _('Facility')
@@ -92,6 +111,12 @@ class Intervention(models.Model):
         help_text="Expected annual energy savings in kWh",
         default=0.0
     )
+    sdg_goals = models.CharField(
+        max_length=50,
+        blank=True,
+        default='',
+        help_text="Comma-separated SDG numbers this intervention contributes to (e.g. '3,7,13')"
+    )
 
     class Meta:
         verbose_name = _('Intervention')
@@ -142,9 +167,10 @@ class FacilityIntervention(models.Model):
         ordering = ['facility__display_name']
 
     def calculate_roi(self):
-        total_cost = self.implementation_cost + self.maintenance_cost
+        """Return computed ROI percentage without mutating the instance."""
+        total_cost = (self.implementation_cost or 0) + (self.maintenance_cost or 0)
         if total_cost > 0:
-            self.roi = (self.annual_savings / total_cost) * 100
+            return (self.annual_savings / total_cost) * 100
         return self.roi
 
     def __str__(self):
