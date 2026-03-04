@@ -107,8 +107,10 @@ WSGI_APPLICATION = "Carbomica_app.wsgi.application"
 DATABASES = {
     'default': dj_database_url.config(
         default=f'sqlite:///{BASE_DIR / "db.sqlite3"}',
-        conn_max_age=600,
-        conn_health_checks=True,
+        # conn_max_age=0 required for Supabase transaction pooler (port 6543):
+        # the pooler closes server-side connections after each transaction, so
+        # persistent connections cause session lookups to fail on Cloud Run.
+        conn_max_age=0,
     )
 }
 
@@ -164,6 +166,9 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 # SECURE_HSTS_SECONDS is also omitted because the LB enforces HTTPS already.
 # Django's deploy check warnings for these two are suppressed via SILENCED_SYSTEM_CHECKS.
 SECURE_SSL_REDIRECT = False
+# Firebase Hosting CDN strips all cookies except those named '__session' or
+# prefixed '__Host-'. Rename Django's session cookie so Firebase passes it through.
+SESSION_COOKIE_NAME = '__session'
 SESSION_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_SECURE = not DEBUG
 SECURE_BROWSER_XSS_FILTER = True

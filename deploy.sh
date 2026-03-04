@@ -60,10 +60,24 @@ done
 log "Setting active GCP project to ${PROJECT_ID}"
 gcloud config set project "${PROJECT_ID}" --quiet
 
-# ── Generate SECRET_KEY if not set ─────────────────────────────────────────
+# ── SECRET_KEY must be stable across deployments ────────────────────────────
+# IMPORTANT: Do NOT regenerate the secret key each deploy. Django uses it to
+# sign session auth hashes — a new key invalidates all existing sessions.
+# Set DJANGO_SECRET_KEY once and store it securely (e.g. macOS keychain):
+#   python3 -c "import secrets; print(secrets.token_urlsafe(50))"
+#   security add-generic-password -a "craig" -s "carbomica-secret-key" -w "<key>"
+#   export DJANGO_SECRET_KEY=$(security find-generic-password -a "craig" -s "carbomica-secret-key" -w)
 if [ -z "${DJANGO_SECRET_KEY:-}" ]; then
-    warn "DJANGO_SECRET_KEY not set — generating one for this deployment"
-    export DJANGO_SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_urlsafe(50))")
+    warn "DJANGO_SECRET_KEY not set — attempting to load from macOS keychain..."
+    DJANGO_SECRET_KEY=$(security find-generic-password -a "craig" -s "carbomica-secret-key" -w 2>/dev/null || true)
+    if [ -z "${DJANGO_SECRET_KEY:-}" ]; then
+        warn "No stored key found — generating a new one (store this for future deploys!)"
+        export DJANGO_SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_urlsafe(50))")
+        warn "Run: security add-generic-password -a 'craig' -s 'carbomica-secret-key' -w '${DJANGO_SECRET_KEY}'"
+    else
+        export DJANGO_SECRET_KEY
+        ok "Loaded DJANGO_SECRET_KEY from keychain"
+    fi
 fi
 
 # ── Deploy backend to Cloud Run ─────────────────────────────────────────────
