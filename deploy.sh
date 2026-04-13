@@ -103,6 +103,20 @@ if [ "$BACKEND" = true ]; then
         --project "${PROJECT_ID}" \
         --quiet
 
+    # ── Google OAuth credentials ─────────────────────────────────────────────
+    if [ -z "${GOOGLE_CLIENT_ID:-}" ] || [ -z "${GOOGLE_SECRET:-}" ]; then
+        warn "GOOGLE_CLIENT_ID or GOOGLE_SECRET not set — loading from .env if present"
+        if [ -f .env ]; then
+            export $(grep -E '^(GOOGLE_CLIENT_ID|GOOGLE_SECRET)=' .env | xargs) 2>/dev/null || true
+        fi
+    fi
+    if [ -z "${GOOGLE_CLIENT_ID:-}" ] || [ -z "${GOOGLE_SECRET:-}" ]; then
+        warn "Google OAuth credentials missing — Google login will not work on Cloud Run"
+        warn "Set GOOGLE_CLIENT_ID and GOOGLE_SECRET env vars before deploying"
+    else
+        ok "Google OAuth credentials loaded"
+    fi
+
     log "Deploying to Cloud Run"
     gcloud run deploy "${SERVICE_NAME}" \
         --image "${IMAGE}" \
@@ -118,6 +132,8 @@ if [ "$BACKEND" = true ]; then
         --set-env-vars "DATABASE_URL=${DATABASE_URL}" \
         --set-env-vars "DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}" \
         --set-env-vars "DEBUG=False" \
+        --set-env-vars "GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}" \
+        --set-env-vars "GOOGLE_SECRET=${GOOGLE_SECRET:-}" \
         --quiet
 
     CLOUD_RUN_URL=$(gcloud run services describe "${SERVICE_NAME}" \
@@ -131,6 +147,8 @@ if [ "$BACKEND" = true ]; then
         --region "${REGION}" \
         --set-env-vars "DATABASE_URL=${DATABASE_URL}" \
         --set-env-vars "DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}" \
+        --set-env-vars "GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}" \
+        --set-env-vars "GOOGLE_SECRET=${GOOGLE_SECRET:-}" \
         --command "python" \
         --args "manage.py,migrate,--noinput" \
         --quiet 2>/dev/null || \
@@ -139,15 +157,57 @@ if [ "$BACKEND" = true ]; then
         --region "${REGION}" \
         --set-env-vars "DATABASE_URL=${DATABASE_URL}" \
         --set-env-vars "DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}" \
+        --set-env-vars "GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}" \
+        --set-env-vars "GOOGLE_SECRET=${GOOGLE_SECRET:-}" \
         --quiet
     gcloud run jobs execute carbomica-migrate --region "${REGION}" --wait --quiet
     ok "Migrations applied"
+
+    log "Seeding intervention library"
+    gcloud run jobs create carbomica-seed \
+        --image "${IMAGE}" \
+        --region "${REGION}" \
+        --set-env-vars "DATABASE_URL=${DATABASE_URL}" \
+        --set-env-vars "DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}" \
+        --command "python" \
+        --args "manage.py,sync_interventions" \
+        --quiet 2>/dev/null || \
+    gcloud run jobs update carbomica-seed \
+        --image "${IMAGE}" \
+        --region "${REGION}" \
+        --set-env-vars "DATABASE_URL=${DATABASE_URL}" \
+        --set-env-vars "DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}" \
+        --quiet
+    gcloud run jobs execute carbomica-seed --region "${REGION}" --wait --quiet
+    ok "Intervention library seeded"
+
+    log "Configuring Sites domain (allauth OAuth redirect)"
+    gcloud run jobs create carbomica-setup \
+        --image "${IMAGE}" \
+        --region "${REGION}" \
+        --set-env-vars "DATABASE_URL=${DATABASE_URL}" \
+        --set-env-vars "DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}" \
+        --set-env-vars "GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}" \
+        --set-env-vars "GOOGLE_SECRET=${GOOGLE_SECRET:-}" \
+        --command "python" \
+        --args "manage.py,setup_google_auth" \
+        --quiet 2>/dev/null || \
+    gcloud run jobs update carbomica-setup \
+        --image "${IMAGE}" \
+        --region "${REGION}" \
+        --set-env-vars "DATABASE_URL=${DATABASE_URL}" \
+        --set-env-vars "DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}" \
+        --set-env-vars "GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}" \
+        --set-env-vars "GOOGLE_SECRET=${GOOGLE_SECRET:-}" \
+        --quiet
+    gcloud run jobs execute carbomica-setup --region "${REGION}" --wait --quiet
+    ok "Sites domain configured"
 fi
 
 # ── Deploy Firebase Hosting ─────────────────────────────────────────────────
 if [ "$HOSTING" = true ]; then
     log "Collecting static files for Firebase Hosting"
-    python manage.py collectstatic --noinput --clear --quiet
+    python manage.py collectstatic --noinput --clear -v 0
 
     log "Deploying Firebase Hosting"
     firebase deploy --only hosting --project "${PROJECT_ID}"

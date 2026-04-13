@@ -18,7 +18,9 @@
 </div>
 
 <!-- ── How CARBOMICA works ── -->
-<div class="card mb-4" style="border-top:3px solid var(--hh-blue);">
+<div class="card mb-4" style="border-top:3px solid var(--hh-blue);"
+     data-intro="CARBOMICA always runs three scenarios simultaneously so you can see the full trade-off space: maximum impact regardless of cost, cheapest-first within budget, and the algorithmically optimal selection."
+     data-title="Three-Scenario Approach" data-step="1">
     <div class="card-body">
         <h6 class="fw-bold mb-3">
             <i class="fas fa-info-circle me-2" style="color:var(--hh-blue);"></i>How CARBOMICA optimises your investment
@@ -91,7 +93,9 @@
                     </div>
 
                     <!-- Budget -->
-                    <div class="mb-3">
+                    <div class="mb-3"
+                         data-intro="Set your maximum available capital (USD). Scenarios 2 and 3 will not exceed this. Multi-year grant budgets can be combined here. Scenario 1 (full coverage) is shown regardless for comparison."
+                         data-title="Set Your Budget" data-step="2">
                         <label class="form-label fw-semibold">Budget (USD)
                             <i class="fas fa-question-circle help-icon"
                                data-bs-toggle="popover" data-bs-placement="right"
@@ -135,7 +139,9 @@
                     </div>
                     {% endfor %}
 
-                    <div class="mt-4">
+                    <div class="mt-4"
+                         data-intro="Click to run all three scenarios at once. Results appear on the next page with a comparison chart, summary cards, and an intervention-by-intervention breakdown with ROI and payback metrics."
+                         data-title="Run the Optimisation" data-step="4">
                         <button type="submit" class="btn btn-success w-100"
                                 {% if fi_count == 0 %}disabled{% endif %}>
                             <i class="fas fa-bolt me-1"></i>Run CARBOMICA optimisation
@@ -155,7 +161,9 @@
     <div class="col-lg-6">
 
         <!-- Intervention library for this facility -->
-        <div class="card mb-3">
+        <div class="card mb-3"
+             data-intro="All interventions currently linked to this facility. Each one will be evaluated by the optimiser. Add more via <strong>Upload data → Facility interventions</strong> — the more options you give it, the better the result."
+             data-title="Linked Interventions" data-step="3">
             <div class="card-header">
                 <i class="fas fa-leaf me-2" style="color:var(--hh-success);"></i>
                 Linked interventions

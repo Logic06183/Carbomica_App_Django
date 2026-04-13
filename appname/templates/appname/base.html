@@ -1,4 +1,4 @@
-{% load static %}
+{% load static socialaccount %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -250,11 +250,47 @@
                         </li>
                     </ul>
                 </li>
-                <li class="nav-item ms-2">
+                <li class="nav-item ms-1">
+                    <a class="btn btn-outline-secondary btn-sm" href="{% url 'my_organisation' %}" title="My Organisation">
+                        <i class="fas fa-users me-1"></i>My team
+                    </a>
+                </li>
+                <li class="nav-item ms-1">
                     <button class="btn btn-outline-primary btn-sm" id="startTourBtn" title="Guided tour">
                         <i class="fas fa-question-circle me-1"></i>How it works
                     </button>
                 </li>
+
+                <!-- ── Auth ── -->
+                {% if user.is_authenticated %}
+                <li class="nav-item ms-2 dropdown">
+                    <a class="nav-link dropdown-toggle d-flex align-items-center gap-1" href="#" role="button" data-bs-toggle="dropdown">
+                        <i class="fas fa-user-circle" style="color:var(--hh-blue);font-size:1.1rem;"></i>
+                        <span class="d-none d-lg-inline small">{{ user.get_short_name|default:user.username }}</span>
+                    </a>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li>
+                            <span class="dropdown-item-text small text-muted">
+                                <i class="fas fa-envelope me-1"></i>{{ user.email }}
+                            </span>
+                        </li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li>
+                            <a class="dropdown-item text-danger" href="{% url 'account_logout' %}">
+                                <i class="fas fa-sign-out-alt me-2"></i>Sign out
+                            </a>
+                        </li>
+                    </ul>
+                </li>
+                {% else %}
+                <li class="nav-item ms-2">
+                    <a class="btn btn-sm" href="{% provider_login_url 'google' %}"
+                       style="background:white;border:1px solid #dadce0;font-weight:600;font-size:.82rem;display:flex;align-items:center;gap:.4rem;padding:.35rem .8rem;border-radius:6px;color:#3c4043;text-decoration:none;">
+                        <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" style="height:16px;" alt="G">
+                        Sign in with Google
+                    </a>
+                </li>
+                {% endif %}
             </ul>
         </div>
     </div>
@@ -307,6 +343,56 @@
     </div>
 </footer>
 
+<!-- ════════════════ SHARE MODAL ════════════════ -->
+<div class="modal fade" id="shareModal" tabindex="-1" aria-labelledby="shareModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold" id="shareModalLabel">
+                    <i class="fas fa-share-alt me-2" style="color:var(--hh-blue);"></i>Share CARBOMICA with your team
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small mb-3">
+                    Share this link with Stanley and the team. Anyone with the link can access the tool directly.
+                </p>
+                <div class="input-group mb-4">
+                    <input type="text" class="form-control fw-semibold" value="https://carbomica-tool.web.app" readonly>
+                    <button class="btn btn-outline-primary" id="copyUrlBtn" data-url="https://carbomica-tool.web.app">
+                        <i class="fas fa-copy me-1"></i>Copy link
+                    </button>
+                </div>
+                <div class="card mb-3" style="background:#f8fffe;border:1px solid rgba(46,139,87,.2);">
+                    <div class="card-body py-3">
+                        <p class="fw-semibold small mb-2">
+                            <i class="fas fa-rocket me-1" style="color:var(--hh-success);"></i>Getting started in 4 steps:
+                        </p>
+                        <ol class="small text-muted mb-0 ps-3">
+                            <li class="mb-1"><strong>Add a facility</strong> &mdash; Facilities &rarr; Add facility</li>
+                            <li class="mb-1"><strong>Upload emission baseline</strong> &mdash; Upload data &rarr; Emission records</li>
+                            <li class="mb-1"><strong>Add interventions</strong> &mdash; Upload data &rarr; Facility interventions</li>
+                            <li><strong>Run optimisation</strong> &mdash; Facilities &rarr; Run optimisation</li>
+                        </ol>
+                    </div>
+                </div>
+                <p class="section-label mb-2">Admin access</p>
+                <div class="d-flex gap-2 flex-wrap">
+                    <a href="/admin/" target="_blank" class="btn btn-outline-secondary btn-sm">
+                        <i class="fas fa-lock me-1"></i>Django admin
+                    </a>
+                    <a href="https://console.firebase.google.com/project/carbomica-tool" target="_blank" class="btn btn-outline-secondary btn-sm">
+                        <i class="fas fa-fire me-1"></i>Firebase console
+                    </a>
+                    <a href="https://console.cloud.google.com/run?project=carbomica-tool" target="_blank" class="btn btn-outline-secondary btn-sm">
+                        <i class="fas fa-cloud me-1"></i>Cloud Run
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- ════════════════ SCRIPTS ════════════════ -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
@@ -318,9 +404,27 @@ document.querySelectorAll('[data-bs-toggle="popover"]').forEach(el => {
     new bootstrap.Popover(el, { trigger: 'click', html: true });
 });
 
-/* ── Guided tour (Intro.js) ── */
+/* ── Shared Intro.js options ── */
+const _tourOpts = {
+    showProgress: true,
+    showBullets: false,
+    exitOnOverlayClick: false,
+    nextLabel: 'Next →',
+    prevLabel: '← Back',
+    doneLabel: 'Got it ✓',
+    tooltipClass: 'hh-tour',
+};
+
+/* ── Per-page tour (uses data-intro / data-step attributes on elements) ── */
+function startPageTour() {
+    introJs().setOptions(_tourOpts).start();
+    const key = 'tour_' + window.location.pathname.replace(/\W+/g, '_').replace(/^_|_$/g, '');
+    localStorage.setItem(key, '1');
+}
+
+/* ── Global overview tour (home / pages without per-page steps) ── */
 function startTour() {
-    introJs().setOptions({
+    introJs().setOptions(Object.assign({}, _tourOpts, {
         steps: [
             {
                 title: 'Welcome to CARBOMICA',
@@ -347,22 +451,44 @@ function startTour() {
                 intro: 'From the Facilities page, click <strong>Optimise</strong> on any facility. CARBOMICA runs three scenarios — full coverage, fixed budget, and optimised — so you can compare trade-offs and select the best investment package.',
             },
         ],
-        showProgress: true,
-        showBullets: false,
-        exitOnOverlayClick: false,
-        nextLabel: 'Next →',
-        prevLabel: '← Back',
-        doneLabel: 'Got it',
-        tooltipClass: 'hh-tour',
-    }).start();
+    })).start();
     localStorage.setItem('carbomica_tour_done', '1');
 }
 
-document.getElementById('startTourBtn').addEventListener('click', startTour);
+/* ── "How it works" button: page tour if available, else global overview ── */
+document.getElementById('startTourBtn').addEventListener('click', function () {
+    if (document.querySelector('[data-intro]')) {
+        startPageTour();
+    } else {
+        startTour();
+    }
+});
 
-/* Auto-launch tour on first visit */
-if (!localStorage.getItem('carbomica_tour_done')) {
+/* ── Auto-launch global overview on first ever visit (pages with no per-page tour) ── */
+if (!localStorage.getItem('carbomica_tour_done') && !document.querySelector('[data-intro]')) {
     setTimeout(startTour, 800);
+}
+
+/* ── Auto-launch per-page tour on first visit to each module ── */
+(function () {
+    if (!document.querySelector('[data-intro]')) return;
+    const key = 'tour_' + window.location.pathname.replace(/\W+/g, '_').replace(/^_|_$/g, '');
+    if (!localStorage.getItem(key)) setTimeout(startPageTour, 800);
+})();
+
+/* ── Copy share URL ── */
+const _copyBtn = document.getElementById('copyUrlBtn');
+if (_copyBtn) {
+    _copyBtn.addEventListener('click', function () {
+        navigator.clipboard.writeText(this.dataset.url).then(() => {
+            this.innerHTML = '<i class="fas fa-check me-1"></i>Copied!';
+            this.classList.replace('btn-outline-primary', 'btn-success');
+            setTimeout(() => {
+                this.innerHTML = '<i class="fas fa-copy me-1"></i>Copy link';
+                this.classList.replace('btn-success', 'btn-outline-primary');
+            }, 2000);
+        });
+    });
 }
 </script>
 

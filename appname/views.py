@@ -1,13 +1,17 @@
 import csv
 import io
 import json
+from collections import defaultdict
 
 from django.shortcuts import render, redirect, get_object_or_404
 from django.db.models import Sum, F, Avg, Count
 from django.db.models.functions import TruncMonth
 from django.contrib import messages
+from django.contrib.auth.decorators import login_required
 from decimal import Decimal, InvalidOperation
 from datetime import date
+
+from django.db.models import Q
 
 from .forms import (
     FacilityForm,
@@ -23,36 +27,100 @@ from .models import (
     EmissionSource,
     Intervention,
     EmissionData,
+    Organisation,
     Policy,
     FacilityIntervention,
     OptimizationScenario,
     OptimizationResult,
 )
-from .modeling import CarbomicaOptimizer, calculate_npv
+from .modeling import CarbomicaOptimizer, calculate_npv, compute_tco2e, sum_tco2e
 
 # ---------------------------------------------------------------------------
-# Shared query helpers
+# Shared constants
 # ---------------------------------------------------------------------------
 
 EMISSION_FIELDS = [
     'grid_electricity', 'grid_gas', 'bottled_gas', 'liquid_fuel',
     'vehicle_fuel_owned', 'business_travel', 'anaesthetic_gases',
     'refrigeration_gases', 'waste_management', 'medical_inhalers',
+    'contractor_logistics',
 ]
 
+CATEGORY_LABELS = {
+    'grid_electricity':    'Grid Electricity',
+    'grid_gas':            'Grid Gas',
+    'bottled_gas':         'Bottled Gas / LPG',
+    'liquid_fuel':         'Liquid Fuel',
+    'vehicle_fuel_owned':  'Vehicle Fuel (Owned)',
+    'business_travel':     'Business Travel',
+    'anaesthetic_gases':   'Anaesthetic Gases',
+    'refrigeration_gases': 'Refrigeration Gases',
+    'waste_management':    'Waste Management',
+    'medical_inhalers':    'Medical Inhalers',
+    'contractor_logistics': 'Contractor Logistics',
+}
 
-def emission_total_expression():
-    expr = F(EMISSION_FIELDS[0])
-    for field in EMISSION_FIELDS[1:]:
-        expr = expr + F(field)
-    return expr
+# Default intervention cost guidance (USD) — shown in the upload form to help users
+INTERVENTION_COST_DEFAULTS = {
+    'Solar PV System':                    {'impl': 45000, 'maint': 1500, 'savings': 8000},
+    'Low-GWP Anaesthetic Gases':          {'impl': 3500,  'maint': 500,  'savings': 6000},
+    'LED Lighting Upgrade':               {'impl': 8000,  'maint': 200,  'savings': 2500},
+    'Medical Waste Segregation & Management': {'impl': 2000, 'maint': 300, 'savings': 1200},
+    'Water-Efficient Fixtures':           {'impl': 3000,  'maint': 100,  'savings': 600},
+    'Low-GWP Refrigerant Conversion':     {'impl': 5000,  'maint': 400,  'savings': 1800},
+    'Switch to Dry-Powder Inhalers (DPI)': {'impl': 1000, 'maint': 0,   'savings': 3500},
+    'Fleet & Travel Optimisation':        {'impl': 2500,  'maint': 300,  'savings': 1400},
+}
 
 
-def get_total_emissions():
-    """Sum all emissions across all sources and facilities."""
-    return EmissionData.objects.aggregate(
-        total=Sum(emission_total_expression())
-    )['total'] or Decimal('0')
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+def _user_facilities(user):
+    """
+    Return all Facility objects this user can access:
+      - facilities they created directly, OR
+      - facilities belonging to an organisation they are a member of.
+    """
+    return Facility.objects.filter(
+        Q(created_by=user) | Q(organisation__members=user)
+    ).distinct()
+
+
+def _aggregate_tco2e_all(user):
+    """
+    Load EmissionData records for *this user's* facilities and return:
+      - category_tco2e: {field: Decimal} total tCO₂e per emission category
+      - facility_tco2e: {facility_id: Decimal}
+      - monthly_tco2e:  [(date_obj, Decimal)] sorted ascending
+      - total_tco2e:    Decimal
+    """
+    user_facility_ids = _user_facilities(user).values_list('id', flat=True)
+    all_records = (
+        EmissionData.objects
+        .select_related('emission_source__facility')
+        .filter(emission_source__facility_id__in=user_facility_ids)
+    )
+    category_tco2e = {f: Decimal('0') for f in EMISSION_FIELDS}
+    facility_tco2e = defaultdict(Decimal)
+    monthly_tco2e_map = defaultdict(Decimal)   # date → tCO₂e
+    total_tco2e = Decimal('0')
+
+    for ed in all_records:
+        country = ed.emission_source.facility.country
+        tco2e = compute_tco2e(ed, country)
+        for field in EMISSION_FIELDS:
+            category_tco2e[field] += tco2e.get(field, Decimal('0'))
+        facility_tco2e[ed.emission_source.facility_id] += tco2e['total']
+        total_tco2e += tco2e['total']
+        if ed.date:
+            # Group by year-month for the trend chart
+            month_key = date(ed.date.year, ed.date.month, 1)
+            monthly_tco2e_map[month_key] += tco2e['total']
+
+    monthly_tco2e = sorted(monthly_tco2e_map.items())  # [(date, Decimal), ...]
+    return category_tco2e, dict(facility_tco2e), monthly_tco2e, total_tco2e
 
 
 # ---------------------------------------------------------------------------
@@ -62,7 +130,11 @@ def get_total_emissions():
 def home(request):
     """Landing page — guides health managers into the CARBOMICA tool."""
     facility_count = Facility.objects.count()
-    total_emissions = get_total_emissions()
+    all_eds = EmissionData.objects.select_related('emission_source__facility').all()
+    total_emissions = sum(
+        compute_tco2e(ed, country=ed.emission_source.facility.country if ed.emission_source and ed.emission_source.facility else 'OTHER')['total']
+        for ed in all_eds
+    ) or Decimal('0')
     active_interventions = FacilityIntervention.objects.filter(
         intervention__status__in=['Planned', 'In Progress']
     ).count()
@@ -119,56 +191,54 @@ def home(request):
 # Dashboard
 # ---------------------------------------------------------------------------
 
+@login_required
 def dashboard(request):
     """Overview of facilities, emissions, and optimisation scenarios."""
-    facilities = Facility.objects.all()
-    total_emissions = get_total_emissions()
+    facilities_qs = _user_facilities(request.user)
+
+    # Compute tCO₂e only for this user's facilities
+    category_tco2e, facility_tco2e, monthly_tco2e, total_tco2e = _aggregate_tco2e_all(request.user)
+
+    user_facility_ids = facilities_qs.values_list('id', flat=True)
 
     active_interventions = FacilityIntervention.objects.filter(
-        intervention__status='In Progress'
+        facility_id__in=user_facility_ids,
+        intervention__status='In Progress',
     ).count()
 
     total_investment = (
-        FacilityIntervention.objects.aggregate(total=Sum('implementation_cost'))['total']
+        FacilityIntervention.objects
+        .filter(facility_id__in=user_facility_ids)
+        .aggregate(total=Sum('implementation_cost'))['total']
         or Decimal('0')
     )
 
     optimization_scenarios = (
         OptimizationScenario.objects
         .select_related('facility')
+        .filter(facility_id__in=user_facility_ids)
         .order_by('-created_at')
     )
 
-    # Emission source breakdown — single aggregated query
-    emission_sources = (
-        EmissionData.objects
-        .values('emission_source__display_name')
-        .annotate(total_emissions=Sum(emission_total_expression()))
-        .order_by('-total_emissions')
+    # Per-category tCO₂e breakdown (replaces old source-name grouping)
+    source_breakdown = sorted(
+        [
+            {
+                'name': CATEGORY_LABELS.get(field, field),
+                'amount': amount,
+                'percentage': (amount / total_tco2e * 100) if total_tco2e > 0 else Decimal('0'),
+            }
+            for field, amount in category_tco2e.items()
+            if amount > 0
+        ],
+        key=lambda x: x['amount'],
+        reverse=True,
     )
-    source_total = (
-        emission_sources.aggregate(total=Sum('total_emissions'))['total'] or Decimal('1')
-    )
-    source_breakdown = [
-        {
-            'name': row['emission_source__display_name'],
-            'amount': row['total_emissions'],
-            'percentage': (row['total_emissions'] / source_total) * 100,
-        }
-        for row in emission_sources
-    ]
 
-    # Per-facility totals — single query via annotation avoids N+1
-    facility_totals = {
-        row['emission_source__facility_id']: row['total']
-        for row in EmissionData.objects
-        .values('emission_source__facility_id')
-        .annotate(total=Sum(emission_total_expression()))
-    }
     intervention_counts = {
         row['facility_id']: row['count']
         for row in FacilityIntervention.objects
-        .filter(intervention__status='In Progress')
+        .filter(facility_id__in=user_facility_ids, intervention__status='In Progress')
         .values('facility_id')
         .annotate(count=Count('id'))
     }
@@ -177,16 +247,16 @@ def dashboard(request):
             {
                 'id': f.id,
                 'name': f.display_name,
-                'emissions': facility_totals.get(f.id, Decimal('0')),
+                'emissions': facility_tco2e.get(f.id, Decimal('0')),
                 'interventions_count': intervention_counts.get(f.id, 0),
             }
-            for f in facilities
+            for f in facilities_qs
         ],
         key=lambda x: x['emissions'],
         reverse=True,
     )
 
-    # Plotly chart payloads
+    # Plotly chart payloads (tCO₂e values throughout)
     source_chart_data = json.dumps({
         'labels': [s['name'] for s in source_breakdown],
         'values': [float(s['amount'] or 0) for s in source_breakdown],
@@ -196,25 +266,14 @@ def dashboard(request):
         'labels': [f['name'] for f in top_facilities],
         'values': [float(f['emissions']) for f in top_facilities],
     })
-
-    monthly_rows = (
-        EmissionData.objects
-        .annotate(month=TruncMonth('date'))
-        .values('month')
-        .order_by('month')
-        .annotate(total=Sum(emission_total_expression()))
-    )
     monthly_chart_data = json.dumps({
-        'labels': [
-            row['month'].strftime('%b %Y') if row['month'] else 'Unknown'
-            for row in monthly_rows
-        ],
-        'values': [float(row['total'] or 0) for row in monthly_rows],
+        'labels': [d.strftime('%b %Y') for d, _ in monthly_tco2e],
+        'values': [float(v) for _, v in monthly_tco2e],
     })
 
     context = {
         'facilities': facility_emissions,
-        'total_emissions': total_emissions,
+        'total_emissions': total_tco2e,
         'active_interventions': active_interventions,
         'total_investment': total_investment,
         'source_breakdown': source_breakdown,
@@ -222,6 +281,8 @@ def dashboard(request):
         'source_chart_data': source_chart_data,
         'facility_chart_data': facility_chart_data,
         'monthly_chart_data': monthly_chart_data,
+        # Global stat for community momentum — shown as "X facilities registered globally"
+        'global_facility_count': Facility.objects.count(),
     }
     return render(request, 'appname/dashboard.html', context)
 
@@ -230,18 +291,37 @@ def dashboard(request):
 # Facilities
 # ---------------------------------------------------------------------------
 
+@login_required
 def facilities(request):
-    all_facilities = Facility.objects.all()
+    all_facilities = list(
+        _user_facilities(request.user)
+        .prefetch_related('emission_sources__emission_data', 'facility_interventions')
+    )
+    # Attach computed tCO₂e and latest date directly to each facility object
+    for facility in all_facilities:
+        source = facility.emission_sources.first()
+        latest = None
+        if source:
+            latest = source.emission_data.order_by('-date').first()
+        facility.latest_tco2e = (
+            compute_tco2e(latest, facility.country)['total'] if latest else None
+        )
+        facility.latest_date = latest.date if latest else None
+        facility.has_emission_data = latest is not None
     return render(request, 'appname/facilities.html', {'facilities': all_facilities})
 
 
+@login_required
 def add_facility(request):
     if request.method == 'POST':
         facility_form = FacilityForm(request.POST)
         emission_data_form = EmissionDataForm(request.POST)
 
         if facility_form.is_valid() and emission_data_form.is_valid():
-            facility = facility_form.save()
+            facility = facility_form.save(commit=False)
+            if request.user.is_authenticated:
+                facility.created_by = request.user
+            facility.save()
             # Auto-create the emission source — users don't need to configure this
             emission_source = EmissionSource.objects.create(
                 facility=facility,
@@ -267,11 +347,14 @@ def add_facility(request):
 # Interventions portfolio
 # ---------------------------------------------------------------------------
 
+@login_required
 def interventions(request):
     """Portfolio view — all facility interventions with financial and SDG metrics."""
+    user_facility_ids = _user_facilities(request.user).values_list('id', flat=True)
     qs = (
         FacilityIntervention.objects
         .select_related('facility', 'intervention')
+        .filter(facility_id__in=user_facility_ids)
         .order_by('facility__display_name', 'intervention__display_name')
     )
 
@@ -356,6 +439,7 @@ def interventions(request):
 # Optimisation — CARBOMICA three-scenario engine
 # ---------------------------------------------------------------------------
 
+@login_required
 def optimize_interventions(request, facility_id):
     """
     Run CARBOMICA's three-scenario optimisation for a facility:
@@ -363,7 +447,7 @@ def optimize_interventions(request, facility_id):
       2. Fixed budget   — cheapest first within budget
       3. Optimised      — maximum tCO2e reduction per USD (greedy knapsack)
     """
-    facility = get_object_or_404(Facility, id=facility_id)
+    facility = get_object_or_404(_user_facilities(request.user), id=facility_id)
 
     if request.method == 'POST':
         scenario_form = OptimizationScenarioForm(request.POST)
@@ -382,13 +466,17 @@ def optimize_interventions(request, facility_id):
                     **emission_form.cleaned_data,
                 )
 
-            # Current total baseline emissions for this facility
-            baseline = (
-                EmissionData.objects
-                .filter(emission_source__facility=facility)
-                .aggregate(total=Sum(emission_total_expression()))['total']
-                or Decimal('0')
-            )
+            # Baseline in tCO₂e — convert raw usage using country-specific factors
+            emission_records = EmissionData.objects.filter(emission_source__facility=facility)
+            baseline = sum_tco2e(emission_records, facility.country)
+
+            # Per-category baseline for accurate intervention reduction calculation
+            latest_ed = emission_records.order_by('-date').first()
+            category_baselines = {}
+            if latest_ed:
+                cat = compute_tco2e(latest_ed, facility.country)
+                cat.pop('total', None)
+                category_baselines = cat
 
             # Fetch facility-specific intervention records (with actual costs)
             facility_interventions = (
@@ -401,6 +489,7 @@ def optimize_interventions(request, facility_id):
                 facility_interventions=facility_interventions,
                 budget=scenario.budget,
                 total_baseline_emissions=baseline,
+                category_baselines=category_baselines,
             )
             scenarios = optimizer.run_all_scenarios()
 
@@ -465,8 +554,10 @@ def _serialise_scenarios(scenarios):
     return _fix(scenarios)
 
 
+@login_required
 def optimization_results(request, scenario_id):
-    scenario = get_object_or_404(OptimizationScenario, id=scenario_id)
+    user_facility_ids = _user_facilities(request.user).values_list('id', flat=True)
+    scenario = get_object_or_404(OptimizationScenario, id=scenario_id, facility_id__in=user_facility_ids)
 
     # Try to load the live three-scenario data from session
     session_key = f'scenarios_{scenario.id}'
@@ -522,16 +613,18 @@ def optimization_results(request, scenario_id):
 
 # Column headers accepted in the CSV upload (case-insensitive, strips whitespace)
 EMISSION_CSV_COLUMNS = {
-    'grid_electricity': ['grid electricity', 'grid_electricity', 'electricity (grid)', 'scope 2 electricity'],
-    'grid_gas': ['grid gas', 'grid_gas', 'natural gas', 'piped gas'],
-    'bottled_gas': ['bottled gas', 'bottled_gas', 'lpg', 'liquid petroleum gas'],
-    'liquid_fuel': ['liquid fuel', 'liquid_fuel', 'diesel', 'petrol', 'fuel oil'],
-    'vehicle_fuel_owned': ['vehicle fuel', 'vehicle_fuel_owned', 'owned vehicles', 'fleet fuel'],
-    'business_travel': ['business travel', 'business_travel', 'staff travel', 'travel'],
-    'anaesthetic_gases': ['anaesthetic gases', 'anaesthetic_gases', 'anaesthetics', 'anesthetic gases'],
+    'grid_electricity':    ['grid electricity', 'grid_electricity', 'electricity (grid)', 'scope 2 electricity'],
+    'grid_gas':            ['grid gas', 'grid_gas', 'natural gas', 'piped gas'],
+    'bottled_gas':         ['bottled gas', 'bottled_gas', 'lpg', 'liquid petroleum gas'],
+    'liquid_fuel':         ['liquid fuel', 'liquid_fuel', 'diesel', 'petrol', 'fuel oil'],
+    'vehicle_fuel_owned':  ['vehicle fuel', 'vehicle_fuel_owned', 'owned vehicles', 'fleet fuel'],
+    'business_travel':     ['business travel', 'business_travel', 'staff travel', 'travel'],
+    'anaesthetic_gases':   ['anaesthetic gases', 'anaesthetic_gases', 'anaesthetics', 'anesthetic gases'],
     'refrigeration_gases': ['refrigeration gases', 'refrigeration_gases', 'refrigerants', 'hfcs'],
-    'waste_management': ['waste management', 'waste_management', 'waste', 'medical waste'],
-    'medical_inhalers': ['medical inhalers', 'medical_inhalers', 'inhalers', 'mdis'],
+    'waste_management':    ['waste management', 'waste_management', 'waste', 'medical waste'],
+    'medical_inhalers':    ['medical inhalers', 'medical_inhalers', 'inhalers', 'mdis'],
+    'contractor_logistics': ['contractor logistics', 'contractor_logistics', 'contracted transport',
+                             'supply chain transport', 'logistics'],
 }
 
 
@@ -544,6 +637,7 @@ def _match_column(header):
     return None
 
 
+@login_required
 def upload_emissions(request):
     """
     Upload emission data for a facility via CSV or manual form entry.
@@ -553,11 +647,11 @@ def upload_emissions(request):
         vehicle_fuel_owned, business_travel, anaesthetic_gases,
         refrigeration_gases, waste_management, medical_inhalers
     """
-    facilities = Facility.objects.order_by('display_name')
+    facilities = _user_facilities(request.user).order_by('display_name')
 
     if request.method == 'POST':
         facility_id = request.POST.get('facility')
-        facility = get_object_or_404(Facility, id=facility_id)
+        facility = get_object_or_404(_user_facilities(request.user), id=facility_id)
         emission_source, _ = EmissionSource.objects.get_or_create(
             facility=facility,
             code_name=f'{facility.code_name}_UPLOAD',
@@ -639,6 +733,7 @@ def upload_emissions(request):
     })
 
 
+@login_required
 def upload_interventions(request):
     """
     Attach interventions to a facility with site-specific costs via form or CSV.
@@ -647,12 +742,12 @@ def upload_interventions(request):
         intervention_name, implementation_cost, maintenance_cost, annual_savings,
         implementation_date (YYYY-MM-DD, optional)
     """
-    facilities = Facility.objects.order_by('display_name')
+    facilities = _user_facilities(request.user).order_by('display_name')
     interventions_qs = Intervention.objects.order_by('display_name')
 
     if request.method == 'POST':
         facility_id = request.POST.get('facility')
-        facility = get_object_or_404(Facility, id=facility_id)
+        facility = get_object_or_404(_user_facilities(request.user), id=facility_id)
 
         csv_file = request.FILES.get('csv_file')
         if csv_file:
@@ -750,9 +845,220 @@ def upload_interventions(request):
                 f'Added {intervention.display_name} to {facility.display_name}.'
             )
 
-        return redirect('interventions')
+        return redirect('upload_interventions')
+
+    # ── Create a custom intervention ──────────────────────────────────────
+    if request.method == 'POST' and request.POST.get('action') == 'create_custom':
+        name = request.POST.get('custom_name', '').strip()
+        if name:
+            from django.utils.text import slugify
+            target_cat = request.POST.get('custom_target_category', '').strip()
+            try:
+                red_pct = Decimal(request.POST.get('custom_reduction_pct', '0') or '0')
+            except InvalidOperation:
+                red_pct = Decimal('0')
+            Intervention.objects.get_or_create(
+                code_name=f'CUSTOM_{slugify(name).upper()[:80]}',
+                defaults={
+                    'display_name': name,
+                    'emission_reduction_percentage': red_pct,
+                    'target_category': target_cat,
+                    'status': 'Planned',
+                }
+            )
+            messages.success(request, f'Custom intervention "{name}" created and added to the list.')
+        else:
+            messages.error(request, 'Please enter a name for the custom intervention.')
+        return redirect('upload_interventions')
 
     return render(request, 'appname/upload_interventions.html', {
         'facilities': facilities,
         'interventions': interventions_qs,
+        'cost_defaults': json.dumps(INTERVENTION_COST_DEFAULTS),
+        'emission_fields': list(EMISSION_FIELDS),
+    })
+
+
+# ---------------------------------------------------------------------------
+# Organisation — team management
+# ---------------------------------------------------------------------------
+
+@login_required
+def my_organisation(request):
+    """
+    Manage the user's organisation (team). Members share access to all facilities
+    in the organisation. A user can belong to multiple orgs and own one or more.
+    """
+    from django.contrib.auth.models import User as AuthUser
+
+    # Orgs the current user owns or is a member of
+    owned_orgs = Organisation.objects.filter(created_by=request.user).prefetch_related('members', 'facilities')
+    member_orgs = Organisation.objects.filter(members=request.user).exclude(created_by=request.user).prefetch_related('members', 'facilities')
+
+    if request.method == 'POST':
+        action = request.POST.get('action')
+
+        # ── Create a new organisation ──────────────────────────────────
+        if action == 'create':
+            name = request.POST.get('org_name', '').strip()
+            if name:
+                org = Organisation.objects.create(name=name, created_by=request.user)
+                org.members.add(request.user)
+                messages.success(request, f'Organisation "{name}" created.')
+            else:
+                messages.error(request, 'Please enter an organisation name.')
+
+        # ── Add a member by email ──────────────────────────────────────
+        elif action == 'add_member':
+            org_id = request.POST.get('org_id')
+            email = request.POST.get('email', '').strip().lower()
+            org = get_object_or_404(Organisation, id=org_id, created_by=request.user)
+            try:
+                new_member = AuthUser.objects.get(email__iexact=email)
+                org.members.add(new_member)
+                messages.success(request, f'{email} added to {org.name}.')
+            except AuthUser.DoesNotExist:
+                messages.error(request, f'No user with email {email}. They must sign in with Google first.')
+
+        # ── Remove a member ────────────────────────────────────────────
+        elif action == 'remove_member':
+            org_id = request.POST.get('org_id')
+            user_id = request.POST.get('user_id')
+            org = get_object_or_404(Organisation, id=org_id, created_by=request.user)
+            if str(request.user.id) != user_id:  # can't remove yourself as owner
+                org.members.remove(user_id)
+                messages.success(request, 'Member removed.')
+
+        # ── Assign a facility to an org ────────────────────────────────
+        elif action == 'assign_facility':
+            org_id = request.POST.get('org_id')
+            facility_id = request.POST.get('facility_id')
+            org = get_object_or_404(Organisation, id=org_id, created_by=request.user)
+            facility = get_object_or_404(Facility, id=facility_id, created_by=request.user)
+            facility.organisation = org
+            facility.save(update_fields=['organisation'])
+            messages.success(request, f'{facility.display_name} assigned to {org.name}.')
+
+        # ── Remove a facility from an org ──────────────────────────────
+        elif action == 'unassign_facility':
+            org_id = request.POST.get('org_id')
+            facility_id = request.POST.get('facility_id')
+            org = get_object_or_404(Organisation, id=org_id, created_by=request.user)
+            facility = get_object_or_404(Facility, id=facility_id, organisation=org)
+            facility.organisation = None
+            facility.save(update_fields=['organisation'])
+            messages.success(request, f'{facility.display_name} removed from {org.name}.')
+
+        return redirect('my_organisation')
+
+    # Facilities the user owns that aren't yet in any org (available to assign)
+    unassigned_facilities = Facility.objects.filter(created_by=request.user, organisation__isnull=True)
+
+    return render(request, 'appname/organisation.html', {
+        'owned_orgs': owned_orgs,
+        'member_orgs': member_orgs,
+        'unassigned_facilities': unassigned_facilities,
+    })
+
+
+# ---------------------------------------------------------------------------
+# Facility detail — full profile with tCO₂e breakdown and linked interventions
+# ---------------------------------------------------------------------------
+
+@login_required
+def facility_detail(request, facility_id):
+    """
+    Comprehensive facility profile page.
+    Shows: tCO₂e breakdown by category, emission history, linked interventions,
+    and a per-category Plotly chart — suitable for the May 2026 report demo.
+    """
+    facility = get_object_or_404(
+        _user_facilities(request.user).prefetch_related(
+            'emission_sources__emission_data',
+            'facility_interventions__intervention',
+        ),
+        id=facility_id,
+    )
+
+    # All emission records for this facility, newest first
+    emission_records = list(
+        EmissionData.objects
+        .filter(emission_source__facility=facility)
+        .order_by('-date')
+    )
+
+    # tCO₂e per record (for history table) and per category (for latest)
+    records_with_tco2e = []
+    for ed in emission_records:
+        breakdown = compute_tco2e(ed, facility.country)
+        records_with_tco2e.append({
+            'date': ed.date,
+            'total_tco2e': breakdown['total'],
+            'breakdown': {CATEGORY_LABELS[f]: breakdown[f] for f in EMISSION_FIELDS},
+        })
+
+    # Latest record category breakdown for charts
+    latest_breakdown = records_with_tco2e[0] if records_with_tco2e else None
+
+    # Per-category chart data (latest record)
+    if latest_breakdown:
+        cat_items = sorted(
+            [(name, val) for name, val in latest_breakdown['breakdown'].items() if val > 0],
+            key=lambda x: x[1], reverse=True,
+        )
+        category_chart_data = json.dumps({
+            'labels': [c[0] for c in cat_items],
+            'values': [float(c[1]) for c in cat_items],
+        })
+        # Bar chart: all categories including zeros for completeness
+        all_cat_items = [(CATEGORY_LABELS[f], latest_breakdown['breakdown'][CATEGORY_LABELS[f]])
+                         for f in EMISSION_FIELDS]
+        bar_chart_data = json.dumps({
+            'labels': [c[0] for c in all_cat_items],
+            'values': [float(c[1]) for c in all_cat_items],
+        })
+    else:
+        category_chart_data = json.dumps({'labels': [], 'values': []})
+        bar_chart_data = json.dumps({'labels': [], 'values': []})
+
+    # Linked interventions with financial metrics
+    facility_interventions = []
+    for fi in facility.facility_interventions.select_related('intervention').all():
+        impl = fi.implementation_cost or Decimal('0')
+        maint = fi.maintenance_cost or Decimal('0')
+        savings = fi.annual_savings or Decimal('0')
+        total_cost = impl + maint
+        payback_yrs = (total_cost / savings) if savings > 0 else None
+        facility_interventions.append({
+            'name': fi.intervention.display_name,
+            'status': fi.intervention.status,
+            'sdg_goals': fi.intervention.sdg_goals,
+            'implementation_cost': impl,
+            'maintenance_cost': maint,
+            'annual_savings': savings,
+            'payback_yrs': payback_yrs,
+            'roi': fi.calculate_roi(),
+            'emission_reduction_pct': fi.intervention.emission_reduction_percentage,
+        })
+
+    # Baseline tCO₂e (most recent record)
+    baseline_tco2e = latest_breakdown['total_tco2e'] if latest_breakdown else Decimal('0')
+
+    # Potential tCO₂e savings from all linked interventions
+    potential_savings_pct = sum(
+        fi['emission_reduction_pct'] or 0 for fi in facility_interventions
+    )
+    potential_savings_tco2e = baseline_tco2e * min(potential_savings_pct, 100) / 100
+
+    return render(request, 'appname/facility_detail.html', {
+        'facility': facility,
+        'records_with_tco2e': records_with_tco2e,
+        'latest_breakdown': latest_breakdown,
+        'facility_interventions': facility_interventions,
+        'baseline_tco2e': baseline_tco2e,
+        'potential_savings_tco2e': potential_savings_tco2e,
+        'category_chart_data': category_chart_data,
+        'bar_chart_data': bar_chart_data,
+        'emission_fields': EMISSION_FIELDS,
+        'category_labels': CATEGORY_LABELS,
     })

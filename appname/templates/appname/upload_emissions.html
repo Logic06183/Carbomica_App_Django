@@ -2,7 +2,9 @@
 {% load humanize %}
 
 {% block content %}
-<div class="row mb-4">
+<div class="row mb-4"
+     data-intro="Upload annual emission data for any registered facility. Choose CSV import (fastest for existing AKDN Tool exports) or manual entry for typing figures directly."
+     data-title="Upload Emission Data" data-step="1">
     <div class="col-12">
         <p class="section-label mb-1">Data entry</p>
         <h2 class="mb-0">Upload emission data</h2>
@@ -29,7 +31,9 @@
 <div class="row g-4">
     <!-- CSV upload -->
     <div class="col-lg-6">
-        <div class="card h-100">
+        <div class="card h-100"
+             data-intro="Export your AKDN Carbon Management Tool spreadsheet as CSV and upload it here. One row per reporting period (e.g. annual). Column headers are matched flexibly — see the reference table below."
+             data-title="CSV Import" data-step="2">
             <div class="card-body">
                 <h5 class="mb-3"><i class="fas fa-file-csv me-2 text-success"></i>CSV upload</h5>
                 <p class="text-muted small mb-3">
@@ -63,7 +67,9 @@
                 <p class="text-muted small mb-2">
                     Headers are matched case-insensitively. Use any of these names:
                 </p>
-                <div class="table-responsive">
+                <div class="table-responsive"
+                     data-intro="Column headers are matched case-insensitively — 'Grid Electricity', 'grid_electricity', and 'Scope 2 Electricity' all map to the same field. You don't need to rename your AKDN export."
+                     data-title="Flexible Column Matching" data-step="3">
                     <table class="table table-sm table-bordered small">
                         <thead class="table-light">
                             <tr>
@@ -83,6 +89,7 @@
                             <tr><td>refrigeration_gases</td><td>Refrigeration Gases, Refrigerants, HFCs</td></tr>
                             <tr><td>waste_management</td><td>Waste Management, Medical Waste, Waste</td></tr>
                             <tr><td>medical_inhalers</td><td>Medical Inhalers, MDIs, Inhalers</td></tr>
+                            <tr><td>contractor_logistics</td><td>Contractor Logistics, Contracted Transport, Logistics</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -95,7 +102,9 @@
 
     <!-- Manual entry -->
     <div class="col-lg-6">
-        <div class="card h-100">
+        <div class="card h-100"
+             data-intro="Prefer typing? Enter tCO₂e values directly for each category. Select the facility, fill in the fields (all in tCO₂e/yr), and save. Fields pre-fill from the most recent record."
+             data-title="Manual Entry" data-step="4">
             <div class="card-body">
                 <h5 class="mb-3"><i class="fas fa-keyboard me-2 text-primary"></i>Manual entry</h5>
                 <p class="text-muted small mb-3">
@@ -142,12 +151,22 @@
 document.getElementById('downloadTemplate').addEventListener('click', function(e) {
     e.preventDefault();
     const headers = [
-        'date', 'grid_electricity', 'grid_gas', 'bottled_gas', 'liquid_fuel',
-        'vehicle_fuel_owned', 'business_travel', 'anaesthetic_gases',
-        'refrigeration_gases', 'waste_management', 'medical_inhalers'
+        'date',
+        'grid_electricity',      // kWh/yr
+        'grid_gas',              // m³/yr
+        'bottled_gas',           // kg/yr
+        'liquid_fuel',           // litres/yr
+        'vehicle_fuel_owned',    // litres/yr
+        'business_travel',       // km/yr
+        'anaesthetic_gases',     // kg/yr
+        'refrigeration_gases',   // kg/yr
+        'waste_management',      // tonnes/yr
+        'medical_inhalers',      // units/yr (pMDI)
+        'contractor_logistics',  // km/yr (Scope 3 contracted transport)
     ];
-    const example = ['2023-12-31', '85.4', '0', '12.3', '48.7', '18.2', '5.1', '142.0', '22.5', '31.8', '8.4'];
-    const csv = [headers.join(','), example.join(',')].join('\n');
+    const example = ['2024-12-31', '185000', '0', '1200', '48700', '18200', '5100', '142', '22', '31', '840', '12000'];
+    const notes   = ['# YYYY-MM-DD', '# kWh', '# m³', '# kg', '# litres', '# litres', '# km', '# kg', '# kg', '# tonnes', '# pMDI units', '# km'];
+    const csv = [notes.join(','), headers.join(','), example.join(',')].join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');

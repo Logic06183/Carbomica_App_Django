@@ -29,6 +29,71 @@ DISCOUNT_RATE = Decimal('0.08')
 
 
 # ---------------------------------------------------------------------------
+# Emission conversion factors: raw usage units → tCO₂e
+#
+# Sources:
+#   Electricity  — IEA World Energy Outlook 2022 country emission factors
+#   Combustion   — GHG Protocol / UK BEIS 2023 conversion factors
+#   Gases        — IPCC AR6 GWP₁₀₀ values (CH₄ = 29.8, N₂O = 273)
+#   Travel       — UK DEFRA 2022 (average medium car, diesel)
+#   Inhalers     — NHS England / BEIS 2023 (pMDI HFC-134a propellant)
+#   Anaesthetics — weighted average: isoflurane (GWP 510, 50 %), sevoflurane
+#                  (GWP 130, 30 %), desflurane (GWP 2540, 20 %)
+#   Refrigerants — average HFC blend (R-410A GWP 2088, R-134a 1430, R-22 1810)
+#   Waste        — DEFRA 2022 mixed clinical-waste treatment (landfill/incineration)
+#   Contractor   — DEFRA 2022 average diesel logistics vehicle
+# ---------------------------------------------------------------------------
+
+ELECTRICITY_EF = {          # tCO₂e per kWh of grid electricity consumed
+    'ZW':    Decimal('0.000556'),   # Zimbabwe  — coal-dominated ZESA grid
+    'ZA':    Decimal('0.000928'),   # S. Africa — Eskom ≈ 85 % coal
+    'KE':    Decimal('0.000032'),   # Kenya     — > 90 % renewables
+    'OTHER': Decimal('0.000400'),   # SSA default
+}
+
+EMISSION_FACTORS = {
+    # field_name: tCO₂e per unit (unit shown in parentheses)
+    'grid_electricity':    None,                  # country-specific — see ELECTRICITY_EF
+    'grid_gas':            Decimal('0.00202'),    # per m³ natural gas (piped)
+    'bottled_gas':         Decimal('0.00214'),    # per kg LPG
+    'liquid_fuel':         Decimal('0.00268'),    # per litre diesel/petrol
+    'vehicle_fuel_owned':  Decimal('0.00268'),    # per litre (owned fleet diesel)
+    'business_travel':     Decimal('0.000171'),   # per km (average medium car)
+    'anaesthetic_gases':   Decimal('0.802'),      # per kg anaesthetic agent consumed
+    'refrigeration_gases': Decimal('1.800'),      # per kg refrigerant lost/recharged
+    'waste_management':    Decimal('0.467'),      # per tonne clinical waste
+    'medical_inhalers':    Decimal('0.0189'),     # per pMDI unit dispensed
+    'contractor_logistics': Decimal('0.000267'), # per km contracted vehicle travel
+}
+
+
+def compute_tco2e(emission_data, country='OTHER'):
+    """
+    Convert raw usage quantities stored in an EmissionData record to tCO₂e.
+
+    Args:
+        emission_data: EmissionData instance (raw physical units per field).
+        country:       ISO-2 country code of the facility (for electricity EF).
+
+    Returns:
+        dict with one key per emission field (tCO₂e value) plus 'total'.
+    """
+    electricity_ef = ELECTRICITY_EF.get(country, ELECTRICITY_EF['OTHER'])
+    results = {}
+    for field, factor in EMISSION_FACTORS.items():
+        raw = getattr(emission_data, field, None) or Decimal('0')
+        ef = electricity_ef if field == 'grid_electricity' else (factor or Decimal('0'))
+        results[field] = Decimal(str(raw)) * ef
+    results['total'] = sum(results.values())
+    return results
+
+
+def sum_tco2e(emission_data_qs, country='OTHER'):
+    """Sum tCO₂e across a queryset of EmissionData records for one facility."""
+    return sum(compute_tco2e(ed, country)['total'] for ed in emission_data_qs) or Decimal('0')
+
+
+# ---------------------------------------------------------------------------
 # CARBOMICA intervention library
 # Emission category keys match EmissionData model fields.
 # 'reduces' values are the fractional reduction in that emission category.
@@ -118,10 +183,14 @@ class CarbomicaOptimizer:
     implementation and maintenance costs from the database rather than defaults.
     """
 
-    def __init__(self, facility_interventions, budget, total_baseline_emissions):
+    def __init__(self, facility_interventions, budget, total_baseline_emissions,
+                 category_baselines=None):
         self.interventions = list(facility_interventions)
         self.budget = Decimal(str(budget))
         self.baseline = Decimal(str(total_baseline_emissions)) if total_baseline_emissions else Decimal('1')
+        # Per-category tCO₂e breakdown for the facility (from compute_tco2e).
+        # Used to apply each intervention's reduction to the correct emission slice.
+        self.category_baselines = category_baselines or {}
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -132,6 +201,16 @@ class CarbomicaOptimizer:
 
     def _emission_reduction(self, fi):
         pct = fi.intervention.emission_reduction_percentage or Decimal('0')
+        target_cats = fi.intervention.target_category or ''
+        if target_cats and self.category_baselines:
+            # Apply the % reduction only to the relevant emission category baseline.
+            # E.g. Solar PV (70%) applied to grid_electricity tCO₂e, not total.
+            relevant_baseline = sum(
+                self.category_baselines.get(cat.strip(), Decimal('0'))
+                for cat in target_cats.split(',')
+            )
+            return (pct / 100) * Decimal(str(relevant_baseline))
+        # Fallback: apply to total baseline if no category info
         return (pct / 100) * self.baseline
 
     def _cost_effectiveness(self, fi):

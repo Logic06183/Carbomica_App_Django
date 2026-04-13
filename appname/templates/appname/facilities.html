@@ -2,14 +2,18 @@
 {% load humanize %}
 
 {% block content %}
-<div class="row mb-4 align-items-center">
+<div class="row mb-4 align-items-center"
+     data-intro="Your Facilities Hub — every registered healthcare facility appears here with its emissions profile and linked interventions. This is your main control centre."
+     data-title="Facilities Hub" data-step="1">
     <div class="col">
         <p class="section-label mb-1">CARBOMICA · Facilities</p>
         <h2 class="fw-bold mb-0">Healthcare Facilities</h2>
         <p class="text-muted mt-1 mb-0">Manage facilities and run three-scenario carbon optimisation.</p>
     </div>
     <div class="col-auto">
-        <a href="{% url 'add_facility' %}" class="btn btn-primary">
+        <a href="{% url 'add_facility' %}" class="btn btn-primary"
+           data-intro="Click here to register a new healthcare facility — enter its name, country, type, and annual emission baseline across 10 AKDN categories."
+           data-title="Add a Facility" data-step="2">
             <i class="fas fa-plus me-1"></i>Add facility
         </a>
     </div>
@@ -19,7 +23,9 @@
 <div class="row g-3">
     {% for facility in facilities %}
     <div class="col-md-6">
-        <div class="card h-100" style="border-top: 3px solid var(--hh-blue);">
+        <div class="card h-100" style="border-top: 3px solid var(--hh-blue);"
+             {% if forloop.first %}data-intro="Each card shows the facility's latest emissions (tCO₂e/yr), last reporting period, and number of linked interventions. The blue top border marks an active facility."
+             data-title="Facility Card" data-step="3"{% endif %}>
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-start mb-2">
                     <div>
@@ -35,12 +41,19 @@
                             </span>
                         </div>
                     </div>
-                    <div class="dropdown">
+                    <div class="dropdown"
+                         {% if forloop.first %}data-intro="Quick actions for this facility: upload new emission records, add interventions, run optimisation, or jump to the aggregate dashboard."
+                         data-title="Facility Actions" data-step="4"{% endif %}>
                         <button class="btn btn-light btn-sm dropdown-toggle" type="button"
                                 data-bs-toggle="dropdown" aria-expanded="false">
                             Actions
                         </button>
                         <ul class="dropdown-menu dropdown-menu-end">
+                            <li>
+                                <a class="dropdown-item" href="{% url 'facility_detail' facility.id %}">
+                                    <i class="fas fa-info-circle me-2" style="color:var(--hh-blue);"></i>View profile
+                                </a>
+                            </li>
                             <li>
                                 <a class="dropdown-item" href="{% url 'optimize_interventions' facility.id %}">
                                     <i class="fas fa-bolt me-2" style="color:var(--hh-success);"></i>Run optimisation
@@ -69,21 +82,18 @@
                 <hr class="my-3">
 
                 <div class="row g-3 text-center">
-                    <!-- Emission data -->
-                    {% with latest=facility.emission_sources.first %}
-                    {% if latest and latest.emission_data.exists %}
-                        {% with ed=latest.emission_data.last %}
+                    <!-- Emission data (tCO₂e precomputed in view) -->
+                    {% if facility.has_emission_data %}
                         <div class="col-4">
                             <div class="text-muted small mb-1">Latest emissions</div>
-                            <div class="fw-bold">{{ ed.total_emissions|floatformat:1 }}</div>
+                            <div class="fw-bold">{{ facility.latest_tco2e|floatformat:1 }}</div>
                             <div class="text-muted" style="font-size:.75rem;">tCO₂e</div>
                         </div>
                         <div class="col-4">
                             <div class="text-muted small mb-1">Data period</div>
-                            <div class="fw-bold" style="font-size:.9rem;">{{ ed.date|date:"M Y" }}</div>
+                            <div class="fw-bold" style="font-size:.9rem;">{{ facility.latest_date|date:"M Y" }}</div>
                             <div class="text-muted" style="font-size:.75rem;">last record</div>
                         </div>
-                        {% endwith %}
                     {% else %}
                         <div class="col-8">
                             <div class="text-muted small">
@@ -93,7 +103,6 @@
                             </div>
                         </div>
                     {% endif %}
-                    {% endwith %}
 
                     <!-- Intervention count -->
                     <div class="col-4">
@@ -106,7 +115,9 @@
 
             <div class="card-footer bg-transparent border-top-0 pt-0 pb-3 px-3">
                 <a href="{% url 'optimize_interventions' facility.id %}"
-                   class="btn btn-success btn-sm w-100">
+                   class="btn btn-success btn-sm w-100"
+                   {% if forloop.first %}data-intro="Once you've added emission data and at least one intervention, click here to run the CARBOMICA three-scenario optimisation for this facility."
+                   data-title="Run Optimisation" data-step="5"{% endif %}>
                     <i class="fas fa-bolt me-1"></i>Run optimisation
                 </a>
             </div>

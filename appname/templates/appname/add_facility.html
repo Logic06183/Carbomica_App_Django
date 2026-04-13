@@ -17,7 +17,9 @@
 </div>
 
 <!-- Step indicator -->
-<div class="alert mb-4" style="background:#f0f7ff;border:1px solid rgba(38,141,205,.2);border-radius:10px;">
+<div class="alert mb-4" style="background:#f0f7ff;border:1px solid rgba(38,141,205,.2);border-radius:10px;"
+     data-intro="You're at Step 1 of 3. Fill in facility details and the emission baseline here. Next: link interventions, then run optimisation from the Facilities page."
+     data-title="Step 1 of 3 — Getting Started" data-step="1">
     <div class="row align-items-center g-3">
         <div class="col-auto">
             <span class="step-badge done"><i class="fas fa-hospital" style="font-size:.75rem;"></i></span>
@@ -36,7 +38,9 @@
     <div class="row g-4">
         <!-- ── Left column: facility + source ── -->
         <div class="col-lg-5">
-            <div class="card mb-4">
+            <div class="card mb-4"
+                 data-intro="Enter the facility's display name, a short code (e.g. HOSP001), country, and type. Country and type appear on every card and report, and are used for region-appropriate emission factors."
+                 data-title="Facility Details" data-step="2">
                 <div class="card-header">
                     <i class="fas fa-hospital me-2" style="color:var(--hh-blue);"></i>Facility details
                 </div>
@@ -76,10 +80,12 @@
 
         <!-- ── Right column: emission data ── -->
         <div class="col-lg-7">
-            <div class="card">
+            <div class="card"
+                 data-intro="Enter annual tCO₂e figures across the 10 AKDN emission categories. Use 0 for any category that doesn't apply. Hover the ⓘ icon on each field for scope definitions and data tips."
+                 data-title="Emission Baseline (10 AKDN Categories)" data-step="3">
                 <div class="card-header">
                     <i class="fas fa-smog me-2" style="color:var(--hh-red);"></i>Annual emission baseline
-                    <span class="text-muted small fw-normal ms-2">(tCO₂e per year — enter 0 for unknown categories)</span>
+                    <span class="text-muted small fw-normal ms-2">(raw usage units/yr — app converts to tCO₂e automatically)</span>
                 </div>
                 <div class="card-body">
                     <div class="row g-3">
@@ -186,12 +192,23 @@
                         <!-- Medical inhalers -->
                         <div class="col-6">
                             <label class="form-label fw-semibold small">
-                                Medical inhalers (units)
+                                Medical inhalers (units/yr)
                                 <i class="fas fa-question-circle help-icon"
                                    data-bs-toggle="popover" data-bs-placement="top"
                                    data-bs-content="<strong>Scope 3.</strong> Pressurised metered-dose inhalers (pMDIs) dispensed annually. HFC propellant (typically HFC-134a, GWP ~1,430) is released when the inhaler is used or disposed of. Switching to dry-powder inhalers (DPIs) eliminates this source."></i>
                             </label>
                             {{ emission_data_form.medical_inhalers }}
+                        </div>
+
+                        <!-- Contractor logistics -->
+                        <div class="col-6">
+                            <label class="form-label fw-semibold small">
+                                Contractor logistics (km/yr)
+                                <i class="fas fa-question-circle help-icon"
+                                   data-bs-toggle="popover" data-bs-placement="top"
+                                   data-bs-content="<strong>Scope 3 — Category 4.</strong> Total kilometres driven by contracted third-party vehicles: medical supply deliveries, waste collection, laundry, catering, and other outsourced logistics. Enter annual km across all contracted vehicle movements."></i>
+                            </label>
+                            {{ emission_data_form.contractor_logistics }}
                         </div>
 
                     </div><!-- /row -->
@@ -201,7 +218,9 @@
     </div><!-- /row -->
 
     <div class="mt-4 d-flex gap-3">
-        <button type="submit" class="btn btn-primary">
+        <button type="submit" class="btn btn-primary"
+                data-intro="Save the facility and return to the Facilities list. Next step: go to <strong>Upload data → Facility interventions</strong> to attach intervention options, then run the optimisation."
+                data-title="Save &amp; Continue" data-step="4">
             <i class="fas fa-save me-1"></i>Save facility &amp; emissions
         </button>
         <a href="{% url 'facilities' %}" class="btn btn-outline-secondary">Cancel</a>

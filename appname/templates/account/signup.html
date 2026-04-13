@@ -1,0 +1,15 @@
+{# Regular email/password signup is disabled. Redirect to Google login. #}
+{% load socialaccount %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="refresh" content="0; url={% provider_login_url 'google' %}">
+    <title>Redirecting — CARBOMICA</title>
+</head>
+<body>
+    <p>Redirecting to Google sign-in…
+       <a href="{% provider_login_url 'google' %}">Click here if not redirected.</a>
+    </p>
+</body>
+</html>

@@ -19,7 +19,9 @@
 </div>
 
 <!-- ── KPI strip ── -->
-<div class="row g-3 mb-4">
+<div class="row g-3 mb-4"
+     data-intro="Aggregate statistics across all registered facilities — total facilities, combined emissions (tCO₂e), active interventions linked, and the total investment exposure across all scenarios."
+     data-title="Portfolio KPIs" data-step="1">
     <div class="col-6 col-md-3">
         <div class="card text-center py-3">
             <div class="text-muted small mb-1">Facilities</div>
@@ -50,7 +52,9 @@
 </div>
 
 <!-- ── Charts row ── -->
-<div class="row mb-4 g-3">
+<div class="row mb-4 g-3"
+     data-intro="Three views of your emissions portfolio: <strong>Emissions by source</strong> (donut, shows which category dominates), <strong>Top emitting facilities</strong> (bar, for prioritisation), and <strong>Footprint trend</strong> (line, for tracking progress over time)."
+     data-title="Emissions Charts" data-step="2">
     <div class="col-lg-4">
         <div class="card h-100">
             <div class="card-header">Emissions by source</div>
@@ -80,7 +84,9 @@
 <!-- ── Tables row ── -->
 <div class="row g-3">
     <div class="col-lg-7">
-        <div class="card">
+        <div class="card"
+             data-intro="Emission sources ranked by contribution. Use this to identify the biggest reduction opportunities — the largest sources have the highest potential for tCO₂e savings per intervention."
+             data-title="Emission Source Breakdown" data-step="3">
             <div class="card-header">Emission source breakdown</div>
             <div class="card-body p-0">
                 {% if source_breakdown %}
@@ -125,7 +131,9 @@
     </div>
 
     <div class="col-lg-5">
-        <div class="card">
+        <div class="card"
+             data-intro="Your top 5 facilities by emissions. Click the ⚡ lightning bolt next to any facility to jump straight to its optimisation page and run a new scenario."
+             data-title="Facilities Snapshot" data-step="4">
             <div class="card-header">Facilities snapshot</div>
             <div class="card-body p-0">
                 {% if facilities %}

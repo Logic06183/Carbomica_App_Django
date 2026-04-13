@@ -1,0 +1,191 @@
+{% extends 'appname/base.html' %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <p class="section-label mb-1">Team access</p>
+        <h2 class="mb-0">My Organisation</h2>
+        <p class="text-muted mt-1">
+            Group your colleagues so everyone on the team can view and run optimisations
+            across the same set of facilities.
+        </p>
+    </div>
+</div>
+
+{% if messages %}
+<div class="row mb-3">
+    <div class="col-12">
+        {% for message in messages %}
+        <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<div class="row g-4">
+
+    <!-- ── Owned organisations ─────────────────────────────────────── -->
+    <div class="col-lg-8">
+        {% if owned_orgs %}
+            {% for org in owned_orgs %}
+            <div class="card mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <strong><i class="fas fa-users me-2 text-primary"></i>{{ org.name }}</strong>
+                    <span class="badge bg-primary">{{ org.members.count }} member{{ org.members.count|pluralize }}</span>
+                </div>
+                <div class="card-body">
+
+                    <!-- Members list -->
+                    <h6 class="mb-2">Members</h6>
+                    <ul class="list-group list-group-flush mb-3">
+                        {% for member in org.members.all %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+                            <span>
+                                <i class="fas fa-user-circle text-muted me-2"></i>
+                                {{ member.email }}
+                                {% if member == request.user %}<span class="badge bg-secondary ms-1">you</span>{% endif %}
+                                {% if member == org.created_by %}<span class="badge bg-primary ms-1">owner</span>{% endif %}
+                            </span>
+                            {% if member != request.user %}
+                            <form method="post" class="d-inline">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="remove_member">
+                                <input type="hidden" name="org_id" value="{{ org.id }}">
+                                <input type="hidden" name="user_id" value="{{ member.id }}">
+                                <button type="submit" class="btn btn-sm btn-outline-danger"
+                                        onclick="return confirm('Remove {{ member.email }}?')">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </form>
+                            {% endif %}
+                        </li>
+                        {% endfor %}
+                    </ul>
+
+                    <!-- Add member by email -->
+                    <form method="post" class="d-flex gap-2 mb-4">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="add_member">
+                        <input type="hidden" name="org_id" value="{{ org.id }}">
+                        <input type="email" name="email" class="form-control form-control-sm"
+                               placeholder="colleague@example.com" required>
+                        <button type="submit" class="btn btn-sm btn-outline-primary text-nowrap">
+                            <i class="fas fa-user-plus me-1"></i> Add
+                        </button>
+                    </form>
+
+                    <!-- Facilities in this org -->
+                    <h6 class="mb-2">Facilities in this organisation</h6>
+                    {% if org.facilities.all %}
+                    <ul class="list-group list-group-flush mb-3">
+                        {% for fac in org.facilities.all %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+                            <span>
+                                <i class="fas fa-hospital text-muted me-2"></i>
+                                <a href="{% url 'facility_detail' fac.id %}">{{ fac.display_name }}</a>
+                                <span class="text-muted small ms-1">({{ fac.get_country_display }})</span>
+                            </span>
+                            <form method="post" class="d-inline">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="unassign_facility">
+                                <input type="hidden" name="org_id" value="{{ org.id }}">
+                                <input type="hidden" name="facility_id" value="{{ fac.id }}">
+                                <button type="submit" class="btn btn-sm btn-outline-secondary"
+                                        onclick="return confirm('Remove from org?')">
+                                    <i class="fas fa-unlink"></i>
+                                </button>
+                            </form>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    {% else %}
+                    <p class="text-muted small">No facilities assigned yet.</p>
+                    {% endif %}
+
+                    <!-- Assign an unassigned facility -->
+                    {% if unassigned_facilities %}
+                    <form method="post" class="d-flex gap-2">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="assign_facility">
+                        <input type="hidden" name="org_id" value="{{ org.id }}">
+                        <select name="facility_id" class="form-select form-select-sm" required>
+                            <option value="">— assign a facility —</option>
+                            {% for fac in unassigned_facilities %}
+                            <option value="{{ fac.id }}">{{ fac.display_name }}</option>
+                            {% endfor %}
+                        </select>
+                        <button type="submit" class="btn btn-sm btn-outline-success text-nowrap">
+                            <i class="fas fa-link me-1"></i> Assign
+                        </button>
+                    </form>
+                    {% endif %}
+
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <div class="alert alert-info">
+                You haven't created an organisation yet. Create one on the right to start
+                sharing facilities with your team.
+            </div>
+        {% endif %}
+
+        <!-- Orgs you're a member of (but don't own) -->
+        {% if member_orgs %}
+        <h5 class="mt-2 mb-3">Organisations you're a member of</h5>
+        {% for org in member_orgs %}
+        <div class="card mb-3">
+            <div class="card-body">
+                <strong>{{ org.name }}</strong>
+                <span class="text-muted small ms-2">owned by {{ org.created_by.email }}</span>
+                <div class="mt-2">
+                    {% for fac in org.facilities.all %}
+                    <a href="{% url 'facility_detail' fac.id %}" class="badge bg-light text-dark text-decoration-none me-1">
+                        <i class="fas fa-hospital me-1"></i>{{ fac.display_name }}
+                    </a>
+                    {% empty %}
+                    <span class="text-muted small">No facilities assigned.</span>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+        {% endif %}
+    </div>
+
+    <!-- ── Create new organisation ─────────────────────────────────── -->
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="mb-3"><i class="fas fa-plus-circle me-2 text-success"></i>Create organisation</h5>
+                <p class="text-muted small mb-3">
+                    Give your team a name — e.g. "Mt Darwin District" or "AKHS Kenya".
+                    Invite colleagues by their Google email address after creating it.
+                </p>
+                <form method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="create">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Organisation name</label>
+                        <input type="text" name="org_name" class="form-control"
+                               placeholder="e.g. Mt Darwin District Team" required>
+                    </div>
+                    <button type="submit" class="btn btn-success w-100">
+                        <i class="fas fa-plus me-1"></i> Create
+                    </button>
+                </form>
+
+                <hr class="my-3">
+                <p class="text-muted small mb-0">
+                    <i class="fas fa-lock me-1"></i>
+                    Only organisation members can see shared facilities.
+                    The tool is never open to everyone — data stays within your team.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

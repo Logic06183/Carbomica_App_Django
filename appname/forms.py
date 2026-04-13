@@ -34,35 +34,26 @@ class EmissionDataForm(forms.ModelForm):
     class Meta:
         model = EmissionData
         fields = [
-            'grid_electricity', 'grid_gas', 'bottled_gas', 
+            'grid_electricity', 'grid_gas', 'bottled_gas',
             'liquid_fuel', 'vehicle_fuel_owned', 'business_travel',
-            'anaesthetic_gases', 'refrigeration_gases', 
-            'waste_management', 'medical_inhalers'
+            'anaesthetic_gases', 'refrigeration_gases',
+            'waste_management', 'medical_inhalers', 'contractor_logistics',
         ]
         labels = {
-            'grid_electricity': 'Grid Electricity (kWh)',
-            'grid_gas': 'Grid Gas (m³)',
-            'bottled_gas': 'Bottled Gas (kg)',
-            'liquid_fuel': 'Liquid Fuel (L)',
-            'vehicle_fuel_owned': 'Vehicle Fuel - Owned (L)',
-            'business_travel': 'Business Travel (km)',
-            'anaesthetic_gases': 'Anaesthetic Gases (kg)',
-            'refrigeration_gases': 'Refrigeration Gases (kg)',
-            'waste_management': 'Waste Management (kg)',
-            'medical_inhalers': 'Medical Inhalers (units)'
+            'grid_electricity':    'Grid Electricity (kWh/yr)',
+            'grid_gas':            'Grid Gas (m³/yr)',
+            'bottled_gas':         'Bottled Gas / LPG (kg/yr)',
+            'liquid_fuel':         'Liquid Fuel (litres/yr)',
+            'vehicle_fuel_owned':  'Vehicle Fuel — Owned (litres/yr)',
+            'business_travel':     'Business Travel (km/yr)',
+            'anaesthetic_gases':   'Anaesthetic Gases (kg/yr)',
+            'refrigeration_gases': 'Refrigeration Gases (kg/yr)',
+            'waste_management':    'Waste Management (tonnes/yr)',
+            'medical_inhalers':    'Medical Inhalers — pMDIs (units/yr)',
+            'contractor_logistics': 'Contractor Logistics (km/yr)',
         }
-        widgets = {
-            'grid_electricity': forms.NumberInput(attrs={'class': 'form-control', 'placeholder': '0.00'}),
-            'grid_gas': forms.NumberInput(attrs={'class': 'form-control', 'placeholder': '0.00'}),
-            'bottled_gas': forms.NumberInput(attrs={'class': 'form-control', 'placeholder': '0.00'}),
-            'liquid_fuel': forms.NumberInput(attrs={'class': 'form-control', 'placeholder': '0.00'}),
-            'vehicle_fuel_owned': forms.NumberInput(attrs={'class': 'form-control', 'placeholder': '0.00'}),
-            'business_travel': forms.NumberInput(attrs={'class': 'form-control', 'placeholder': '0.00'}),
-            'anaesthetic_gases': forms.NumberInput(attrs={'class': 'form-control', 'placeholder': '0.00'}),
-            'refrigeration_gases': forms.NumberInput(attrs={'class': 'form-control', 'placeholder': '0.00'}),
-            'waste_management': forms.NumberInput(attrs={'class': 'form-control', 'placeholder': '0.00'}),
-            'medical_inhalers': forms.NumberInput(attrs={'class': 'form-control', 'placeholder': '0.00'})
-        }
+        widgets = {f: forms.NumberInput(attrs={'class': 'form-control', 'placeholder': '0.00'})
+                   for f in fields}
 
 class InterventionForm(forms.ModelForm):
     class Meta:
@@ -120,7 +111,8 @@ class EmissionDataUpdateForm(forms.ModelForm):
         fields = [
             'grid_electricity', 'grid_gas', 'bottled_gas', 'liquid_fuel',
             'vehicle_fuel_owned', 'business_travel', 'anaesthetic_gases',
-            'refrigeration_gases', 'waste_management', 'medical_inhalers'
+            'refrigeration_gases', 'waste_management', 'medical_inhalers',
+            'contractor_logistics',
         ]
         widgets = {field: forms.NumberInput(attrs={'class': 'form-control'})
-                  for field in fields}
+                   for field in fields}

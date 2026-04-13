@@ -40,6 +40,10 @@ ALLOWED_HOSTS = [
     '.run.app',          # Cloud Run preview URLs (*.run.app)
 ]
 
+# Allow Django test client's default HTTP_HOST in development/CI
+if DEBUG or os.getenv('DJANGO_TESTING') == '1':
+    ALLOWED_HOSTS += ['testserver']
+
 # Trust HTTPS from Firebase Hosting and Cloud Run load balancer
 CSRF_TRUSTED_ORIGINS = [
     'https://carbomica-tool.web.app',
@@ -49,6 +53,11 @@ CSRF_TRUSTED_ORIGINS = [
 
 # Cloud Run sets X-Forwarded-Proto; tell Django to trust it for HTTPS detection
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+# Firebase Hosting sets X-Forwarded-Host to the public domain (carbomica-tool.web.app)
+# before proxying to Cloud Run. This ensures Django builds OAuth redirect URIs
+# using the Firebase URL, not the raw Cloud Run URL.
+USE_X_FORWARDED_HOST = True
 
 # Application definition
 
@@ -60,24 +69,38 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "django.contrib.humanize",
+    "django.contrib.sites",
     "appname",
     "crispy_forms",
     "crispy_bootstrap5",
     "whitenoise",
+    # Google / social auth
+    "allauth",
+    "allauth.account",
+    "allauth.socialaccount",
+    "allauth.socialaccount.providers.google",
 ]
+
+SITE_ID = 1
 
 CRISPY_ALLOWED_TEMPLATE_PACKS = "bootstrap5"
 CRISPY_TEMPLATE_PACK = "bootstrap5"
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
-    "whitenoise.middleware.WhiteNoiseMiddleware",  # Add whitenoise
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "allauth.account.middleware.AccountMiddleware",
+]
+
+AUTHENTICATION_BACKENDS = [
+    "django.contrib.auth.backends.ModelBackend",
+    "allauth.account.auth_backends.AuthenticationBackend",
 ]
 
 ROOT_URLCONF = "Carbomica_app.urls"
@@ -181,3 +204,47 @@ SILENCED_SYSTEM_CHECKS = ['security.W004', 'security.W008']
 # https://docs.djangoproject.com/en/5.0/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+
+# ---------------------------------------------------------------------------
+# django-allauth — Google OAuth configuration
+#
+# To activate Google login:
+#   1. Go to console.cloud.google.com → APIs & Services → Credentials
+#   2. Create an OAuth 2.0 Client ID (Web application)
+#   3. Add Authorised redirect URI: https://carbomica-tool.web.app/accounts/google/login/callback/
+#      (and http://localhost:8000/accounts/google/login/callback/ for local dev)
+#   4. Set GOOGLE_CLIENT_ID and GOOGLE_SECRET in your .env file or Cloud Run secrets
+#   5. In Django admin → Sites → change example.com to carbomica-tool.web.app
+#   6. In Django admin → Social Applications → add Google app with above credentials
+# ---------------------------------------------------------------------------
+LOGIN_REDIRECT_URL = '/'
+LOGOUT_REDIRECT_URL = '/accounts/login/'   # land on login page after sign-out
+LOGIN_URL = 'account_login'                # used by @login_required decorator
+
+# ── allauth account settings (Google-only — no email/password) ──
+ACCOUNT_EMAIL_REQUIRED = True
+ACCOUNT_USERNAME_REQUIRED = False
+ACCOUNT_EMAIL_VERIFICATION = 'none'        # skip email confirmation
+ACCOUNT_AUTHENTICATION_METHOD = 'email'
+ACCOUNT_ADAPTER = 'allauth.account.adapter.DefaultAccountAdapter'
+
+# Disable regular username/password signup (Google only)
+ACCOUNT_ALLOW_REGISTRATION = False
+
+# ── Social account settings ──
+SOCIALACCOUNT_AUTO_SIGNUP = True           # auto-create user on first Google login
+SOCIALACCOUNT_LOGIN_ON_GET = True          # skip intermediate confirmation page
+SOCIALACCOUNT_EMAIL_REQUIRED = True        # require email from Google
+
+SOCIALACCOUNT_PROVIDERS = {
+    'google': {
+        'SCOPE': ['profile', 'email'],
+        'AUTH_PARAMS': {'access_type': 'online'},
+        'APP': {
+            'client_id': os.getenv('GOOGLE_CLIENT_ID', ''),
+            'secret':    os.getenv('GOOGLE_SECRET', ''),
+            'key':       '',
+        },
+    }
+}

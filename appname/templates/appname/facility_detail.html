@@ -1,0 +1,362 @@
+{% extends 'appname/base.html' %}
+{% load humanize %}
+
+{% block extra_css %}
+<style>
+    @media print {
+        .hh-navbar, footer, .no-print { display: none !important; }
+        .card { break-inside: avoid; }
+        body { background: white; }
+    }
+    .category-bar { height: 10px; border-radius: 5px; background: var(--hh-blue); }
+    .tco2e-badge {
+        font-size: .78rem; font-weight: 700;
+        background: rgba(38,141,205,.1);
+        color: var(--hh-blue);
+        border: 1px solid rgba(38,141,205,.25);
+        border-radius: 6px;
+        padding: .15rem .5rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- ── Header ── -->
+<div class="row mb-4 align-items-center">
+    <div class="col">
+        <p class="section-label mb-1">CARBOMICA · Facility Profile</p>
+        <h2 class="fw-bold mb-0">{{ facility.display_name }}</h2>
+        <p class="text-muted mt-1 mb-0">
+            {{ facility.get_facility_type_display }} &nbsp;·&nbsp;
+            {{ facility.get_country_display }}
+            {% if facility.created_by %}
+            &nbsp;·&nbsp; <span class="small">Added by {{ facility.created_by.get_short_name|default:facility.created_by.username }}</span>
+            {% endif %}
+        </p>
+    </div>
+    <div class="col-auto d-flex gap-2 no-print">
+        <a href="{% url 'optimize_interventions' facility.id %}" class="btn btn-success btn-sm">
+            <i class="fas fa-bolt me-1"></i>Run optimisation
+        </a>
+        <a href="{% url 'upload_emissions' %}" class="btn btn-outline-primary btn-sm">
+            <i class="fas fa-smog me-1"></i>Update emissions
+        </a>
+        <button onclick="window.print()" class="btn btn-outline-secondary btn-sm">
+            <i class="fas fa-print me-1"></i>Print / PDF
+        </button>
+        <a href="{% url 'facilities' %}" class="btn btn-outline-secondary btn-sm">
+            <i class="fas fa-arrow-left me-1"></i>Back
+        </a>
+    </div>
+</div>
+
+{% if not latest_breakdown %}
+<!-- ── No data state ── -->
+<div class="card mb-4">
+    <div class="card-body text-center py-5">
+        <i class="fas fa-smog fa-3x mb-3" style="color:var(--hh-blue);opacity:.3;"></i>
+        <h5 class="fw-bold mb-2">No emission data recorded yet</h5>
+        <p class="text-muted mb-4">
+            Upload an annual emission baseline to see the full facility profile and run optimisation.
+        </p>
+        <a href="{% url 'upload_emissions' %}" class="btn btn-primary">
+            <i class="fas fa-upload me-1"></i>Upload emission data
+        </a>
+    </div>
+</div>
+{% else %}
+
+<!-- ── KPI strip ── -->
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+        <div class="card text-center py-3">
+            <div class="text-muted small mb-1">Baseline (latest)</div>
+            <div class="fw-bold" style="font-size:1.6rem;color:var(--hh-red);">
+                {{ baseline_tco2e|floatformat:1 }}
+            </div>
+            <div class="text-muted" style="font-size:.75rem;">tCO₂e / yr</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card text-center py-3">
+            <div class="text-muted small mb-1">Potential savings</div>
+            <div class="fw-bold" style="font-size:1.6rem;color:var(--hh-success);">
+                {{ potential_savings_tco2e|floatformat:1 }}
+            </div>
+            <div class="text-muted" style="font-size:.75rem;">tCO₂e if all interventions applied</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card text-center py-3">
+            <div class="text-muted small mb-1">Data periods</div>
+            <div class="fw-bold" style="font-size:1.6rem;color:var(--hh-blue);">
+                {{ records_with_tco2e|length }}
+            </div>
+            <div class="text-muted" style="font-size:.75rem;">emission records</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card text-center py-3">
+            <div class="text-muted small mb-1">Interventions</div>
+            <div class="fw-bold" style="font-size:1.6rem;color:var(--hh-dark);">
+                {{ facility_interventions|length }}
+            </div>
+            <div class="text-muted" style="font-size:.75rem;">linked</div>
+        </div>
+    </div>
+</div>
+
+<!-- ── Charts row ── -->
+<div class="row g-3 mb-4">
+    <div class="col-lg-5">
+        <div class="card h-100">
+            <div class="card-header">Emission profile — by category (tCO₂e)</div>
+            <div class="card-body d-flex align-items-center justify-content-center">
+                <div id="categoryPieChart" style="width:100%;min-height:280px;"></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-7">
+        <div class="card h-100">
+            <div class="card-header">Category breakdown — latest period (tCO₂e)</div>
+            <div class="card-body d-flex align-items-center justify-content-center">
+                <div id="categoryBarChart" style="width:100%;min-height:280px;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── Category breakdown table ── -->
+<div class="row g-3 mb-4">
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-header">
+                <i class="fas fa-smog me-2" style="color:var(--hh-red);"></i>
+                Emission categories — latest period
+                <span class="tco2e-badge ms-2">{{ baseline_tco2e|floatformat:1 }} tCO₂e total</span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0 small">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Category</th>
+                                <th>tCO₂e</th>
+                                <th style="width:35%;">Share</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for name, val in latest_breakdown.breakdown.items %}
+                            {% if val > 0 %}
+                            <tr>
+                                <td class="fw-semibold">{{ name }}</td>
+                                <td>{{ val|floatformat:2 }}</td>
+                                <td>
+                                    {% if baseline_tco2e > 0 %}
+                                    {% widthratio val baseline_tco2e 100 as pct %}
+                                    <div class="d-flex align-items-center gap-2">
+                                        <div class="flex-grow-1" style="background:#eee;border-radius:4px;height:8px;">
+                                            <div class="category-bar" style="width:{{ pct }}%;"></div>
+                                        </div>
+                                        <span class="text-muted" style="min-width:2.5rem;">{{ pct }}%</span>
+                                    </div>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endif %}
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Emission history ── -->
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-header">
+                <i class="fas fa-history me-2" style="color:var(--hh-blue);"></i>
+                Emission history
+            </div>
+            <div class="card-body p-0">
+                {% if records_with_tco2e %}
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0 small">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Period</th>
+                                <th>Total tCO₂e</th>
+                                <th>vs. latest</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for rec in records_with_tco2e %}
+                            <tr {% if forloop.first %}class="table-light fw-semibold"{% endif %}>
+                                <td>{{ rec.date|date:"M Y" }}</td>
+                                <td>{{ rec.total_tco2e|floatformat:1 }}</td>
+                                <td>
+                                    {% if forloop.first %}
+                                    <span class="badge bg-secondary">latest</span>
+                                    {% elif baseline_tco2e > 0 %}
+                                        {% if rec.total_tco2e > baseline_tco2e %}
+                                        <span class="badge" style="background:var(--hh-red);">
+                                            ▲ {{ rec.total_tco2e|floatformat:1 }}
+                                        </span>
+                                        {% else %}
+                                        <span class="badge" style="background:var(--hh-success);">
+                                            ▼ {{ rec.total_tco2e|floatformat:1 }}
+                                        </span>
+                                        {% endif %}
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="empty-state py-4">
+                    <i class="fas fa-history d-block"></i>
+                    <p class="mb-0 small">No historical records yet.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endif %}
+
+<!-- ── Linked interventions ── -->
+<div class="card mb-4">
+    <div class="card-header d-flex align-items-center justify-content-between">
+        <span>
+            <i class="fas fa-leaf me-2" style="color:var(--hh-success);"></i>
+            Linked interventions
+        </span>
+        <a href="{% url 'upload_interventions' %}" class="btn btn-outline-success btn-sm no-print">
+            <i class="fas fa-plus me-1"></i>Add intervention
+        </a>
+    </div>
+    {% if facility_interventions %}
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0 small">
+                <thead class="table-light">
+                    <tr>
+                        <th>Intervention</th>
+                        <th>Impl. cost (USD)</th>
+                        <th>Annual savings</th>
+                        <th>Payback</th>
+                        <th>Emission reduction</th>
+                        <th>SDGs</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for fi in facility_interventions %}
+                    <tr>
+                        <td class="fw-semibold">{{ fi.name }}</td>
+                        <td>${{ fi.implementation_cost|floatformat:0|intcomma }}</td>
+                        <td>${{ fi.annual_savings|floatformat:0|intcomma }}/yr</td>
+                        <td>
+                            {% if fi.payback_yrs %}
+                                {{ fi.payback_yrs|floatformat:1 }} yrs
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ fi.emission_reduction_pct|floatformat:0 }}%</td>
+                        <td>
+                            {% if fi.sdg_goals %}
+                            <span class="text-muted">SDG {{ fi.sdg_goals }}</span>
+                            {% else %}<span class="text-muted">—</span>{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% else %}
+    <div class="card-body">
+        <div class="empty-state py-3">
+            <i class="fas fa-seedling d-block"></i>
+            <p class="mb-3 small">No interventions linked yet. Add from the CARBOMICA library to run optimisation.</p>
+            <a href="{% url 'upload_interventions' %}" class="btn btn-outline-success btn-sm">
+                <i class="fas fa-plus me-1"></i>Add interventions
+            </a>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- ── Methodology note (report-friendly) ── -->
+<div class="card mb-4" style="border-left:4px solid var(--hh-blue);">
+    <div class="card-body py-3">
+        <h6 class="fw-bold mb-2"><i class="fas fa-graduation-cap me-2" style="color:var(--hh-blue);"></i>Emission conversion methodology</h6>
+        <p class="text-muted small mb-1">
+            Raw usage data (kWh, m³, kg, litres, km, units) is converted to tCO₂e using
+            country-specific grid emission factors (IEA 2022) and GHG Protocol / DEFRA 2023 combustion factors.
+        </p>
+        <p class="text-muted small mb-0">
+            <strong>Electricity factors:</strong> Zimbabwe 0.556 kg CO₂e/kWh (coal grid) · South Africa 0.928 kg CO₂e/kWh (Eskom) · Kenya 0.032 kg CO₂e/kWh (renewables-heavy).
+            Anaesthetic gases use a weighted average GWP of 802 (50% isoflurane GWP 510, 30% sevoflurane GWP 130, 20% desflurane GWP 2540 — IPCC AR6).
+        </p>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}{{ block.super }}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const pieData  = JSON.parse('{{ category_chart_data|escapejs }}');
+    const barData  = JSON.parse('{{ bar_chart_data|escapejs }}');
+    const plotCfg  = { displayModeBar: false, responsive: true };
+    const baseLayout = {
+        margin: { t: 20, b: 40, l: 40, r: 20 },
+        plot_bgcolor: 'white', paper_bgcolor: 'white',
+        font: { family: "'Open Sans', sans-serif", size: 12 }
+    };
+    const colours = [
+        '#268dcd','#d33421','#2e8b57','#f0a030','#6c757d',
+        '#17a2b8','#e83e8c','#fd7e14','#20c997','#6610f2','#495057'
+    ];
+
+    // Pie chart
+    const pieEl = document.getElementById('categoryPieChart');
+    if (pieData.labels && pieData.labels.length) {
+        Plotly.newPlot(pieEl, [{
+            type: 'pie', hole: 0.5,
+            labels: pieData.labels,
+            values: pieData.values,
+            textinfo: 'label+percent',
+            marker: { colors: colours },
+            hovertemplate: '%{label}: %{value:.2f} tCO₂e<extra></extra>'
+        }], { ...baseLayout, showlegend: false, margin: { t: 10, b: 10, l: 10, r: 10 } }, plotCfg);
+    } else {
+        pieEl.innerHTML = '<div class="empty-state py-5"><i class="fas fa-chart-pie d-block" style="font-size:2rem;opacity:.2;margin-bottom:.5rem;"></i><p class="small mb-0">No data</p></div>';
+    }
+
+    // Bar chart
+    const barEl = document.getElementById('categoryBarChart');
+    if (barData.labels && barData.labels.length) {
+        Plotly.newPlot(barEl, [{
+            type: 'bar',
+            x: barData.labels,
+            y: barData.values,
+            marker: { color: colours },
+            hovertemplate: '%{x}: %{y:.2f} tCO₂e<extra></extra>'
+        }], {
+            ...baseLayout,
+            xaxis: { automargin: true, tickangle: -30 },
+            yaxis: { title: 'tCO₂e', gridcolor: '#eee' }
+        }, plotCfg);
+    } else {
+        barEl.innerHTML = '<div class="empty-state py-5"><i class="fas fa-chart-bar d-block" style="font-size:2rem;opacity:.2;margin-bottom:.5rem;"></i><p class="small mb-0">No data</p></div>';
+    }
+});
+</script>
+{% endblock %}

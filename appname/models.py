@@ -2,6 +2,29 @@ from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
+from django.contrib.auth.models import User
+
+class Organisation(models.Model):
+    """
+    A team of users who share access to the same set of facilities.
+    E.g. 'Mt Darwin District Team' or 'AKHS Kenya Programme'.
+    All members can view and edit all facilities belonging to the organisation.
+    """
+    name = models.CharField(max_length=200)
+    created_by = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name='owned_organisations'
+    )
+    members = models.ManyToManyField(
+        User, related_name='organisations', blank=True,
+        help_text='Users who can access all facilities in this organisation.'
+    )
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
 
 class Facility(models.Model):
     COUNTRY_CHOICES = [
@@ -24,6 +47,16 @@ class Facility(models.Model):
     country = models.CharField(max_length=10, choices=COUNTRY_CHOICES, default='OTHER')
     facility_type = models.CharField(
         max_length=50, choices=FACILITY_TYPE_CHOICES, default='district_hospital'
+    )
+    created_by = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='facilities',
+        help_text='User who registered this facility (set automatically on login).'
+    )
+    organisation = models.ForeignKey(
+        'Organisation', null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='facilities',
+        help_text='Organisation this facility belongs to. All org members can access it.'
     )
 
     class Meta:
@@ -60,6 +93,10 @@ class EmissionData(models.Model):
     refrigeration_gases = models.DecimalField(default=0.0, max_digits=10, decimal_places=2, validators=[MinValueValidator(0.0)])
     waste_management = models.DecimalField(default=0.0, max_digits=10, decimal_places=2, validators=[MinValueValidator(0.0)])
     medical_inhalers = models.DecimalField(default=0.0, max_digits=10, decimal_places=2, validators=[MinValueValidator(0.0)])
+    contractor_logistics = models.DecimalField(
+        default=0.0, max_digits=10, decimal_places=2, validators=[MinValueValidator(0.0)],
+        help_text='Scope 3 — km travelled by contracted vehicles (supply deliveries, waste collection, etc.)'
+    )
 
     class Meta:
         verbose_name = _('Emission Data')
@@ -70,13 +107,13 @@ class EmissionData(models.Model):
         return f"{self.emission_source.display_name} Emission Data"
 
     def total_emissions(self):
-        total = (
+        """Sum of raw usage values (not tCO₂e). Use compute_tco2e() from modeling.py for converted totals."""
+        return (
             self.grid_electricity + self.grid_gas + self.bottled_gas +
             self.liquid_fuel + self.vehicle_fuel_owned + self.business_travel +
             self.anaesthetic_gases + self.refrigeration_gases +
-            self.waste_management + self.medical_inhalers
+            self.waste_management + self.medical_inhalers + self.contractor_logistics
         )
-        return total
 
 class Intervention(models.Model):
     code_name = models.CharField(max_length=100)
@@ -116,6 +153,12 @@ class Intervention(models.Model):
         blank=True,
         default='',
         help_text="Comma-separated SDG numbers this intervention contributes to (e.g. '3,7,13')"
+    )
+    target_category = models.CharField(
+        max_length=200, blank=True, default='',
+        help_text="Comma-separated EmissionData field names this intervention targets "
+                  "(e.g. 'grid_electricity' or 'grid_electricity,vehicle_fuel_owned'). "
+                  "Used by the optimizer to apply reductions to the correct emission category."
     )
 
     class Meta:

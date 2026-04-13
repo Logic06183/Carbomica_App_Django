@@ -2,7 +2,9 @@
 {% load humanize %}
 
 {% block content %}
-<div class="row mb-4">
+<div class="row mb-4"
+     data-intro="Link interventions from the CARBOMICA library to a facility with your site-specific costs. The optimiser will choose from these — the more you add, the better the optimisation."
+     data-title="Add Facility Interventions" data-step="1">
     <div class="col-12">
         <p class="section-label mb-1">Data entry</p>
         <h2 class="mb-0">Add interventions to a facility</h2>
@@ -29,7 +31,9 @@
 <div class="row g-4">
     <!-- CSV upload -->
     <div class="col-lg-6">
-        <div class="card h-100">
+        <div class="card h-100"
+             data-intro="Bulk upload: one row per intervention. The <strong>intervention_name</strong> column must exactly match a name from the CARBOMICA library (see the list on the right). Download the blank template to start."
+             data-title="Bulk CSV Upload" data-step="2">
             <div class="card-body">
                 <h5 class="mb-3"><i class="fas fa-file-csv me-2 text-success"></i>CSV upload (bulk)</h5>
                 <p class="text-muted small mb-3">
@@ -71,9 +75,15 @@ LED Lighting Upgrade,8500,200,7200,2024-03-15</pre>
 
     <!-- Manual entry -->
     <div class="col-lg-6">
-        <div class="card h-100">
+        <div class="card h-100"
+             data-intro="Add one intervention at a time: select the facility and intervention, then enter site-specific costs. Cost defaults are pre-filled from CARBOMICA D3.7 LMIC estimates — adjust to your local context."
+             data-title="Add Single Intervention" data-step="3">
             <div class="card-body">
                 <h5 class="mb-3"><i class="fas fa-plus-circle me-2 text-primary"></i>Add single intervention</h5>
+                <p class="text-muted small mb-3">
+                    Costs pre-fill from CARBOMICA D3.7 LMIC estimates when you select an intervention.
+                    Adjust to your site context — these directly drive the optimisation ROI calculation.
+                </p>
                 <form method="post">
                     {% csrf_token %}
                     <div class="mb-3">
@@ -87,28 +97,42 @@ LED Lighting Upgrade,8500,200,7200,2024-03-15</pre>
                     </div>
                     <div class="mb-3">
                         <label class="form-label fw-semibold">Intervention</label>
-                        <select name="intervention" class="form-select" required>
+                        <select name="intervention" id="interventionSelect" class="form-select" required>
                             <option value="">— select —</option>
                             {% for i in interventions %}
-                            <option value="{{ i.id }}">{{ i.display_name }}</option>
+                            <option value="{{ i.id }}" data-name="{{ i.display_name }}">
+                                {{ i.display_name }}{% if i.sdg_goals %} · SDG {{ i.sdg_goals }}{% endif %}
+                            </option>
                             {% endfor %}
                         </select>
                     </div>
                     <div class="row g-2">
                         <div class="col-6">
-                            <label class="form-label small fw-semibold">Implementation cost (USD)</label>
-                            <input type="number" name="implementation_cost" class="form-control"
-                                   placeholder="e.g. 85000" min="0" step="0.01" required>
+                            <label class="form-label small fw-semibold">Implementation cost (USD)
+                                <i class="fas fa-question-circle help-icon"
+                                   data-bs-toggle="popover" data-bs-placement="top"
+                                   data-bs-content="Upfront capital cost. Pre-filled with LMIC estimates from HIGH Horizons D3.7 — adjust for your local context and supplier quotes."></i>
+                            </label>
+                            <input type="number" name="implementation_cost" id="implCost" class="form-control"
+                                   placeholder="e.g. 45000" min="0" step="1" required>
                         </div>
                         <div class="col-6">
-                            <label class="form-label small fw-semibold">Annual maintenance cost (USD)</label>
-                            <input type="number" name="maintenance_cost" class="form-control"
-                                   placeholder="e.g. 3500" min="0" step="0.01">
+                            <label class="form-label small fw-semibold">Annual maintenance cost (USD)
+                                <i class="fas fa-question-circle help-icon"
+                                   data-bs-toggle="popover" data-bs-placement="top"
+                                   data-bs-content="Ongoing yearly maintenance. Included in the total cost used for payback and ROI calculations."></i>
+                            </label>
+                            <input type="number" name="maintenance_cost" id="maintCost" class="form-control"
+                                   placeholder="e.g. 1500" min="0" step="1">
                         </div>
                         <div class="col-6">
-                            <label class="form-label small fw-semibold">Annual savings (USD)</label>
-                            <input type="number" name="annual_savings" class="form-control"
-                                   placeholder="e.g. 28000" min="0" step="0.01">
+                            <label class="form-label small fw-semibold">Annual savings (USD)
+                                <i class="fas fa-question-circle help-icon"
+                                   data-bs-toggle="popover" data-bs-placement="top"
+                                   data-bs-content="Combined annual financial saving from reduced energy, consumable, and waste costs. Used to compute payback period and 10-year ROI."></i>
+                            </label>
+                            <input type="number" name="annual_savings" id="annualSavings" class="form-control"
+                                   placeholder="e.g. 8000" min="0" step="1">
                         </div>
                         <div class="col-6">
                             <label class="form-label small fw-semibold">Implementation date (optional)</label>
@@ -124,31 +148,85 @@ LED Lighting Upgrade,8500,200,7200,2024-03-15</pre>
                 </form>
 
                 <hr class="my-4">
-                <h6 class="mb-2">Available interventions in CARBOMICA library</h6>
-                <ul class="list-unstyled small">
-                    {% for i in interventions %}
-                    <li class="mb-1">
-                        <i class="fas fa-leaf text-success me-1"></i>
-                        <strong>{{ i.display_name }}</strong>
-                        {% if i.sdg_goals %}
-                        <span class="text-muted">— SDG {{ i.sdg_goals }}</span>
-                        {% endif %}
-                    </li>
-                    {% endfor %}
-                </ul>
+                <!-- ── Create a custom intervention ──────────────────── -->
+                <h6 class="mb-2"><i class="fas fa-plus-circle me-1 text-success"></i>Create a custom intervention</h6>
+                <p class="text-muted small mb-2">
+                    Don't see the intervention you need? Add it here — it'll appear in the dropdown above.
+                </p>
+                <form method="post" class="mb-3">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="create_custom">
+                    <div class="mb-2">
+                        <input type="text" name="custom_name" class="form-control form-control-sm"
+                               placeholder="e.g. Biogas digester" required>
+                    </div>
+                    <div class="row g-2">
+                        <div class="col-7">
+                            <select name="custom_target_category" class="form-select form-select-sm">
+                                <option value="">— target emission category —</option>
+                                {% for field in emission_fields %}
+                                <option value="{{ field }}">{{ field|title|cut:"_" }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-5">
+                            <input type="number" name="custom_reduction_pct" class="form-control form-control-sm"
+                                   placeholder="Reduction %" min="0" max="100" step="1">
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-outline-success btn-sm mt-2">
+                        <i class="fas fa-plus me-1"></i> Add to library
+                    </button>
+                </form>
+
+                <hr class="my-3">
+                <h6 class="mb-2"
+                    data-intro="All 8 CARBOMICA D3.7 interventions with emission reduction percentages and SDG alignments. The optimiser ranks them by tCO₂e reduced per dollar — add as many as apply to your facility."
+                    data-title="CARBOMICA Intervention Library" data-step="4">CARBOMICA intervention library</h6>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover small mb-0">
+                        <thead class="table-light">
+                            <tr><th>Intervention</th><th>Reduction</th><th>SDGs</th></tr>
+                        </thead>
+                        <tbody>
+                        {% for i in interventions %}
+                        <tr>
+                            <td class="fw-semibold">{{ i.display_name }}</td>
+                            <td>{{ i.emission_reduction_percentage|floatformat:0 }}%</td>
+                            <td><span class="text-muted">{{ i.sdg_goals|default:"—" }}</span></td>
+                        </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
 </div>
 
 <script>
+// Cost defaults from CARBOMICA D3.7 (passed from server)
+const COST_DEFAULTS = {{ cost_defaults|safe }};
+
+document.getElementById('interventionSelect').addEventListener('change', function () {
+    const name = this.options[this.selectedIndex].dataset.name || '';
+    const d = COST_DEFAULTS[name];
+    if (d) {
+        document.getElementById('implCost').value    = d.impl    || '';
+        document.getElementById('maintCost').value   = d.maint   || '';
+        document.getElementById('annualSavings').value = d.savings || '';
+    }
+});
+
 document.getElementById('downloadTemplate').addEventListener('click', function(e) {
     e.preventDefault();
-    const headers = 'intervention_name,implementation_cost,maintenance_cost,annual_savings,implementation_date\n';
+    const headers = 'intervention_name,implementation_cost,maintenance_cost,annual_savings,implementation_date';
     const rows = [
-        {% for i in interventions %}"{{ i.display_name }},0,0,0,\n"{% if not forloop.last %},{% endif %}{% endfor %}
-    ].join('');
-    const blob = new Blob([headers + rows], { type: 'text/csv' });
+        {% for i in interventions %}
+        "{{ i.display_name }},{{ i.energy_savings|default:0 }},0,{{ i.energy_savings|default:0 }},"{% if not forloop.last %},{% endif %}
+        {% endfor %}
+    ].join('\n');
+    const blob = new Blob([headers + '\n' + rows], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
