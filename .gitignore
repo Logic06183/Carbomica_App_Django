@@ -43,3 +43,7 @@ Thumbs.db
 # Environment variables
 .env
 .env.local
+
+# Generated — do not commit
+staticfiles/
+.firebase/
