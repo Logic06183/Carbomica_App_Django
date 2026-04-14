@@ -804,11 +804,18 @@ class CarbomicaOptimizer:
         return (pct / 100) * self.baseline
 
     def _cost_effectiveness(self, fi):
-        """tCO2e reduced per USD — the core CARBOMICA ranking metric."""
+        """tCO2e reduced per USD — the core CARBOMICA ranking metric.
+
+        Zero-cost interventions (e.g. refrigerant swaps with no CapEx, avoiding
+        N₂O) are infinitely cost-effective — they always rank first so the greedy
+        knapsack picks them before any paid intervention.
+        """
         cost = self._total_cost(fi)
         reduction = self._emission_reduction(fi)
         if cost <= 0:
-            return Decimal('0')
+            # Return a sentinel larger than any realistic paid-intervention ratio.
+            # Using reduction itself as a tiebreaker: higher-impact free actions rank first.
+            return Decimal('1e12') + reduction
         return reduction / cost
 
     def _build_result(self, fi, priority):

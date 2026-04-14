@@ -330,8 +330,8 @@ class OptimizerTest(TestCase):
         self.assertIn('LED Lights — 5W Wattage Reduction per Lamp', names)
         self.assertNotIn('Solar PV System — 600 kWp', names)
 
-    def test_scenario3_includes_zero_cost_interventions(self):
-        """Zero-cost interventions are always affordable; they appear in optimised()."""
+    def test_scenario3_ranks_zero_cost_interventions_first(self):
+        """Zero-cost interventions must be selected first in the greedy knapsack."""
         fi_free = self._make_fi('ANAES_NO_AVOID', 0, 0)
         fi_expensive = self._make_fi('SOLAR_100KWP', 80000, 60000)
         category_baselines = {
@@ -339,7 +339,7 @@ class OptimizerTest(TestCase):
             'grid_electricity': Decimal('30'),
         }
         optimizer = self._make_optimizer(
-            [fi_free, fi_expensive],
+            [fi_expensive, fi_free],   # expensive listed first to confirm ordering matters
             budget=500,
             baseline=40,
             category_baselines=category_baselines,
@@ -347,9 +347,12 @@ class OptimizerTest(TestCase):
         result = optimizer.optimised()
         names = [r['intervention_name'] for r in result]
         self.assertIn('Avoid Nitrous Oxide (N\u2082O)', names,
-                      "Zero-cost intervention should always fit within budget")
+                      "Zero-cost intervention must appear in results")
         self.assertNotIn('Solar PV System — 100 kWp', names,
-                         "Expensive intervention should not fit $500 budget")
+                         "Expensive intervention must not fit $500 budget")
+        # Priority 1 should be the free intervention
+        self.assertEqual(result[0]['priority'], 1)
+        self.assertEqual(result[0]['intervention_name'], 'Avoid Nitrous Oxide (N\u2082O)')
 
     def test_emission_reduction_uses_category_baseline(self):
         """_emission_reduction should apply % to the category baseline, not total."""
@@ -374,14 +377,20 @@ class OptimizerTest(TestCase):
         expected = Decimal('95') / 100 * Decimal('100')
         self.assertAlmostEqual(float(reduction), float(expected), places=4)
 
-    def test_cost_effectiveness_zero_for_zero_cost(self):
-        """Current impl returns 0 CE for zero-cost interventions (they still fit via cost<=budget)."""
+    def test_cost_effectiveness_very_high_for_zero_cost(self):
+        """Zero-cost interventions return a sentinel >> any paid-intervention ratio."""
         fi = self._make_fi('ANAES_NO_AVOID', 0, 0)
-        category_baselines = {'anaesthetic_gases': Decimal('10')}
-        optimizer = self._make_optimizer([fi], budget=500, baseline=10,
+        fi_paid = self._make_fi('SOLAR_3KVA', 2500, 1875)
+        category_baselines = {
+            'anaesthetic_gases': Decimal('10'),
+            'grid_electricity': Decimal('30'),
+        }
+        optimizer = self._make_optimizer([fi, fi_paid], budget=5000, baseline=40,
                                          category_baselines=category_baselines)
-        ce = optimizer._cost_effectiveness(fi)
-        self.assertEqual(ce, Decimal('0'))
+        ce_free = optimizer._cost_effectiveness(fi)
+        ce_paid = optimizer._cost_effectiveness(fi_paid)
+        self.assertGreater(ce_free, ce_paid,
+                           "Zero-cost intervention must rank above any paid intervention")
 
     def test_all_three_scenarios_run_without_error(self):
         """Smoke test: running all three scenarios produces lists of dicts."""
