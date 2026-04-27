@@ -464,17 +464,10 @@ document.getElementById('startTourBtn').addEventListener('click', function () {
     }
 });
 
-/* ── Auto-launch global overview on first ever visit (pages with no per-page tour) ── */
-if (!localStorage.getItem('carbomica_tour_done') && !document.querySelector('[data-intro]')) {
-    setTimeout(startTour, 800);
-}
-
-/* ── Auto-launch per-page tour on first visit to each module ── */
-(function () {
-    if (!document.querySelector('[data-intro]')) return;
-    const key = 'tour_' + window.location.pathname.replace(/\W+/g, '_').replace(/^_|_$/g, '');
-    if (!localStorage.getItem(key)) setTimeout(startPageTour, 800);
-})();
+/* Tours are opt-in via the "How it works" button.
+   Auto-launching a forced tour on first visit interstitial-blocks the hero
+   for every cold visitor (funders, peer reviewers, new partners) and drains
+   trust before they've seen the product. The button is the right surface. */
 
 /* ── Copy share URL ── */
 const _copyBtn = document.getElementById('copyUrlBtn');
