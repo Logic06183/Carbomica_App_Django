@@ -4,6 +4,7 @@ import json
 from collections import defaultdict
 
 from django.shortcuts import render, redirect, get_object_or_404
+from django.db import transaction
 from django.db.models import Sum, F, Avg, Count
 from django.db.models.functions import TruncMonth
 from django.contrib import messages
@@ -12,6 +13,15 @@ from decimal import Decimal, InvalidOperation
 from datetime import date
 
 from django.db.models import Q
+
+# Cost defaults for the 59 interventions, keyed by Intervention.code_name.
+# Sourced from CARBOMICA D3.7 Carbon Saving / Cost Saving calculators.
+from appname.management.commands.sync_interventions import DEFAULT_COSTS
+
+# Placeholder = unweighted median of the 8 original D3.7 interventions
+# (impl, maint, savings). Used only when an Intervention has no entry in
+# DEFAULT_COSTS — should be rare if `sync_interventions` is current.
+PLACEHOLDER_COSTS = {'impl': 3000, 'maint': 300, 'savings': 1700}
 
 from .forms import (
     FacilityForm,
@@ -311,6 +321,43 @@ def facilities(request):
     return render(request, 'appname/facilities.html', {'facilities': all_facilities})
 
 
+def _seed_facility_interventions(facility):
+    """
+    Auto-attach every Intervention in the library to a facility, with
+    cost defaults from sync_interventions.DEFAULT_COSTS (keyed by
+    Intervention.code_name). Falls back to PLACEHOLDER_COSTS when an
+    Intervention has no entry in DEFAULT_COSTS.
+
+    Returns (created_count, skipped_count). Idempotent: rows with an
+    existing (facility, intervention) pair are skipped because of the
+    unique constraint added in migration 0011.
+    """
+    before = FacilityIntervention.objects.filter(facility=facility).count()
+    rows = []
+    for intervention in Intervention.objects.all():
+        costs = DEFAULT_COSTS.get(intervention.code_name)
+        if costs:
+            source = 'DEFAULT'
+        else:
+            costs = PLACEHOLDER_COSTS
+            source = 'PLACEHOLDER'
+        rows.append(FacilityIntervention(
+            facility=facility,
+            intervention=intervention,
+            implementation_cost=Decimal(costs['impl']),
+            maintenance_cost=Decimal(costs['maint']),
+            annual_savings=Decimal(costs['savings']),
+            cost_source=source,
+        ))
+    # bulk_create(ignore_conflicts=True) returns the input list regardless of
+    # how many rows actually hit the table, so query before/after for the
+    # accurate count rather than trusting len(created).
+    FacilityIntervention.objects.bulk_create(rows, ignore_conflicts=True)
+    after = FacilityIntervention.objects.filter(facility=facility).count()
+    inserted = after - before
+    return inserted, len(rows) - inserted
+
+
 @login_required
 def add_facility(request):
     if request.method == 'POST':
@@ -318,20 +365,27 @@ def add_facility(request):
         emission_data_form = EmissionDataForm(request.POST)
 
         if facility_form.is_valid() and emission_data_form.is_valid():
-            facility = facility_form.save(commit=False)
-            if request.user.is_authenticated:
+            with transaction.atomic():
+                facility = facility_form.save(commit=False)
                 facility.created_by = request.user
-            facility.save()
-            # Auto-create the emission source — users don't need to configure this
-            emission_source = EmissionSource.objects.create(
-                facility=facility,
-                code_name=f'{facility.code_name}_BASELINE',
-                display_name=f'{facility.display_name} — Baseline',
+                facility.save()
+                # Auto-create the emission source — users don't need to configure this
+                emission_source = EmissionSource.objects.create(
+                    facility=facility,
+                    code_name=f'{facility.code_name}_BASELINE',
+                    display_name=f'{facility.display_name} — Baseline',
+                )
+                emission_data = emission_data_form.save(commit=False)
+                emission_data.emission_source = emission_source
+                emission_data.save()
+                # Seed the facility with every library intervention so the
+                # optimiser has something to work with on first visit.
+                created, _ = _seed_facility_interventions(facility)
+            messages.success(
+                request,
+                f'{facility.display_name} added — {created} interventions pre-attached '
+                f'with default LMIC costs. Override site-specific costs anytime.'
             )
-            emission_data = emission_data_form.save(commit=False)
-            emission_data.emission_source = emission_source
-            emission_data.save()
-            messages.success(request, f'{facility.display_name} added successfully!')
             return redirect('facilities')
     else:
         facility_form = FacilityForm()

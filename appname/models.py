@@ -203,11 +203,27 @@ class FacilityIntervention(models.Model):
         default=0.0,
         help_text="Return on Investment percentage"
     )
+    cost_source = models.CharField(
+        max_length=16,
+        default='USER',
+        choices=[
+            ('USER', 'User-supplied'),
+            ('DEFAULT', 'Library default'),
+            ('PLACEHOLDER', 'Placeholder median'),
+        ],
+        help_text="Provenance of cost values — used for rollback and 'verify before reporting' UI badges.",
+    )
 
     class Meta:
         verbose_name = _('Facility Intervention')
         verbose_name_plural = _('Facility Interventions')
         ordering = ['facility__display_name']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['facility', 'intervention'],
+                name='uniq_facility_intervention',
+            ),
+        ]
 
     def calculate_roi(self):
         """Return computed ROI percentage without mutating the instance."""

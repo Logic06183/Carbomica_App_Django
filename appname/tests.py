@@ -431,3 +431,148 @@ class OptimizerTest(TestCase):
                 Decimal('0'),
                 f"{code} has emission_reduction_percentage=0 — optimizer will ignore it"
             )
+
+
+# ---------------------------------------------------------------------------
+# 5. Phase A1 — facility-creation auto-attach + access control
+#    (CARBOMICA office-hours design 2026-04-27 — "Tinah Unblocker")
+# ---------------------------------------------------------------------------
+
+class AddFacilityAuthTest(TestCase):
+    """Bug 1: anonymous users must not be able to create orphan facilities."""
+
+    def test_anonymous_post_redirects_to_login(self):
+        response = self.client.post('/add-facility/', {
+            'code_name': 'ANON_FAC',
+            'display_name': 'Anonymous Facility',
+            'country': 'ZA',
+            'facility_type': 'health_centre',
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertIn('/accounts/login/', response['Location'])
+        self.assertEqual(Facility.objects.filter(code_name='ANON_FAC').count(), 0)
+
+
+class FacilityAutoAttachTest(TestCase):
+    """Bug 2: every newly-created facility must have all library interventions attached."""
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command('sync_interventions', stdout=StringIO())
+        cls.user = User.objects.create_user('tinah', 'tinah@example.com', 'pw')
+
+    def test_authenticated_post_creates_one_facility_intervention_per_library_entry(self):
+        self.client.login(username='tinah', password='pw')
+        intervention_count = Intervention.objects.count()
+        self.assertGreater(intervention_count, 0, 'Sanity: sync_interventions populated the library')
+
+        response = self.client.post('/add-facility/', {
+            'code_name': 'TINAH_FAC',
+            'display_name': 'Tinah Test Hospital',
+            'country': 'ZW',
+            'facility_type': 'district_hospital',
+            'date': '2026-01-01',
+            'grid_electricity': '100000',
+            'grid_gas': '0',
+            'bottled_gas': '0',
+            'liquid_fuel': '0',
+            'vehicle_fuel_owned': '0',
+            'business_travel': '0',
+            'anaesthetic_gases': '0',
+            'refrigeration_gases': '0',
+            'waste_management': '0',
+            'medical_inhalers': '0',
+            'contractor_logistics': '0',
+        })
+
+        # Form-validation issues would render 200; success is a 302 to facilities.
+        self.assertEqual(response.status_code, 302, f'Expected redirect, got {response.status_code} — {response.content[:200] if response.status_code == 200 else ""}')
+        facility = Facility.objects.get(code_name='TINAH_FAC')
+        self.assertEqual(facility.created_by, self.user)
+        attached = FacilityIntervention.objects.filter(facility=facility).count()
+        self.assertEqual(
+            attached, intervention_count,
+            f'Expected {intervention_count} auto-attached rows, got {attached}'
+        )
+        # cost_source provenance is correctly tagged
+        sources = set(FacilityIntervention.objects.filter(facility=facility)
+                      .values_list('cost_source', flat=True))
+        self.assertTrue(sources.issubset({'DEFAULT', 'PLACEHOLDER'}),
+                        f'Unexpected cost_source values: {sources}')
+
+
+class BackfillIdempotentTest(TestCase):
+    """The backfill command must be safe to run twice."""
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command('sync_interventions', stdout=StringIO())
+        cls.user = User.objects.create_user('craig', 'craig@example.com', 'pw')
+        # Pre-existing facility with NO FacilityInterventions (mirrors the
+        # state the seeded study sites were in before Phase A1 shipped).
+        cls.facility = Facility.objects.create(
+            code_name='LEGACY_FAC',
+            display_name='Legacy Facility (pre-A1)',
+            country='KE',
+            facility_type='central_hospital',
+            created_by=cls.user,
+        )
+
+    def test_backfill_creates_then_is_idempotent(self):
+        self.assertEqual(
+            FacilityIntervention.objects.filter(facility=self.facility).count(),
+            0, 'Sanity: facility starts with zero interventions'
+        )
+        intervention_count = Intervention.objects.count()
+
+        call_command('backfill_facility_interventions', stdout=StringIO())
+        first_run = FacilityIntervention.objects.filter(facility=self.facility).count()
+        self.assertEqual(first_run, intervention_count)
+
+        # Second run must not create duplicates.
+        call_command('backfill_facility_interventions', stdout=StringIO())
+        second_run = FacilityIntervention.objects.filter(facility=self.facility).count()
+        self.assertEqual(second_run, intervention_count, 'Backfill is not idempotent')
+
+
+class FreshFacilityOptimiserTest(TestCase):
+    """The whole point of Phase A1: a freshly-created facility produces a non-empty optimiser result."""
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command('sync_interventions', stdout=StringIO())
+        cls.user = User.objects.create_user('tinah2', 'tinah2@example.com', 'pw')
+
+    def test_optimiser_produces_non_empty_results_for_fresh_facility(self):
+        from appname.modeling import CarbomicaOptimizer
+        from appname.views import _seed_facility_interventions
+
+        facility = Facility.objects.create(
+            code_name='FRESH_FAC',
+            display_name='Fresh Facility',
+            country='ZA',
+            facility_type='district_hospital',
+            created_by=self.user,
+        )
+        _seed_facility_interventions(facility)
+
+        facility_interventions = (
+            FacilityIntervention.objects
+            .select_related('facility', 'intervention')
+            .filter(facility=facility)
+        )
+        # Run the optimiser exactly as views.optimize_interventions does.
+        optimizer = CarbomicaOptimizer(
+            facility_interventions=facility_interventions,
+            budget=Decimal('50000'),
+            total_baseline_emissions=Decimal('1000'),
+            category_baselines={'grid_electricity': Decimal('1000')},
+        )
+        scenarios = optimizer.run_all_scenarios()
+
+        for name in ('full_coverage', 'fixed_budget', 'optimised'):
+            self.assertIn(name, scenarios, f'Missing scenario: {name}')
+            self.assertGreater(
+                len(scenarios[name]['results']), 0,
+                f'Scenario "{name}" returned empty results — Bug 2 is back'
+            )
