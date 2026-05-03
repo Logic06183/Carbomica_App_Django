@@ -120,6 +120,33 @@
 {#  EMPTY STATE — first-time user, no facilities yet                     #}
 {# ══════════════════════════════════════════════════════════════════════ #}
 
+{% if BRAND_EDITION == 'verdex' %}
+<div class="hh-hero mb-5">
+    <div class="row align-items-center">
+        <div class="col-lg-7">
+            <p class="section-label mb-2" style="color:rgba(255,255,255,.6);">GHG Protocol · IPCC AR6 · Grant-application ready</p>
+            <h1 class="fw-bold mb-3" style="font-size:1.9rem;">Welcome to Verdex</h1>
+            <p class="mb-4" style="color:rgba(255,255,255,.8);font-size:.95rem;max-width:480px;">
+                Build a defensible carbon emissions baseline and a budget-aware reduction plan
+                for your organisation — clinical, research, NGO, education, government or business.
+                Three steps to your first optimisation result.
+            </p>
+            <a href="{% url 'add_facility' %}" class="btn btn-light fw-bold me-2">
+                <i class="fas fa-plus me-1"></i>Add your first organisation
+            </a>
+            <button class="btn btn-outline-light" onclick="startTour()">
+                <i class="fas fa-play-circle me-1"></i>Take the tour
+            </button>
+        </div>
+        <div class="col-lg-5 d-none d-lg-flex justify-content-center">
+            <div class="text-white text-center" style="opacity:.6;">
+                <i class="fas fa-leaf fa-5x d-block mb-2"></i>
+                <small>No organisations added yet</small>
+            </div>
+        </div>
+    </div>
+</div>
+{% else %}
 <div class="hh-hero mb-5">
     <div class="row align-items-center">
         <div class="col-lg-7">
@@ -145,6 +172,7 @@
         </div>
     </div>
 </div>
+{% endif %}
 
 <!-- 4-step guide -->
 <div class="row mb-5">
@@ -176,8 +204,10 @@
                     <h6 class="mb-0">Upload emissions</h6>
                 </div>
                 <p class="text-muted small mb-3">
-                    Enter annual emission figures across 10 categories, or upload a CSV
-                    from the AKDN Carbon Management Tool. A blank template is provided.
+                    Enter annual emission figures across 10 GHG-Protocol categories,
+                    or upload a CSV. A blank template is provided. Don't have every number?
+                    Enter <strong>0</strong> for what you don't track yet — the optimiser
+                    works on partial data.
                 </p>
                 <a href="{% url 'upload_emissions' %}" class="btn btn-outline-primary btn-sm w-100">
                     <i class="fas fa-smog me-1"></i>Upload emissions
