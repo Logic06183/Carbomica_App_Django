@@ -469,6 +469,7 @@ class FacilityAutoAttachTest(TestCase):
         response = self.client.post('/add-facility/', {
             'code_name': 'TINAH_FAC',
             'display_name': 'Tinah Test Hospital',
+            'sector': 'clinical',
             'country': 'ZW',
             'facility_type': 'district_hospital',
             'date': '2026-01-01',

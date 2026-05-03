@@ -28,17 +28,64 @@ class Organisation(models.Model):
 
 class Facility(models.Model):
     COUNTRY_CHOICES = [
+        # Sub-Saharan Africa (HIGH Horizons partner countries first)
         ('ZW', 'Zimbabwe'),
         ('ZA', 'South Africa'),
         ('KE', 'Kenya'),
+        ('TZ', 'Tanzania'),
+        ('UG', 'Uganda'),
+        ('NG', 'Nigeria'),
+        ('GH', 'Ghana'),
+        # South Asia
+        ('IN', 'India'),
+        ('BD', 'Bangladesh'),
+        # Donor / OECD (for grant applicants based in donor countries)
+        ('GB', 'United Kingdom'),
+        ('US', 'United States'),
+        ('EU', 'European Union (avg)'),
         ('OTHER', 'Other'),
     ]
+
+    # Wider facility-type catalogue for Verdex commercial edition.
+    # Grouped by sector for legibility — choices are flat values stored in DB.
     FACILITY_TYPE_CHOICES = [
+        # Clinical
         ('district_hospital', 'District Hospital'),
         ('provincial_hospital', 'Provincial Hospital'),
         ('central_hospital', 'Central Hospital'),
         ('health_centre', 'Health Centre / Clinic'),
+        ('community_clinic', 'Community Clinic'),
+        ('specialty_clinic', 'Specialty Clinic (dental, eye, etc.)'),
         ('maternity_unit', 'Maternity Unit'),
+        # Research
+        ('research_office', 'Research Organisation Office'),
+        ('university_lab', 'University Research Lab'),
+        ('university_dept', 'University Department / Faculty'),
+        # NGO
+        ('ngo_office', 'NGO Headquarters Office'),
+        ('ngo_field_office', 'NGO Field Office'),
+        # Education
+        ('school', 'School'),
+        # Government / Authority
+        ('govt_office', 'Government Office'),
+        ('regional_health_authority', 'Regional Health Authority'),
+        ('ministry', 'Ministry / Department'),
+        # Business
+        ('sme_office', 'Small / Medium Business Office'),
+        ('corporate_office', 'Corporate Office'),
+        ('factory', 'Factory / Manufacturing'),
+        ('warehouse', 'Warehouse / Distribution'),
+        # Catch-all
+        ('other', 'Other'),
+    ]
+
+    SECTOR_CHOICES = [
+        ('clinical', 'Clinical / Healthcare'),
+        ('research', 'Research / Academic'),
+        ('ngo', 'NGO / Non-profit'),
+        ('education', 'Education'),
+        ('government', 'Government / Public Authority'),
+        ('business', 'Business / Commercial'),
         ('other', 'Other'),
     ]
 
@@ -47,6 +94,12 @@ class Facility(models.Model):
     country = models.CharField(max_length=10, choices=COUNTRY_CHOICES, default='OTHER')
     facility_type = models.CharField(
         max_length=50, choices=FACILITY_TYPE_CHOICES, default='district_hospital'
+    )
+    sector = models.CharField(
+        max_length=20,
+        choices=SECTOR_CHOICES,
+        default='clinical',
+        help_text='Higher-level grouping. Used for sector-appropriate intervention curation and grant-report templates.',
     )
     created_by = models.ForeignKey(
         User, null=True, blank=True, on_delete=models.SET_NULL,

@@ -47,3 +47,4 @@ Thumbs.db
 # Generated — do not commit
 staticfiles/
 .firebase/
+.gstack/

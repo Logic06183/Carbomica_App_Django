@@ -30,6 +30,17 @@ SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', '(j=&pjt1#^j(005!8vb!)%=^o2#=!76*r0w
 # Debug is off unless explicitly enabled
 DEBUG = os.getenv('DEBUG', 'False') == 'True'
 
+# ── Brand & deploy mode (Verdex commercial vs CARBOMICA EU edition) ──
+# BRAND_NAME drives template variables; flip via env var on the Verdex
+# deployment without touching the CARBOMICA codebase.
+BRAND_NAME = os.getenv('BRAND_NAME', 'CARBOMICA')
+BRAND_EDITION = os.getenv('BRAND_EDITION', 'eu')   # 'eu' | 'verdex'
+
+# DEMO_MODE: when true, bypass Google OAuth and auto-log every visitor in
+# as a shared 'demo' user. For the Verdex preview deployment ONLY — never
+# enable in any environment serving real users.
+DEMO_MODE = os.getenv('DEMO_MODE', 'False') == 'True'
+
 # Localhost + Heroku legacy + Firebase Hosting + Cloud Run
 ALLOWED_HOSTS = [
     'localhost',
@@ -37,6 +48,8 @@ ALLOWED_HOSTS = [
     '.herokuapp.com',
     'carbomica-tool.web.app',
     'carbomica-tool.firebaseapp.com',
+    'verdex-app.web.app',
+    'verdex-app.firebaseapp.com',
     '.run.app',          # Cloud Run preview URLs (*.run.app)
 ]
 
@@ -48,6 +61,8 @@ if DEBUG or os.getenv('DJANGO_TESTING') == '1':
 CSRF_TRUSTED_ORIGINS = [
     'https://carbomica-tool.web.app',
     'https://carbomica-tool.firebaseapp.com',
+    'https://verdex-app.web.app',
+    'https://verdex-app.firebaseapp.com',
     'https://*.run.app',
 ]
 
@@ -96,6 +111,9 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "allauth.account.middleware.AccountMiddleware",
+    # DEMO_MODE auto-login — no-op unless settings.DEMO_MODE is True.
+    # Must be AFTER AuthenticationMiddleware so request.user exists.
+    "appname.middleware.DemoAutoLoginMiddleware",
 ]
 
 AUTHENTICATION_BACKENDS = [
@@ -116,6 +134,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "appname.context_processors.brand",
             ],
         },
     },

@@ -8,6 +8,43 @@
 {#  UNAUTHENTICATED — public landing page                                #}
 {# ══════════════════════════════════════════════════════════════════════ #}
 
+{% if BRAND_EDITION == 'verdex' %}
+<div class="hh-hero mb-5">
+    <div class="row align-items-center">
+        <div class="col-lg-7">
+            <p class="section-label mb-2" style="color:rgba(255,255,255,.6);">GHG Protocol · IPCC AR6 · Grant-application ready</p>
+            <h1 class="fw-bold mb-3" style="font-size:1.9rem;">Carbon emissions reporting<br>any organisation can defend</h1>
+            <p class="mb-4" style="color:rgba(255,255,255,.8);font-size:.95rem;max-width:480px;">
+                Verdex helps research orgs, NGOs, hospitals, universities, government bodies and SMEs
+                produce a defensible carbon emissions baseline and a budget-aware reduction plan you can
+                attach to any funding application.
+            </p>
+            {% if DEMO_MODE %}
+            <a href="{% url 'add_facility' %}"
+               style="background:white;border:none;display:inline-flex;align-items:center;gap:.6rem;font-weight:700;font-size:.95rem;padding:.75rem 1.5rem;border-radius:8px;text-decoration:none;color:#3c4043;box-shadow:0 2px 8px rgba(0,0,0,.15);">
+                <i class="fas fa-flask"></i>
+                Try the demo — no sign-in needed
+            </a>
+            {% else %}
+            <a href="{% provider_login_url 'google' %}"
+               style="background:white;border:none;display:inline-flex;align-items:center;gap:.6rem;font-weight:700;font-size:.95rem;padding:.75rem 1.5rem;border-radius:8px;text-decoration:none;color:#3c4043;box-shadow:0 2px 8px rgba(0,0,0,.15);">
+                <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" style="height:20px;" alt="G">
+                Sign in with Google to get started
+            </a>
+            {% endif %}
+        </div>
+        <div class="col-lg-5 d-none d-lg-flex justify-content-center">
+            <div class="text-white text-center" style="opacity:.7;">
+                <i class="fas fa-leaf fa-5x d-block mb-3"></i>
+                <p class="small mb-0" style="font-size:.85rem;">
+                    7 sectors · 13 countries · 11 emission categories<br>
+                    Methodology built on HIGH Horizons / CARBOMICA
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% else %}
 <div class="hh-hero mb-5">
     <div class="row align-items-center">
         <div class="col-lg-7">
@@ -35,10 +72,11 @@
         </div>
     </div>
 </div>
+{% endif %}
 
 <!-- Feature cards -->
 <div class="row g-3 mb-5">
-    <div class="col-12 mb-1"><p class="section-label">What CARBOMICA does</p></div>
+    <div class="col-12 mb-1"><p class="section-label">What {{ BRAND_NAME }} does</p></div>
     <div class="col-md-3">
         <div class="card h-100 text-center p-3">
             <i class="fas fa-smog fa-2x mb-2" style="color:var(--hh-red);"></i>
@@ -156,7 +194,7 @@
                     <h6 class="mb-0">Add interventions</h6>
                 </div>
                 <p class="text-muted small mb-3">
-                    Choose from the CARBOMICA library (solar PV, low-GWP anaesthetics,
+                    Choose from the {{ BRAND_NAME }} library (solar PV, low-GWP anaesthetics,
                     LED lighting, waste segregation…) and enter site-specific costs.
                 </p>
                 <a href="{% url 'upload_interventions' %}" class="btn btn-outline-primary btn-sm w-100">
@@ -174,7 +212,7 @@
                     <h6 class="mb-0">Run optimisation</h6>
                 </div>
                 <p class="text-muted small mb-3">
-                    Set a budget. CARBOMICA compares three scenarios — full coverage,
+                    Set a budget. {{ BRAND_NAME }} compares three scenarios — full coverage,
                     fixed budget, and optimised greedy knapsack — so you can see
                     the best use of every dollar.
                 </p>
@@ -194,7 +232,7 @@
                 <p class="section-label mb-2">Methodology</p>
                 <h5 class="fw-bold mb-3">How the optimisation works</h5>
                 <p class="text-muted small">
-                    CARBOMICA adapts the <strong>ATOMICA</strong> resource-allocation framework for healthcare sustainability.
+                    {{ BRAND_NAME }} adapts the <strong>ATOMICA</strong> resource-allocation framework for organisational sustainability.
                     Interventions are ranked by <strong>tCO₂e reduced per USD spent</strong> and selected greedily
                     until the budget is exhausted. Three scenarios are compared side-by-side:
                 </p>
@@ -254,7 +292,7 @@
     <div class="row align-items-center">
         <div class="col-lg-7">
             <p class="section-label mb-2" style="color:rgba(255,255,255,.6);">HIGH Horizons · EU Horizon Europe</p>
-            <h2 class="fw-bold mb-3">CARBOMICA Dashboard</h2>
+            <h2 class="fw-bold mb-3">{{ BRAND_NAME }} Dashboard</h2>
             <p class="mb-4" style="color:rgba(255,255,255,.8);font-size:.93rem;">
                 Carbon mitigation resource allocation for health facilities — Kenya, South Africa &amp; Zimbabwe.
             </p>

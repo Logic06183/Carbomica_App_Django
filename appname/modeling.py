@@ -16,9 +16,21 @@ from decimal import Decimal
 # Sources: ZESA (ZW), Eskom standard tariff (ZA), Kenya Power residential (KE)
 # ---------------------------------------------------------------------------
 ELECTRICITY_COSTS = {
-    'ZW': Decimal('0.098'),
-    'ZA': Decimal('0.131'),
-    'KE': Decimal('0.117'),
+    # Sub-Saharan Africa
+    'ZW': Decimal('0.098'),     # ZESA standard tariff
+    'ZA': Decimal('0.131'),     # Eskom standard tariff
+    'KE': Decimal('0.117'),     # Kenya Power residential
+    'TZ': Decimal('0.105'),     # TANESCO commercial avg
+    'UG': Decimal('0.165'),     # UMEME commercial
+    'NG': Decimal('0.082'),     # NESI Band A average
+    'GH': Decimal('0.110'),     # ECG non-residential
+    # South Asia
+    'IN': Decimal('0.085'),     # Indian commercial avg (state-weighted)
+    'BD': Decimal('0.075'),     # BPDB commercial
+    # Donor / OECD
+    'GB': Decimal('0.380'),     # UK commercial 2024 (post-2022 spike)
+    'US': Decimal('0.130'),     # US commercial avg (EIA 2024)
+    'EU': Decimal('0.220'),     # EU commercial avg (Eurostat 2024)
     'DEFAULT': Decimal('0.12'),
 }
 
@@ -45,10 +57,24 @@ DISCOUNT_RATE = Decimal('0.08')
 # ---------------------------------------------------------------------------
 
 ELECTRICITY_EF = {          # tCO₂e per kWh of grid electricity consumed
+    # Sources: IEA 2023 emission factors; Climate Transparency country reports;
+    # national grid operators where available.
+    # Sub-Saharan Africa
     'ZW':    Decimal('0.000556'),   # Zimbabwe  — coal-dominated ZESA grid
     'ZA':    Decimal('0.000928'),   # S. Africa — Eskom ≈ 85 % coal
-    'KE':    Decimal('0.000032'),   # Kenya     — > 90 % renewables
-    'OTHER': Decimal('0.000400'),   # SSA default
+    'KE':    Decimal('0.000032'),   # Kenya     — > 90 % renewables (geothermal + hydro)
+    'TZ':    Decimal('0.000300'),   # Tanzania  — gas + hydro mix
+    'UG':    Decimal('0.000040'),   # Uganda    — > 90 % hydro
+    'NG':    Decimal('0.000395'),   # Nigeria   — gas-heavy
+    'GH':    Decimal('0.000395'),   # Ghana     — gas + hydro
+    # South Asia
+    'IN':    Decimal('0.000810'),   # India     — coal-heavy (CEA 2023)
+    'BD':    Decimal('0.000620'),   # Bangladesh — gas-dominated
+    # Donor / OECD
+    'GB':    Decimal('0.000200'),   # UK        — renewables + gas (DEFRA 2023)
+    'US':    Decimal('0.000390'),   # US        — mixed grid (EPA eGRID 2023)
+    'EU':    Decimal('0.000235'),   # EU avg    — renewables-heavy (EEA 2024)
+    'OTHER': Decimal('0.000400'),   # Catch-all SSA-leaning default
 }
 
 EMISSION_FACTORS = {

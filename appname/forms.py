@@ -7,16 +7,18 @@ from .models import Facility, EmissionData, FacilityIntervention, Intervention, 
 class FacilityForm(forms.ModelForm):
     class Meta:
         model = Facility
-        fields = ['code_name', 'display_name', 'country', 'facility_type']
+        fields = ['code_name', 'display_name', 'sector', 'country', 'facility_type']
         labels = {
-            'code_name': 'Facility Code',
-            'display_name': 'Facility Name',
+            'code_name': 'Code',
+            'display_name': 'Name',
+            'sector': 'Sector',
             'country': 'Country',
-            'facility_type': 'Facility Type',
+            'facility_type': 'Type',
         }
         widgets = {
-            'code_name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g., HOSP001'}),
-            'display_name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g., Central Hospital'}),
+            'code_name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g., HOSP001 / NGO_KE / LAB_42'}),
+            'display_name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g., Mt Darwin Hospital / Climate Research Unit'}),
+            'sector': forms.Select(attrs={'class': 'form-select'}),
             'country': forms.Select(attrs={'class': 'form-select'}),
             'facility_type': forms.Select(attrs={'class': 'form-select'}),
         }

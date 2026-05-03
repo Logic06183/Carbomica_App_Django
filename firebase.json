@@ -1,5 +1,6 @@
 {
   "hosting": {
+    "site": "verdex-app",
     "public": "staticfiles",
     "ignore": [
       "firebase.json",
@@ -18,7 +19,7 @@
       {
         "source": "**",
         "run": {
-          "serviceId": "carbomica-backend",
+          "serviceId": "verdex-backend",
           "region": "us-central1"
         }
       }
