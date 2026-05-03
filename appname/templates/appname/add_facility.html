@@ -88,6 +88,28 @@
                     <span class="text-muted small fw-normal ms-2">(raw usage units/yr — app converts to tCO₂e automatically)</span>
                 </div>
                 <div class="card-body">
+
+                    <!-- Before-you-start checklist -->
+                    <div class="alert mb-3" style="background:#f8fffe;border:1px solid rgba(46,139,87,.25);border-radius:8px;">
+                        <p class="fw-semibold small mb-2" style="color:var(--hh-success);">
+                            <i class="fas fa-clipboard-check me-1"></i>Before you start — what to gather
+                        </p>
+                        <p class="small text-muted mb-2">
+                            The 10 categories below cover one annual reporting year. To fill them all you'll typically need:
+                        </p>
+                        <ul class="small text-muted mb-2 ps-3" style="line-height:1.6;">
+                            <li>12 months of electricity (and gas, if applicable) utility bills</li>
+                            <li>Fuel purchase / generator log records</li>
+                            <li>Waste contractor invoices (annual weight in tonnes)</li>
+                            <li>HVAC service records (refrigerant top-ups)</li>
+                            <li>For clinical sites: pharmacy records for anaesthetic gases &amp; pMDI inhalers</li>
+                            <li>Travel claims and major contractor invoices</li>
+                        </ul>
+                        <p class="small fw-semibold mb-0" style="color:var(--hh-blue);">
+                            Don't have everything? Enter <strong>0</strong> for what you don't track yet — the optimiser works on partial data and you can refine later.
+                        </p>
+                    </div>
+
                     <div class="row g-3">
 
                         <!-- Grid electricity -->
@@ -96,7 +118,7 @@
                                 Grid electricity (kWh)
                                 <i class="fas fa-question-circle help-icon"
                                    data-bs-toggle="popover" data-bs-placement="top"
-                                   data-bs-content="<strong>Scope 2.</strong> Electricity drawn from the national or regional grid. Enter annual consumption in kWh. Source of ~50–60% of hospital emissions in SSA contexts."></i>
+                                   data-bs-content="<strong>Scope 2.</strong> Annual electricity drawn from the grid (kWh). <strong>Source:</strong> sum the kWh from 12 months of electricity utility bills. If unmeasured, estimate floor area × ~80 kWh/m²/yr (clinical) or ~30 (office/research). Largest source for most facilities."></i>
                             </label>
                             {{ emission_data_form.grid_electricity }}
                         </div>
@@ -107,7 +129,7 @@
                                 Grid gas (m³)
                                 <i class="fas fa-question-circle help-icon"
                                    data-bs-toggle="popover" data-bs-placement="top"
-                                   data-bs-content="<strong>Scope 1.</strong> Piped natural gas from the distribution network used for heating, sterilisation or cooking. Enter annual volume in cubic metres."></i>
+                                   data-bs-content="<strong>Scope 1.</strong> Piped natural gas (m³/yr) for heating, sterilisation, cooking. <strong>Source:</strong> annual m³ from gas utility bills. <strong>Most LMIC facilities have no piped gas — enter 0.</strong>"></i>
                             </label>
                             {{ emission_data_form.grid_gas }}
                         </div>
@@ -118,7 +140,7 @@
                                 Bottled gas / LPG (kg)
                                 <i class="fas fa-question-circle help-icon"
                                    data-bs-toggle="popover" data-bs-placement="top"
-                                   data-bs-content="<strong>Scope 1.</strong> Liquid petroleum gas (LPG) in cylinders used for cooking, heating or medical equipment. Enter annual consumption in kilograms."></i>
+                                   data-bs-content="<strong>Scope 1.</strong> LPG cylinders (kg/yr) for cooking, sterilisation, equipment. <strong>Source:</strong> total kg purchased per year (count cylinders × cylinder size, e.g. 12.5 kg). Enter 0 if not used."></i>
                             </label>
                             {{ emission_data_form.bottled_gas }}
                         </div>
@@ -129,7 +151,7 @@
                                 Liquid fuel (litres)
                                 <i class="fas fa-question-circle help-icon"
                                    data-bs-toggle="popover" data-bs-placement="top"
-                                   data-bs-content="<strong>Scope 1.</strong> Diesel, petrol or fuel oil burned on-site in generators, boilers or incinerators. Enter total litres per year."></i>
+                                   data-bs-content="<strong>Scope 1.</strong> Diesel/petrol/fuel oil burned on-site in generators, boilers, incinerators (litres/yr). <strong>Source:</strong> generator fuel logs or fuel-supplier invoices. Combine all on-site combustion fuels into one annual total."></i>
                             </label>
                             {{ emission_data_form.liquid_fuel }}
                         </div>
@@ -140,7 +162,7 @@
                                 Vehicle fuel — owned (litres)
                                 <i class="fas fa-question-circle help-icon"
                                    data-bs-toggle="popover" data-bs-placement="top"
-                                   data-bs-content="<strong>Scope 1.</strong> Fuel used by ambulances, delivery trucks or staff vehicles <em>owned by the facility</em>. Enter litres per year. Excludes hired transport."></i>
+                                   data-bs-content="<strong>Scope 1.</strong> Fuel for facility-owned vehicles (ambulances, fleet vehicles) — litres/yr. <strong>Source:</strong> fleet fuel-card statements or vehicle logbooks. Excludes hired/contracted transport (that's contractor logistics)."></i>
                             </label>
                             {{ emission_data_form.vehicle_fuel_owned }}
                         </div>
@@ -151,7 +173,7 @@
                                 Business travel (km)
                                 <i class="fas fa-question-circle help-icon"
                                    data-bs-toggle="popover" data-bs-placement="top"
-                                   data-bs-content="<strong>Scope 3.</strong> Staff air, rail or hired-vehicle travel not operated by the facility. Enter total kilometres per year across all modes."></i>
+                                   data-bs-content="<strong>Scope 3.</strong> Staff air/rail/taxi/hired-vehicle km per year. <strong>Source:</strong> finance department travel-claim records or expense reports. Research orgs: include conference and fieldwork travel."></i>
                             </label>
                             {{ emission_data_form.business_travel }}
                         </div>
@@ -162,7 +184,7 @@
                                 Anaesthetic gases (kg)
                                 <i class="fas fa-question-circle help-icon"
                                    data-bs-toggle="popover" data-bs-placement="top"
-                                   data-bs-content="<strong>Scope 1.</strong> Halogenated volatile agents released to atmosphere — primarily isoflurane (~500× CO₂), desflurane (~2,500× CO₂), sevoflurane (~130× CO₂). Enter kg consumed per year. Often the single largest clinical emission source."></i>
+                                   data-bs-content="<strong>Scope 1.</strong> Halogenated agents (kg/yr) — sevoflurane (~130× CO₂), isoflurane (~500× CO₂), desflurane (~2,500× CO₂). Often the single largest clinical emission source. <strong>Source:</strong> pharmacy purchase records. <strong>Non-surgical sites: enter 0.</strong>"></i>
                             </label>
                             {{ emission_data_form.anaesthetic_gases }}
                         </div>
@@ -173,7 +195,7 @@
                                 Refrigeration gases (kg)
                                 <i class="fas fa-question-circle help-icon"
                                    data-bs-toggle="popover" data-bs-placement="top"
-                                   data-bs-content="<strong>Scope 1.</strong> HFCs leaked from air conditioning units, cold-chain fridges and medical refrigerators (e.g. R-410A, R-134a). Enter kg of refrigerant lost or replaced per year."></i>
+                                   data-bs-content="<strong>Scope 1.</strong> HFC refrigerants (kg/yr) lost from AC units, cold-chain fridges, medical refrigerators (R-410A, R-134a). <strong>Source:</strong> HVAC service records — look for refrigerant top-up entries. If unmeasured, estimate ~0.5 kg per AC unit per year."></i>
                             </label>
                             {{ emission_data_form.refrigeration_gases }}
                         </div>
@@ -184,7 +206,7 @@
                                 Waste management (tonnes)
                                 <i class="fas fa-question-circle help-icon"
                                    data-bs-toggle="popover" data-bs-placement="top"
-                                   data-bs-content="<strong>Scope 3.</strong> Medical and general waste treated by incineration, autoclaving, landfill or open burning. Enter total tonnes per year. Proper segregation can cut this by up to 80%."></i>
+                                   data-bs-content="<strong>Scope 3.</strong> Total waste hauled offsite (tonnes/yr). <strong>Source:</strong> monthly weight on your waste contractor's invoices. <strong>Estimate:</strong> ~0.5 kg medical waste per inpatient bed-day, or ~0.5 tonnes per office worker per year. Proper segregation can cut this by up to 80%."></i>
                             </label>
                             {{ emission_data_form.waste_management }}
                         </div>
@@ -195,7 +217,7 @@
                                 Medical inhalers (units/yr)
                                 <i class="fas fa-question-circle help-icon"
                                    data-bs-toggle="popover" data-bs-placement="top"
-                                   data-bs-content="<strong>Scope 3.</strong> Pressurised metered-dose inhalers (pMDIs) dispensed annually. HFC propellant (typically HFC-134a, GWP ~1,430) is released when the inhaler is used or disposed of. Switching to dry-powder inhalers (DPIs) eliminates this source."></i>
+                                   data-bs-content="<strong>Scope 3.</strong> pMDI units dispensed per year. Each release HFC-134a propellant (GWP ~1,430) when used or disposed. <strong>Source:</strong> pharmacy dispensing records (units/month × 12). Switching to DPIs eliminates this source. <strong>Non-clinical sites: enter 0.</strong>"></i>
                             </label>
                             {{ emission_data_form.medical_inhalers }}
                         </div>
@@ -206,7 +228,7 @@
                                 Contractor logistics (km/yr)
                                 <i class="fas fa-question-circle help-icon"
                                    data-bs-toggle="popover" data-bs-placement="top"
-                                   data-bs-content="<strong>Scope 3 — Category 4.</strong> Total kilometres driven by contracted third-party vehicles: medical supply deliveries, waste collection, laundry, catering, and other outsourced logistics. Enter annual km across all contracted vehicle movements."></i>
+                                   data-bs-content="<strong>Scope 3 — Category 4.</strong> Km driven by contracted third-party vehicles (medical supplies, waste collection, laundry, catering). <strong>Source:</strong> ask your major contractors for annual distance, or read it off delivery manifests. <strong>If unknown:</strong> estimate as ~10% of own-fleet km."></i>
                             </label>
                             {{ emission_data_form.contractor_logistics }}
                         </div>
