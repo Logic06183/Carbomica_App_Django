@@ -6,7 +6,7 @@ Run this once after deployment, before users try to sign in.
 
 Usage:
     python manage.py setup_google_auth
-    python manage.py setup_google_auth --domain carbomica-tool.web.app
+    python manage.py setup_google_auth --domain verdex-app.web.app
 
 Environment variables required for full setup:
     GOOGLE_CLIENT_ID   — from GCP Console → APIs & Services → Credentials
@@ -14,11 +14,10 @@ Environment variables required for full setup:
 
 How to get Google credentials:
     1. Go to https://console.cloud.google.com/apis/credentials
-       (project: carbomica-tool)
     2. Click "Create Credentials" → "OAuth 2.0 Client ID"
     3. Application type: Web application
     4. Add authorised redirect URI:
-         https://carbomica-tool.web.app/accounts/google/login/callback/
+         https://verdex-app.web.app/accounts/google/login/callback/
          http://localhost:8000/accounts/google/login/callback/   (dev)
     5. Copy Client ID and Client Secret to .env or Cloud Run secrets
 """
@@ -33,8 +32,8 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument(
             '--domain',
-            default=os.getenv('SITE_DOMAIN', 'carbomica-tool.web.app'),
-            help='The public domain of this deployment (default: carbomica-tool.web.app)',
+            default=os.getenv('SITE_DOMAIN', 'verdex-app.web.app'),
+            help='The public domain of this deployment (default: verdex-app.web.app)',
         )
 
     def handle(self, *args, **options):
@@ -43,7 +42,7 @@ class Command(BaseCommand):
         # ── 1. Update the Django Sites record ──────────────────────────────
         site, created = Site.objects.update_or_create(
             id=1,
-            defaults={'domain': domain, 'name': 'CARBOMICA'},
+            defaults={'domain': domain, 'name': 'Verdex'},
         )
         action = 'Created' if created else 'Updated'
         self.stdout.write(self.style.SUCCESS(f'{action} Site: {site.domain}'))
@@ -68,7 +67,6 @@ class Command(BaseCommand):
             self.stdout.write(self.style.HTTP_INFO(
                 'Steps to activate Google login:\n'
                 '  1. Go to https://console.cloud.google.com/apis/credentials\n'
-                '     (project: carbomica-tool)\n'
                 '  2. Create Credentials → OAuth 2.0 Client ID → Web application\n'
                 '  3. Add authorised redirect URI:\n'
                 f'       https://{domain}/accounts/google/login/callback/\n'

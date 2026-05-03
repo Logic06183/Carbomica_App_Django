@@ -1,13 +1,13 @@
 """
-CARBOMICA — CARBOn Mitigation Intervention for healthCare fAcilities
-Optimization engine aligned with the HIGH Horizons project methodology.
+Verdex — Carbon emissions optimisation engine.
 
-Reference: HIGH Horizons D3.7 — Report on the tool for modelling of
-alternative mitigation interventions (DOI: 10.5281/zenodo.12730527)
+Methodology aligned with GHG Protocol Corporate Standard, IPCC AR6
+emission factors, IEA country grid factors, DEFRA conversion factors,
+and the HIGH Horizons D3.7 intervention catalogue
+(DOI: 10.5281/zenodo.12730527).
 
-Partners: Wits Planetary Health (ZA), CeSHHAR (ZW), Burnet Institute (AU),
-          Aga Khan Health Service Kenya (KE)
-Funded by: European Union — Horizon Europe Grant No. 101057843 (HIGH Horizons)
+Three-scenario optimisation: full coverage, fixed budget, optimised
+(greedy knapsack ranking by tCO₂e reduced per USD).
 """
 from decimal import Decimal
 
@@ -120,10 +120,10 @@ def sum_tco2e(emission_data_qs, country='OTHER'):
 
 
 # ---------------------------------------------------------------------------
-# CARBOMICA intervention library
+# Intervention library
 # Emission category keys match EmissionData model fields.
 # 'reduces' values are the fractional reduction in that emission category.
-# Sourced from CARBOMICA D3.7, Mt Darwin Hospital and AKHS Mombasa case studies.
+# Sourced from HIGH Horizons D3.7, Mt Darwin Hospital and AKHS Mombasa case studies.
 # ---------------------------------------------------------------------------
 INTERVENTION_LIBRARY = {
     # ── Legacy / generic entries (keep for backward compatibility) ────────────
@@ -200,7 +200,7 @@ INTERVENTION_LIBRARY = {
     },
 
     # ── 1. LED Lights — wattage-specific ─────────────────────────────────────
-    # Source: CARBOMICA Carbon Saving Calculator (ZW ZESA EF = 0.883 kgCO2e/kWh)
+    # Source: HIGH Horizons D3.7 Carbon Saving Calculator (ZW ZESA EF = 0.883 kgCO2e/kWh)
     'LED_WATT_5': {
         'display_name': 'LED Lights — 5W Wattage Reduction per Lamp',
         'reduces': {'grid_electricity': Decimal('0.20')},
@@ -208,7 +208,7 @@ INTERVENTION_LIBRARY = {
         'notes': (
             '25W → 20W lamp swap. Saves 21.9 kWh/lamp/year = 19.3 kgCO₂e/lamp/year. '
             'Default batch 100 lamps — CapEx US$6/lamp, maint US$0.18/lamp, '
-            'annual cost saving US$920. Source: CARBOMICA D3.7 Carbon Saving Calculator.'
+            'annual cost saving US$920. Source: HIGH Horizons D3.7 Carbon Saving Calculator.'
         ),
     },
     'LED_WATT_10': {
@@ -218,7 +218,7 @@ INTERVENTION_LIBRARY = {
         'notes': (
             '20W → 10W lamp swap. Saves 43.8 kWh/lamp/year = 13.9 kgCO₂e/lamp/year. '
             'Default batch 20 lamps — CapEx US$2/lamp, maint US$0.06/lamp, '
-            'annual cost saving US$184. Source: CARBOMICA D3.7.'
+            'annual cost saving US$184. Source: HIGH Horizons D3.7.'
         ),
     },
     'LED_WATT_20': {
@@ -228,7 +228,7 @@ INTERVENTION_LIBRARY = {
         'notes': (
             '25W → 5W lamp swap. Saves 87.6 kWh/lamp/year = 77.4 kgCO₂e/lamp/year. '
             'Default batch 20 lamps — CapEx US$8/lamp, maint US$0.24/lamp, '
-            'annual cost saving US$368. Source: CARBOMICA D3.7.'
+            'annual cost saving US$368. Source: HIGH Horizons D3.7.'
         ),
     },
     'LED_WATT_50': {
@@ -238,7 +238,7 @@ INTERVENTION_LIBRARY = {
         'notes': (
             '100W → 50W lamp swap. Saves 219 kWh/lamp/year = 193.4 kgCO₂e/lamp/year. '
             'Default batch 20 lamps — CapEx US$8/lamp, maint US$0.24/lamp, '
-            'annual cost saving US$920. Source: CARBOMICA D3.7.'
+            'annual cost saving US$920. Source: HIGH Horizons D3.7.'
         ),
     },
     'LED_WATT_95': {
@@ -248,7 +248,7 @@ INTERVENTION_LIBRARY = {
         'notes': (
             '100W → 5W lamp swap. Saves 416.1 kWh/lamp/year = 367.4 kgCO₂e/lamp/year. '
             'Default batch 20 lamps — CapEx US$10/lamp, maint US$0.30/lamp, '
-            'annual cost saving US$1,748. Source: CARBOMICA D3.7.'
+            'annual cost saving US$1,748. Source: HIGH Horizons D3.7.'
         ),
     },
 
@@ -260,7 +260,7 @@ INTERVENTION_LIBRARY = {
         'notes': (
             '3 kVA / 3 kWp system generates ~4,903 kWh/year (ZW). '
             'Saves 1,330.7 kgCO₂e/year. CapEx US$2,500, maint US$1,875/year, '
-            'annual cost saving US$1,555. Source: CARBOMICA D3.7 Cost Calculator.'
+            'annual cost saving US$1,555. Source: HIGH Horizons D3.7 Cost Calculator.'
         ),
     },
     'SOLAR_5KVA': {
@@ -270,7 +270,7 @@ INTERVENTION_LIBRARY = {
         'notes': (
             '5 kVA / 5 kWp system generates ~8,172 kWh/year (ZW). '
             'Saves 2,217.9 kgCO₂e/year. CapEx US$4,000, maint US$3,000/year, '
-            'annual cost saving US$2,136. Source: CARBOMICA D3.7.'
+            'annual cost saving US$2,136. Source: HIGH Horizons D3.7.'
         ),
     },
     'SOLAR_10KVA': {
@@ -280,7 +280,7 @@ INTERVENTION_LIBRARY = {
         'notes': (
             '10 kVA / 10 kWp system generates ~16,344 kWh/year (ZW). '
             'Saves 13,678.1 kgCO₂e/year. CapEx US$11,000, maint US$8,250/year, '
-            'annual cost saving US$3,362. Source: CARBOMICA D3.7.'
+            'annual cost saving US$3,362. Source: HIGH Horizons D3.7.'
         ),
     },
     'SOLAR_100KWP': {
@@ -290,7 +290,7 @@ INTERVENTION_LIBRARY = {
         'notes': (
             '100 kWp system generates ~170,558 kWh/year (ZW). '
             'Saves 142,825.3 kgCO₂e/year. CapEx US$80,000, maint US$60,000/year, '
-            'annual cost saving US$30,917. Source: CARBOMICA D3.7.'
+            'annual cost saving US$30,917. Source: HIGH Horizons D3.7.'
         ),
     },
     'SOLAR_150KWP': {
@@ -300,7 +300,7 @@ INTERVENTION_LIBRARY = {
         'notes': (
             '150 kWp system generates ~255,837 kWh/year (ZW). '
             'Saves 214,237.9 kgCO₂e/year. CapEx US$153,000, maint US$114,750/year, '
-            'annual cost saving US$43,716. Source: CARBOMICA D3.7.'
+            'annual cost saving US$43,716. Source: HIGH Horizons D3.7.'
         ),
     },
     'SOLAR_600KWP': {
@@ -310,7 +310,7 @@ INTERVENTION_LIBRARY = {
         'notes': (
             '600 kWp system generates ~1,023,000 kWh/year (ZW). '
             'Saves 856,660.2 kgCO₂e/year. CapEx US$612,000, maint US$459,000/year, '
-            'annual cost saving US$172,690. Source: CARBOMICA D3.7.'
+            'annual cost saving US$172,690. Source: HIGH Horizons D3.7.'
         ),
     },
 
@@ -323,7 +323,7 @@ INTERVENTION_LIBRARY = {
             '6 m³ digester produces ~2.0 m³ biogas/day (43.0 kg/month, 516 kg/year). '
             'Replaces LPG; saves 1,516.6 kgCO₂e/year. '
             'CapEx US$2,000, maint US$300/year, annual cost saving US$526. '
-            'Source: CARBOMICA D3.7.'
+            'Source: HIGH Horizons D3.7.'
         ),
     },
     'BIOGAS_20M3': {
@@ -334,7 +334,7 @@ INTERVENTION_LIBRARY = {
             '20 m³ digester produces ~7.0 m³ biogas/day (151.2 kg/month, 1,815 kg/year). '
             'Replaces LPG; saves 5,331.4 kgCO₂e/year. '
             'CapEx US$5,000, maint US$750/year, annual cost saving US$2,316. '
-            'Source: CARBOMICA D3.7.'
+            'Source: HIGH Horizons D3.7.'
         ),
     },
 
@@ -347,7 +347,7 @@ INTERVENTION_LIBRARY = {
             'R1234yf GWP < 1 vs R134a GWP 1,430. '
             'Saves 1,429 kgCO₂e per kg swapped. Used in automotive A/C. '
             'Per 20 kg batch: CapEx US$0, maint US$0, cost saving –US$300 (HFO premium). '
-            'Source: CARBOMICA D3.7.'
+            'Source: HIGH Horizons D3.7.'
         ),
     },
     'REFRIG_R134A_R1234ZE': {
@@ -357,7 +357,7 @@ INTERVENTION_LIBRARY = {
         'notes': (
             'R1234ze GWP < 1 vs R134a GWP 1,430. '
             'Saves 1,429 kgCO₂e per kg swapped. Used in chillers / commercial refrigeration. '
-            'Per 20 kg batch: cost saving US$400. Source: CARBOMICA D3.7.'
+            'Per 20 kg batch: cost saving US$400. Source: HIGH Horizons D3.7.'
         ),
     },
     'REFRIG_R410A_R1234ZE': {
@@ -367,7 +367,7 @@ INTERVENTION_LIBRARY = {
         'notes': (
             'R1234ze GWP < 1 vs R410a GWP 2,088. '
             'Saves 2,087 kgCO₂e per kg swapped. Used in A/C and heat pumps. '
-            'Per 20 kg batch: cost saving –US$200 (HFO premium). Source: CARBOMICA D3.7.'
+            'Per 20 kg batch: cost saving –US$200 (HFO premium). Source: HIGH Horizons D3.7.'
         ),
     },
     'REFRIG_R410A_R32': {
@@ -377,7 +377,7 @@ INTERVENTION_LIBRARY = {
         'notes': (
             'R32 GWP 675 vs R410a GWP 2,088. '
             'Saves 1,413 kgCO₂e per kg swapped. Modern A/C systems. '
-            'Per 20 kg batch: cost saving US$700. Source: CARBOMICA D3.7.'
+            'Per 20 kg batch: cost saving US$700. Source: HIGH Horizons D3.7.'
         ),
     },
     'REFRIG_R404A_R448A': {
@@ -387,7 +387,7 @@ INTERVENTION_LIBRARY = {
         'notes': (
             'R448A GWP ≈ 1,273 vs R404A GWP 3,922. '
             'Saves 2,649 kgCO₂e per kg swapped. Commercial refrigeration. '
-            'Per 20 kg batch: cost saving US$300. Source: CARBOMICA D3.7.'
+            'Per 20 kg batch: cost saving US$300. Source: HIGH Horizons D3.7.'
         ),
     },
     'REFRIG_R22_R290': {
@@ -397,7 +397,7 @@ INTERVENTION_LIBRARY = {
         'notes': (
             'R290 (Propane) GWP 3 vs R22 GWP 1,810. '
             'Saves 1,807 kgCO₂e per kg swapped. '
-            'Default 50 kg batch — cost saving US$5,250. Source: CARBOMICA D3.7.'
+            'Default 50 kg batch — cost saving US$5,250. Source: HIGH Horizons D3.7.'
         ),
     },
     'REFRIG_R32_R744': {
@@ -407,7 +407,7 @@ INTERVENTION_LIBRARY = {
         'notes': (
             'R744 (CO₂) GWP 1 vs R32 GWP 675. '
             'Saves 674 kgCO₂e per kg swapped. '
-            'Default 10 kg batch — cost –US$600 (CO₂ system premium). Source: CARBOMICA D3.7.'
+            'Default 10 kg batch — cost –US$600 (CO₂ system premium). Source: HIGH Horizons D3.7.'
         ),
     },
     'REFRIG_R403A_R407A': {
@@ -417,7 +417,7 @@ INTERVENTION_LIBRARY = {
         'notes': (
             'R407A GWP ≈ 1,774 vs R403A GWP 4,032. '
             'Saves 2,258 kgCO₂e per kg swapped. '
-            'Default 20 kg batch — cost saving US$700. Source: CARBOMICA D3.7.'
+            'Default 20 kg batch — cost saving US$700. Source: HIGH Horizons D3.7.'
         ),
     },
 
@@ -430,7 +430,7 @@ INTERVENTION_LIBRARY = {
             'Sevoflurane GWP 130 vs isoflurane GWP 510. '
             'Saves 380 kgCO₂e per kg agent switched. '
             'Cost saving –US$400/year (sevoflurane costs more per litre). '
-            'Source: CARBOMICA D3.7.'
+            'Source: HIGH Horizons D3.7.'
         ),
     },
 
@@ -442,7 +442,7 @@ INTERVENTION_LIBRARY = {
         'notes': (
             'N₂O GWP 265; eliminating use saves 298 kgCO₂e per kg avoided. '
             'Per 20-unit batch — cost saving US$200. '
-            'Source: CARBOMICA D3.7.'
+            'Source: HIGH Horizons D3.7.'
         ),
     },
 
@@ -454,7 +454,7 @@ INTERVENTION_LIBRARY = {
         'notes': (
             'Salbutamol MDI emits ~19 kgCO₂e per 200-dose device; DPI ≈ 0. '
             'Saves 19 kgCO₂e per device. '
-            'Per 100 devices: cost –US$500 (DPIs cost more). Source: CARBOMICA D3.7.'
+            'Per 100 devices: cost –US$500 (DPIs cost more). Source: HIGH Horizons D3.7.'
         ),
     },
     'INHALER_SMI': {
@@ -464,7 +464,7 @@ INTERVENTION_LIBRARY = {
         'notes': (
             'Salbutamol MDI emits ~19 kgCO₂e per device; SMI ≈ 0. '
             'Saves 19 kgCO₂e per device. '
-            'Per 20 devices: cost –US$300 (SMIs cost more). Source: CARBOMICA D3.7.'
+            'Per 20 devices: cost –US$300 (SMIs cost more). Source: HIGH Horizons D3.7.'
         ),
     },
 
@@ -477,7 +477,7 @@ INTERVENTION_LIBRARY = {
             'Replaces conventional 700 kWh/year unit with 375 kWh model. '
             'Saves 325 kWh/year = 286.98 kgCO₂e/year. '
             'CapEx US$350, maint US$52.50/year, annual cost saving US$56. '
-            'Source: CARBOMICA D3.7.'
+            'Source: HIGH Horizons D3.7.'
         ),
     },
     'FREEZER_UPRIGHT_M': {
@@ -488,7 +488,7 @@ INTERVENTION_LIBRARY = {
             'Replaces conventional 900 kWh/year unit with 425 kWh model. '
             'Saves 475 kWh/year = 419.4 kgCO₂e/year. '
             'CapEx US$700, maint US$105/year, annual cost saving US$77. '
-            'Source: CARBOMICA D3.7.'
+            'Source: HIGH Horizons D3.7.'
         ),
     },
     'FREEZER_UPRIGHT_L': {
@@ -499,7 +499,7 @@ INTERVENTION_LIBRARY = {
             'Replaces conventional 1,100 kWh/year unit with 475 kWh model. '
             'Saves 625 kWh/year = 551.9 kgCO₂e/year. '
             'CapEx US$1,000, maint US$150/year, annual cost saving US$81. '
-            'Source: CARBOMICA D3.7.'
+            'Source: HIGH Horizons D3.7.'
         ),
     },
     'FREEZER_DEEP_S': {
@@ -510,7 +510,7 @@ INTERVENTION_LIBRARY = {
             'Replaces conventional 500 kWh/year unit with 275 kWh model. '
             'Saves 225 kWh/year = 198.7 kgCO₂e/year. '
             'CapEx US$400, maint US$60/year, annual cost saving US$49. '
-            'Source: CARBOMICA D3.7.'
+            'Source: HIGH Horizons D3.7.'
         ),
     },
     'FREEZER_DEEP_M': {
@@ -521,7 +521,7 @@ INTERVENTION_LIBRARY = {
             'Replaces conventional 700 kWh/year unit with 325 kWh model. '
             'Saves 375 kWh/year = 331.1 kgCO₂e/year. '
             'CapEx US$600, maint US$90/year, annual cost saving US$57. '
-            'Source: CARBOMICA D3.7.'
+            'Source: HIGH Horizons D3.7.'
         ),
     },
     'FREEZER_DEEP_L': {
@@ -532,7 +532,7 @@ INTERVENTION_LIBRARY = {
             'Replaces conventional 900 kWh/year unit with 375 kWh model. '
             'Saves 525 kWh/year = 463.6 kgCO₂e/year. '
             'CapEx US$900, maint US$135/year, annual cost saving US$61. '
-            'Source: CARBOMICA D3.7.'
+            'Source: HIGH Horizons D3.7.'
         ),
     },
 
@@ -545,7 +545,7 @@ INTERVENTION_LIBRARY = {
             'Inverter window unit: 1,000 kWh/year vs 1,750 kWh baseline. '
             'Saves 750 kWh/year = 662.3 kgCO₂e/year. '
             'CapEx US$800, maint US$120/year, annual cost saving US$130. '
-            'Source: CARBOMICA D3.7.'
+            'Source: HIGH Horizons D3.7.'
         ),
     },
     'AC_WINDOW_2TON': {
@@ -556,7 +556,7 @@ INTERVENTION_LIBRARY = {
             'Inverter window unit: 2,000 kWh/year vs 3,750 kWh baseline. '
             'Saves 1,750 kWh/year = 1,545.3 kgCO₂e/year. '
             'CapEx US$1,200, maint US$180/year, annual cost saving US$326. '
-            'Source: CARBOMICA D3.7.'
+            'Source: HIGH Horizons D3.7.'
         ),
     },
     'AC_SPLIT_1TON': {
@@ -567,7 +567,7 @@ INTERVENTION_LIBRARY = {
             'Inverter split unit: 1,000 kWh/year vs 1,750 kWh baseline. '
             'Saves 750 kWh/year = 662.3 kgCO₂e/year. '
             'CapEx US$800, maint US$120/year, annual cost saving US$130. '
-            'Source: CARBOMICA D3.7.'
+            'Source: HIGH Horizons D3.7.'
         ),
     },
     'AC_SPLIT_2TON': {
@@ -578,7 +578,7 @@ INTERVENTION_LIBRARY = {
             'Inverter split unit: 2,000 kWh/year vs 3,750 kWh baseline. '
             'Saves 1,750 kWh/year = 1,545.3 kgCO₂e/year. '
             'CapEx US$1,200, maint US$180/year, annual cost saving US$326. '
-            'Source: CARBOMICA D3.7.'
+            'Source: HIGH Horizons D3.7.'
         ),
     },
     'AC_SPLIT_3TON': {
@@ -589,7 +589,7 @@ INTERVENTION_LIBRARY = {
             'Inverter split unit: 2,500 kWh/year vs 5,250 kWh baseline. '
             'Saves 2,750 kWh/year = 2,428.3 kgCO₂e/year. '
             'CapEx US$2,000, maint US$300/year, annual cost saving US$509. '
-            'Source: CARBOMICA D3.7.'
+            'Source: HIGH Horizons D3.7.'
         ),
     },
     'AC_CENTRAL_5TON': {
@@ -600,7 +600,7 @@ INTERVENTION_LIBRARY = {
             'Inverter central unit: 4,250 kWh/year vs 7,000 kWh baseline. '
             'Saves 2,750 kWh/year = 2,428.3 kgCO₂e/year. '
             'CapEx US$6,000, maint US$900/year, annual cost saving US$371. '
-            'Source: CARBOMICA D3.7.'
+            'Source: HIGH Horizons D3.7.'
         ),
     },
 
@@ -613,7 +613,7 @@ INTERVENTION_LIBRARY = {
             'With thermostat: 950 kWh/year vs 1,750 kWh baseline. '
             'Saves 800 kWh/year = 706.4 kgCO₂e/year. '
             'CapEx US$150, maint US$22.50/year, annual cost saving US$164. '
-            'Source: CARBOMICA D3.7.'
+            'Source: HIGH Horizons D3.7.'
         ),
     },
     'HEATER_INFRARED_1KW': {
@@ -624,7 +624,7 @@ INTERVENTION_LIBRARY = {
             'With programmable thermostat: 750 kWh/year vs 1,500 kWh baseline. '
             'Saves 750 kWh/year = 662.3 kgCO₂e/year. '
             'CapEx US$250, maint US$37.50/year, annual cost saving US$296. '
-            'Source: CARBOMICA D3.7.'
+            'Source: HIGH Horizons D3.7.'
         ),
     },
     'HEATER_OIL_RADIATOR': {
@@ -635,7 +635,7 @@ INTERVENTION_LIBRARY = {
             'With ECO mode: 1,050 kWh/year vs 2,000 kWh baseline. '
             'Saves 950 kWh/year = 838.9 kgCO₂e/year. '
             'CapEx US$200, maint US$30/year, annual cost saving US$188. '
-            'Source: CARBOMICA D3.7.'
+            'Source: HIGH Horizons D3.7.'
         ),
     },
     'HEATER_BASEBOARD': {
@@ -646,7 +646,7 @@ INTERVENTION_LIBRARY = {
             'With built-in thermostat: 1,050 kWh/year vs 2,150 kWh baseline. '
             'Saves 1,100 kWh/year = 971.3 kgCO₂e/year. '
             'CapEx US$200, maint US$30/year, annual cost saving US$372. '
-            'Source: CARBOMICA D3.7.'
+            'Source: HIGH Horizons D3.7.'
         ),
     },
     'HEATER_CENTRAL_FURNACE': {
@@ -657,7 +657,7 @@ INTERVENTION_LIBRARY = {
             'Variable speed + zoning: 9,500 kWh/year vs 18,000 kWh baseline. '
             'Saves 8,500 kWh/year = 7,505.5 kgCO₂e/year. '
             'CapEx US$6,000, maint US$900/year, annual cost saving US$1,425. '
-            'Source: CARBOMICA D3.7.'
+            'Source: HIGH Horizons D3.7.'
         ),
     },
 
@@ -671,7 +671,7 @@ INTERVENTION_LIBRARY = {
             'Fuel use 600 L/year vs conventional 1,800 L/year. '
             'Saves 1,200 L fuel/year = 3,072 kgCO₂e/year (double-accounting per D3.7 = 1,536). '
             'CapEx US$37,000, maint US$5,550/year, annual cost saving US$668. '
-            'Source: CARBOMICA D3.7.'
+            'Source: HIGH Horizons D3.7.'
         ),
     },
 
@@ -684,7 +684,7 @@ INTERVENTION_LIBRARY = {
             'Reduces lighting electricity from 2,772 kWh to 2,205 kWh for 8-lamp group. '
             'Saves ~70.9 kWh/group/year = 62.6 kgCO₂e/year. '
             'Per 200 sensors: CapEx US$50/sensor, maint US$7.50/sensor, '
-            'annual cost saving US$9,276. Source: CARBOMICA D3.7.'
+            'annual cost saving US$9,276. Source: HIGH Horizons D3.7.'
         ),
     },
 
@@ -697,7 +697,7 @@ INTERVENTION_LIBRARY = {
             'Improves fuel economy from 14 mpg to 23 mpg; saves 6.57 L/100 km. '
             'At 24,000 km/year: saves 1,576.8 L/year = 3,500.5 kgCO₂e/year. '
             'CapEx US$60,000, maint US$9,000/year, annual cost saving US$484. '
-            'Source: CARBOMICA D3.7.'
+            'Source: HIGH Horizons D3.7.'
         ),
     },
     'HYBRID_PRIUS': {
@@ -708,7 +708,7 @@ INTERVENTION_LIBRARY = {
             'Prius 4.2 L/100 km vs conventional 7.8 L/100 km. '
             'At 24,000 km/year: saves 792 L/year = 2,027.5 kgCO₂e/year. '
             'CapEx US$26,000, maint US$3,900/year, annual cost saving US$503. '
-            'Source: CARBOMICA D3.7.'
+            'Source: HIGH Horizons D3.7.'
         ),
     },
 
@@ -721,7 +721,7 @@ INTERVENTION_LIBRARY = {
             'Heat-reflective coatings reduce wall surface temp by 8–10 °C. '
             'Saves ~69.6 kWh/year in A/C = 61.5 kgCO₂e/year. '
             'Per 20 m² paint: CapEx US$20/m², maint US$3/m², annual cost saving US$348. '
-            'Source: CARBOMICA D3.7.'
+            'Source: HIGH Horizons D3.7.'
         ),
     },
 
@@ -737,7 +737,7 @@ INTERVENTION_LIBRARY = {
             'Formal climate mitigation policy; evidence shows 4–15 % emission reduction '
             'across all emission areas. CapEx US$10,000 (policy development), '
             'maint US$0, annual net cost –US$2,000 (staff time). '
-            'Source: CARBOMICA D3.7.'
+            'Source: HIGH Horizons D3.7.'
         ),
     },
 
@@ -750,7 +750,7 @@ INTERVENTION_LIBRARY = {
             'Average tree sequesters ~21.8 kgCO₂/year. '
             'Per 100 trees: CapEx US$5/tree, maint US$0, '
             'carbon offset ≈ 2.18 tCO₂/year. Net cost saving –US$20 (upkeep). '
-            'Source: CARBOMICA D3.7.'
+            'Source: HIGH Horizons D3.7.'
         ),
     },
 
@@ -766,7 +766,7 @@ INTERVENTION_LIBRARY = {
             'Behavioural change contributes 4–8 % CO₂ reduction (Niamir et al.). '
             'Healthcare Without Harm (2020): effective waste segregation reduces '
             'hospital carbon by 15–30 %. CapEx US$2,500, maint US$225/year. '
-            'Source: CARBOMICA D3.7.'
+            'Source: HIGH Horizons D3.7.'
         ),
     },
 
@@ -777,7 +777,7 @@ INTERVENTION_LIBRARY = {
         'sdg_goals': [7, 13],
         'notes': (
             'ENERGY STAR certified washers use 25 % less energy and 33 % less water '
-            'than standard models. Source: Natural Resources Canada / CARBOMICA D3.7.'
+            'than standard models. Source: Natural Resources Canada / HIGH Horizons D3.7.'
         ),
     },
 }
@@ -789,7 +789,7 @@ INTERVENTION_LIBRARY = {
 
 class CarbomicaOptimizer:
     """
-    Implements the CARBOMICA three-scenario analysis described in HIGH Horizons D3.7:
+    Implements the three-scenario analysis described in HIGH Horizons D3.7:
 
       Scenario 1 — Full coverage:   all interventions regardless of budget
       Scenario 2 — Fixed budget:    cheapest interventions first until budget exhausted
@@ -830,7 +830,7 @@ class CarbomicaOptimizer:
         return (pct / 100) * self.baseline
 
     def _cost_effectiveness(self, fi):
-        """tCO2e reduced per USD — the core CARBOMICA ranking metric.
+        """tCO2e reduced per USD — the core ranking metric.
 
         Zero-cost interventions (e.g. refrigerant swaps with no CapEx, avoiding
         N₂O) are infinitely cost-effective — they always rank first so the greedy

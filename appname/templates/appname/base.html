@@ -195,21 +195,11 @@
 <nav class="hh-navbar navbar navbar-expand-lg mb-4">
     <div class="container">
         <a class="navbar-brand" href="{% url 'home' %}">
-            {% if BRAND_EDITION == 'verdex' %}
-                <span class="fw-bold" style="font-size:1.45rem;letter-spacing:-.01em;color:var(--hh-blue);">VERDEX</span>
-            {% else %}
-                <img src="{% static 'img/high_horizons_logo.png' %}" alt="HIGH Horizons" class="me-2">
-            {% endif %}
+            <span class="fw-bold" style="font-size:1.45rem;letter-spacing:-.01em;color:var(--hh-blue);">VERDEX</span>
         </a>
-        {% if BRAND_EDITION == 'verdex' %}
         <span class="fw-semibold text-muted small d-none d-md-inline" style="font-size:0.78rem;letter-spacing:.04em;border-left:2px solid #ddd;padding-left:.75rem;">
             Grant-ready emissions reporting
         </span>
-        {% else %}
-        <span class="fw-bold text-secondary small d-none d-md-inline" style="font-size:0.8rem;letter-spacing:.05em;border-left:2px solid #ddd;padding-left:.75rem;color:#5a6678!important;">
-            CARBOMICA
-        </span>
-        {% endif %}
 
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
             <span class="navbar-toggler-icon"></span>
@@ -315,9 +305,9 @@
             <strong>Preview mode.</strong>
             All data is shared across visitors and may reset at any time. Sign-in is bypassed for evaluation. Production version uses your own private organisation account.
         </div>
-        <a href="https://carbomica-tool.web.app" target="_blank" style="color:#7a5a14;font-weight:600;text-decoration:underline;font-size:.78rem;">
-            Looking for the EU-funded CARBOMICA edition? →
-        </a>
+        <span style="color:#7a5a14;font-weight:600;font-size:.78rem;">
+            Production version uses your own private organisation account.
+        </span>
     </div>
 </div>
 {% endif %}
@@ -344,47 +334,21 @@
 <footer class="hh-footer mt-5">
     <div class="container">
         <div class="row align-items-center">
-            <div class="col-md-6">
-                {% if BRAND_EDITION == 'verdex' %}
+            <div class="col-md-9">
                 <p class="mb-1 small text-muted">
                     <strong>VERDEX</strong> — Grant-ready emissions reporting for any organisation
                 </p>
                 <p class="mb-0 small text-muted">
-                    Methodology built on the
-                    <a href="https://carbomica-tool.web.app" target="_blank" class="text-decoration-none">CARBOMICA</a> /
-                    <a href="https://www.high-horizons.eu" target="_blank" class="text-decoration-none">HIGH Horizons</a> framework.
-                    GHG Protocol-aligned. IPCC AR6 emission factors.
+                    GHG Protocol Corporate Standard · IPCC AR6 emission factors ·
+                    GLEC transport · DEFRA conversion factors.
+                    Audit-grade methodology trace on every report.
                 </p>
-                {% else %}
-                <p class="mb-1 small text-muted">
-                    <strong>CARBOMICA</strong> — CARBOn Mitigation Intervention for healthCare fAcilities
-                </p>
-                <p class="mb-0 small text-muted">
-                    Developed by
-                    <a href="https://wrhi.ac.za" target="_blank" class="text-decoration-none">Wits Planetary Health</a>,
-                    <a href="https://ceshhar.org" target="_blank" class="text-decoration-none">CeSHHAR Zimbabwe</a> &amp;
-                    <a href="https://burnet.edu.au" target="_blank" class="text-decoration-none">Burnet Institute</a>
-                    as part of the <a href="https://www.high-horizons.eu" target="_blank" class="text-decoration-none">HIGH Horizons</a> project.
-                </p>
-                {% endif %}
-            </div>
-            <div class="col-md-3 text-md-center mt-3 mt-md-0">
-                {% if BRAND_EDITION != 'verdex' %}
-                <a href="https://www.high-horizons.eu" target="_blank">
-                    <img src="{% static 'img/high_horizons_logo.png' %}" alt="HIGH Horizons" style="height:36px;opacity:.75;">
-                </a>
-                {% endif %}
             </div>
             <div class="col-md-3 text-md-end mt-3 mt-md-0">
-                {% if BRAND_EDITION != 'verdex' %}
-                <img src="{% static 'img/eu_funded_badge.png' %}" alt="Funded by the European Union"
-                     style="height:40px;" title="Horizon Europe Grant No. 101057843">
-                {% else %}
                 <span class="small text-muted" style="font-size:.75rem;">
                     <i class="fas fa-shield-alt me-1" style="color:var(--hh-success);"></i>
                     GHG Protocol · IPCC AR6
                 </span>
-                {% endif %}
             </div>
         </div>
     </div>
@@ -402,16 +366,11 @@
             </div>
             <div class="modal-body">
                 <p class="text-muted small mb-3">
-                    Share this link with Stanley and the team. Anyone with the link can access the tool directly.
+                    Share this link with your team. Anyone with the link can access the tool directly.
                 </p>
                 <div class="input-group mb-4">
-                    {% if BRAND_EDITION == 'verdex' %}
                     <input type="text" class="form-control fw-semibold" value="https://verdex-app.web.app" readonly>
                     <button class="btn btn-outline-primary" id="copyUrlBtn" data-url="https://verdex-app.web.app">
-                    {% else %}
-                    <input type="text" class="form-control fw-semibold" value="https://carbomica-tool.web.app" readonly>
-                    <button class="btn btn-outline-primary" id="copyUrlBtn" data-url="https://carbomica-tool.web.app">
-                    {% endif %}
                         <i class="fas fa-copy me-1"></i>Copy link
                     </button>
                 </div>
@@ -421,24 +380,12 @@
                             <i class="fas fa-rocket me-1" style="color:var(--hh-success);"></i>Getting started in 4 steps:
                         </p>
                         <ol class="small text-muted mb-0 ps-3">
-                            <li class="mb-1"><strong>Add a facility</strong> &mdash; Facilities &rarr; Add facility</li>
+                            <li class="mb-1"><strong>Add an organisation</strong> &mdash; Facilities &rarr; Add facility</li>
                             <li class="mb-1"><strong>Upload emission baseline</strong> &mdash; Upload data &rarr; Emission records</li>
                             <li class="mb-1"><strong>Add interventions</strong> &mdash; Upload data &rarr; Facility interventions</li>
                             <li><strong>Run optimisation</strong> &mdash; Facilities &rarr; Run optimisation</li>
                         </ol>
                     </div>
-                </div>
-                <p class="section-label mb-2">Admin access</p>
-                <div class="d-flex gap-2 flex-wrap">
-                    <a href="/admin/" target="_blank" class="btn btn-outline-secondary btn-sm">
-                        <i class="fas fa-lock me-1"></i>Django admin
-                    </a>
-                    <a href="https://console.firebase.google.com/project/carbomica-tool" target="_blank" class="btn btn-outline-secondary btn-sm">
-                        <i class="fas fa-fire me-1"></i>Firebase console
-                    </a>
-                    <a href="https://console.cloud.google.com/run?project=carbomica-tool" target="_blank" class="btn btn-outline-secondary btn-sm">
-                        <i class="fas fa-cloud me-1"></i>Cloud Run
-                    </a>
                 </div>
             </div>
         </div>
@@ -479,32 +426,32 @@ function startTour() {
     introJs().setOptions(Object.assign({}, _tourOpts, {
         steps: [
             {
-                title: 'Welcome to CARBOMICA',
-                intro: '<strong>CARBOMICA</strong> helps health facility managers identify the best carbon-reduction investments within a real budget. This tour walks you through the four key steps.',
+                title: 'Welcome to {{ BRAND_NAME }}',
+                intro: '<strong>{{ BRAND_NAME }}</strong> helps your organisation identify the best carbon-reduction investments within a real budget. This tour walks you through the four key steps.',
             },
             {
                 element: document.querySelector('[href*="add-facility"], [href*="facilities"]'),
-                title: 'Step 1 — Add your facility',
-                intro: 'Register your health facility with its country and type. Each facility gets its own carbon profile.',
+                title: 'Step 1 — Add your organisation',
+                intro: 'Register your facility or organisation — sector, country and type. Each gets its own carbon profile.',
             },
             {
                 element: document.querySelector('[href*="upload/emissions"]'),
                 title: 'Step 2 — Upload emission data',
-                intro: 'Enter annual emission figures across 10 categories (electricity, anaesthetic gases, waste, etc.) or upload a CSV from the AKDN Carbon Management Tool.',
+                intro: 'Enter annual emission figures across 10 GHG-Protocol-aligned categories, or upload a CSV. Don’t have every number? Enter 0 — the optimiser works on partial data.',
             },
             {
                 element: document.querySelector('[href*="upload/interventions"]'),
                 title: 'Step 3 — Add interventions',
-                intro: 'Attach carbon-reduction interventions to your facility with site-specific costs. Choose from the CARBOMICA library (solar PV, low-GWP anaesthetics, LED lighting, etc.).',
+                intro: 'Attach carbon-reduction interventions with site-specific costs. Choose from a 59-entry library (solar PV, LED lighting, fleet electrification, refrigerant swaps, and many more).',
             },
             {
                 element: document.querySelector('[href*="dashboard"]'),
                 title: 'Step 4 — Run optimisation',
-                intro: 'From the Facilities page, click <strong>Optimise</strong> on any facility. CARBOMICA runs three scenarios — full coverage, fixed budget, and optimised — so you can compare trade-offs and select the best investment package.',
+                intro: 'From the Facilities page, click <strong>Optimise</strong>. Three scenarios are compared side-by-side — full coverage, fixed budget, and optimised greedy knapsack — so you can pick the best investment package.',
             },
         ],
     })).start();
-    localStorage.setItem('carbomica_tour_done', '1');
+    localStorage.setItem('verdex_tour_done', '1');
 }
 
 /* ── "How it works" button: page tour if available, else global overview ── */

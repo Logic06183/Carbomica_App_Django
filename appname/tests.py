@@ -1,5 +1,5 @@
 """
-CARBOMICA test suite.
+Verdex test suite.
 
 Covers:
   1. INTERVENTION_LIBRARY integrity (all entries well-formed)
@@ -435,7 +435,7 @@ class OptimizerTest(TestCase):
 
 # ---------------------------------------------------------------------------
 # 5. Phase A1 — facility-creation auto-attach + access control
-#    (CARBOMICA office-hours design 2026-04-27 — "Tinah Unblocker")
+#    (office-hours design 2026-04-27 — "Tinah Unblocker")
 # ---------------------------------------------------------------------------
 
 class AddFacilityAuthTest(TestCase):

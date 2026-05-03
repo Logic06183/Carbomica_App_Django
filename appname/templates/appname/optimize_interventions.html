@@ -4,7 +4,7 @@
 {% block content %}
 <div class="row mb-4 align-items-center">
     <div class="col">
-        <p class="section-label mb-1">CARBOMICA · Optimisation</p>
+        <p class="section-label mb-1">{{ BRAND_NAME }} · Optimisation</p>
         <h2 class="fw-bold mb-0">{{ facility.display_name }}</h2>
         <p class="text-muted mt-1 mb-0">
             {{ facility.get_facility_type_display }} &nbsp;·&nbsp; {{ facility.get_country_display }}
@@ -17,13 +17,13 @@
     </div>
 </div>
 
-<!-- ── How CARBOMICA works ── -->
+<!-- ── How {{ BRAND_NAME }} works ── -->
 <div class="card mb-4" style="border-top:3px solid var(--hh-blue);"
-     data-intro="CARBOMICA always runs three scenarios simultaneously so you can see the full trade-off space: maximum impact regardless of cost, cheapest-first within budget, and the algorithmically optimal selection."
+     data-intro="{{ BRAND_NAME }} always runs three scenarios simultaneously so you can see the full trade-off space: maximum impact regardless of cost, cheapest-first within budget, and the algorithmically optimal selection."
      data-title="Three-Scenario Approach" data-step="1">
     <div class="card-body">
         <h6 class="fw-bold mb-3">
-            <i class="fas fa-info-circle me-2" style="color:var(--hh-blue);"></i>How CARBOMICA optimises your investment
+            <i class="fas fa-info-circle me-2" style="color:var(--hh-blue);"></i>How {{ BRAND_NAME }} optimises your investment
         </h6>
         <div class="row g-3">
             <div class="col-md-4">
@@ -144,7 +144,7 @@
                          data-title="Run the Optimisation" data-step="4">
                         <button type="submit" class="btn btn-success w-100"
                                 {% if fi_count == 0 %}disabled{% endif %}>
-                            <i class="fas fa-bolt me-1"></i>Run CARBOMICA optimisation
+                            <i class="fas fa-bolt me-1"></i>Run {{ BRAND_NAME }} optimisation
                         </button>
                         {% if fi_count == 0 %}
                         <p class="text-muted small mt-2 text-center">
@@ -212,7 +212,7 @@
             <div class="card-body">
                 <h6 class="fw-bold mb-2">
                     <i class="fas fa-graduation-cap me-2" style="color:var(--hh-blue);"></i>
-                    CARBOMICA methodology (D3.7)
+                    {{ BRAND_NAME }} methodology (D3.7)
                 </h6>
                 <p class="text-muted small mb-2">
                     The optimised scenario uses a <strong>greedy knapsack algorithm</strong> that ranks interventions

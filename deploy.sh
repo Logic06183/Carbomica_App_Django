@@ -1,50 +1,46 @@
 #!/usr/bin/env bash
-# deploy.sh — Deploy CARBOMICA to Cloud Run + Firebase Hosting
+# deploy.sh — Deploy Verdex to Cloud Run + Firebase Hosting
 #
 # Usage:
 #   ./deploy.sh                  # full deploy (Cloud Run + Firebase Hosting)
 #   ./deploy.sh --backend-only   # rebuild and redeploy Cloud Run only
 #   ./deploy.sh --hosting-only   # redeploy Firebase Hosting static assets only
 #
+# Preview mode (default — current Verdex deployment):
+#   - DEMO_MODE=True bypasses Google OAuth (auto-logs visitors in)
+#   - No DATABASE_URL required (ephemeral SQLite in container)
+#   - Data resets on every Cloud Run cold start
+#
+# Production mode (requires DATABASE_URL + Google OAuth env vars):
+#   export DATABASE_URL='postgresql://postgres:PWD@HOST:6543/postgres'
+#   export GOOGLE_CLIENT_ID='...'
+#   export GOOGLE_SECRET='...'
+#   PRODUCTION=1 ./deploy.sh
+#
 # Prerequisites:
 #   brew install google-cloud-sdk firebase-cli
 #   gcloud auth login
-#   gcloud auth configure-docker us-central1-docker.pkg.dev
 #   firebase login
 
 set -euo pipefail
 
 # ── Config ─────────────────────────────────────────────────────────────────
-PROJECT_ID="carbomica-tool"
-SERVICE_NAME="carbomica-backend"
+# GCP project ID — read from active gcloud config, override via env var if needed.
+# Run `gcloud config set project <id>` once before first deploy.
+PROJECT_ID="${GCP_PROJECT_ID:-$(gcloud config get-value project 2>/dev/null)}"
+if [ -z "${PROJECT_ID}" ]; then
+    echo "ERROR: GCP project not configured. Run 'gcloud config set project <id>' or set GCP_PROJECT_ID env var." >&2
+    exit 1
+fi
+SERVICE_NAME="verdex-backend"
+HOSTING_SITE="verdex-app"
 REGION="us-central1"
-IMAGE="us-central1-docker.pkg.dev/${PROJECT_ID}/${SERVICE_NAME}/app"
 
 # ── Colours ────────────────────────────────────────────────────────────────
 GREEN='\033[0;32m'; BLUE='\033[0;34m'; YELLOW='\033[1;33m'; NC='\033[0m'
 log()  { echo -e "${BLUE}▶ $1${NC}"; }
 ok()   { echo -e "${GREEN}✔ $1${NC}"; }
 warn() { echo -e "${YELLOW}⚠ $1${NC}"; }
-
-# ── Database check ─────────────────────────────────────────────────────────
-check_database_url() {
-    if [ -z "${DATABASE_URL:-}" ]; then
-        warn "DATABASE_URL is not set."
-        echo ""
-        echo "  CARBOMICA needs a PostgreSQL database. The easiest free option:"
-        echo ""
-        echo "  1. Go to https://supabase.com → New project (free tier)"
-        echo "  2. Project Settings → Database → Connection string → URI"
-        echo "     (copy the URI that starts with postgresql://)"
-        echo "  3. Export it before running this script:"
-        echo ""
-        echo "     export DATABASE_URL='postgresql://postgres:PASSWORD@db.XXXX.supabase.co:5432/postgres'"
-        echo "     ./deploy.sh"
-        echo ""
-        exit 1
-    fi
-    ok "DATABASE_URL is set"
-}
 
 # ── Parse args ─────────────────────────────────────────────────────────────
 BACKEND=true
@@ -56,166 +52,53 @@ for arg in "$@"; do
     esac
 done
 
+# ── Determine env vars based on mode ────────────────────────────────────────
+if [ "${PRODUCTION:-0}" = "1" ]; then
+    log "Mode: PRODUCTION"
+    if [ -z "${DATABASE_URL:-}" ]; then
+        warn "PRODUCTION=1 but DATABASE_URL is not set."
+        echo "  Set DATABASE_URL to a Supabase Postgres pooler URI (port 6543)."
+        exit 1
+    fi
+    ENV_VARS="BRAND_NAME=Verdex,BRAND_EDITION=verdex,DEMO_MODE=False,DEBUG=False"
+    ENV_VARS="${ENV_VARS},DATABASE_URL=${DATABASE_URL}"
+    [ -n "${GOOGLE_CLIENT_ID:-}" ] && ENV_VARS="${ENV_VARS},GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}"
+    [ -n "${GOOGLE_SECRET:-}" ] && ENV_VARS="${ENV_VARS},GOOGLE_SECRET=${GOOGLE_SECRET}"
+else
+    log "Mode: PREVIEW (DEMO_MODE bypass auth, ephemeral SQLite)"
+    ENV_VARS="BRAND_NAME=Verdex,BRAND_EDITION=verdex,DEMO_MODE=True,DEBUG=False"
+fi
+
 # ── Set GCP project ────────────────────────────────────────────────────────
 log "Setting active GCP project to ${PROJECT_ID}"
 gcloud config set project "${PROJECT_ID}" --quiet
 
-# ── SECRET_KEY must be stable across deployments ────────────────────────────
-# IMPORTANT: Do NOT regenerate the secret key each deploy. Django uses it to
-# sign session auth hashes — a new key invalidates all existing sessions.
-# Set DJANGO_SECRET_KEY once and store it securely (e.g. macOS keychain):
-#   python3 -c "import secrets; print(secrets.token_urlsafe(50))"
-#   security add-generic-password -a "craig" -s "carbomica-secret-key" -w "<key>"
-#   export DJANGO_SECRET_KEY=$(security find-generic-password -a "craig" -s "carbomica-secret-key" -w)
-if [ -z "${DJANGO_SECRET_KEY:-}" ]; then
-    warn "DJANGO_SECRET_KEY not set — attempting to load from macOS keychain..."
-    DJANGO_SECRET_KEY=$(security find-generic-password -a "craig" -s "carbomica-secret-key" -w 2>/dev/null || true)
-    if [ -z "${DJANGO_SECRET_KEY:-}" ]; then
-        warn "No stored key found — generating a new one (store this for future deploys!)"
-        export DJANGO_SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_urlsafe(50))")
-        warn "Run: security add-generic-password -a 'craig' -s 'carbomica-secret-key' -w '${DJANGO_SECRET_KEY}'"
-    else
-        export DJANGO_SECRET_KEY
-        ok "Loaded DJANGO_SECRET_KEY from keychain"
-    fi
-fi
-
 # ── Deploy backend to Cloud Run ─────────────────────────────────────────────
 if [ "$BACKEND" = true ]; then
-    check_database_url
-
-    log "Enabling required GCP APIs (first run only, takes ~60s)"
-    gcloud services enable \
-        run.googleapis.com \
-        cloudbuild.googleapis.com \
-        artifactregistry.googleapis.com \
-        --quiet 2>/dev/null || true
-
-    log "Creating Artifact Registry repository (first run only)"
-    gcloud artifacts repositories create "${SERVICE_NAME}" \
-        --repository-format=docker \
-        --location="${REGION}" \
-        --quiet 2>/dev/null || true
-
-    log "Building and pushing container image via Cloud Build"
-    gcloud builds submit \
-        --tag "${IMAGE}" \
-        --project "${PROJECT_ID}" \
-        --quiet
-
-    # ── Google OAuth credentials ─────────────────────────────────────────────
-    if [ -z "${GOOGLE_CLIENT_ID:-}" ] || [ -z "${GOOGLE_SECRET:-}" ]; then
-        warn "GOOGLE_CLIENT_ID or GOOGLE_SECRET not set — loading from .env if present"
-        if [ -f .env ]; then
-            export $(grep -E '^(GOOGLE_CLIENT_ID|GOOGLE_SECRET)=' .env | xargs) 2>/dev/null || true
-        fi
-    fi
-    if [ -z "${GOOGLE_CLIENT_ID:-}" ] || [ -z "${GOOGLE_SECRET:-}" ]; then
-        warn "Google OAuth credentials missing — Google login will not work on Cloud Run"
-        warn "Set GOOGLE_CLIENT_ID and GOOGLE_SECRET env vars before deploying"
-    else
-        ok "Google OAuth credentials loaded"
-    fi
-
-    log "Deploying to Cloud Run"
+    log "Deploying ${SERVICE_NAME} to Cloud Run from source"
     gcloud run deploy "${SERVICE_NAME}" \
-        --image "${IMAGE}" \
-        --platform managed \
+        --source . \
         --region "${REGION}" \
+        --project "${PROJECT_ID}" \
         --allow-unauthenticated \
-        --port 8080 \
-        --memory 512Mi \
-        --cpu 1 \
-        --min-instances 0 \
-        --max-instances 5 \
-        --timeout 120 \
-        --set-env-vars "DATABASE_URL=${DATABASE_URL}" \
-        --set-env-vars "DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}" \
-        --set-env-vars "DEBUG=False" \
-        --set-env-vars "GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}" \
-        --set-env-vars "GOOGLE_SECRET=${GOOGLE_SECRET:-}" \
+        --set-env-vars "${ENV_VARS}" \
         --quiet
 
     CLOUD_RUN_URL=$(gcloud run services describe "${SERVICE_NAME}" \
         --region "${REGION}" \
         --format "value(status.url)")
     ok "Cloud Run deployed → ${CLOUD_RUN_URL}"
-
-    log "Running database migrations on Cloud Run"
-    gcloud run jobs create carbomica-migrate \
-        --image "${IMAGE}" \
-        --region "${REGION}" \
-        --set-env-vars "DATABASE_URL=${DATABASE_URL}" \
-        --set-env-vars "DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}" \
-        --set-env-vars "GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}" \
-        --set-env-vars "GOOGLE_SECRET=${GOOGLE_SECRET:-}" \
-        --command "python" \
-        --args "manage.py,migrate,--noinput" \
-        --quiet 2>/dev/null || \
-    gcloud run jobs update carbomica-migrate \
-        --image "${IMAGE}" \
-        --region "${REGION}" \
-        --set-env-vars "DATABASE_URL=${DATABASE_URL}" \
-        --set-env-vars "DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}" \
-        --set-env-vars "GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}" \
-        --set-env-vars "GOOGLE_SECRET=${GOOGLE_SECRET:-}" \
-        --quiet
-    gcloud run jobs execute carbomica-migrate --region "${REGION}" --wait --quiet
-    ok "Migrations applied"
-
-    log "Seeding intervention library"
-    gcloud run jobs create carbomica-seed \
-        --image "${IMAGE}" \
-        --region "${REGION}" \
-        --set-env-vars "DATABASE_URL=${DATABASE_URL}" \
-        --set-env-vars "DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}" \
-        --command "python" \
-        --args "manage.py,sync_interventions" \
-        --quiet 2>/dev/null || \
-    gcloud run jobs update carbomica-seed \
-        --image "${IMAGE}" \
-        --region "${REGION}" \
-        --set-env-vars "DATABASE_URL=${DATABASE_URL}" \
-        --set-env-vars "DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}" \
-        --quiet
-    gcloud run jobs execute carbomica-seed --region "${REGION}" --wait --quiet
-    ok "Intervention library seeded"
-
-    log "Configuring Sites domain (allauth OAuth redirect)"
-    gcloud run jobs create carbomica-setup \
-        --image "${IMAGE}" \
-        --region "${REGION}" \
-        --set-env-vars "DATABASE_URL=${DATABASE_URL}" \
-        --set-env-vars "DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}" \
-        --set-env-vars "GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}" \
-        --set-env-vars "GOOGLE_SECRET=${GOOGLE_SECRET:-}" \
-        --command "python" \
-        --args "manage.py,setup_google_auth" \
-        --quiet 2>/dev/null || \
-    gcloud run jobs update carbomica-setup \
-        --image "${IMAGE}" \
-        --region "${REGION}" \
-        --set-env-vars "DATABASE_URL=${DATABASE_URL}" \
-        --set-env-vars "DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}" \
-        --set-env-vars "GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}" \
-        --set-env-vars "GOOGLE_SECRET=${GOOGLE_SECRET:-}" \
-        --quiet
-    gcloud run jobs execute carbomica-setup --region "${REGION}" --wait --quiet
-    ok "Sites domain configured"
 fi
 
 # ── Deploy Firebase Hosting ─────────────────────────────────────────────────
 if [ "$HOSTING" = true ]; then
     log "Collecting static files for Firebase Hosting"
-    python manage.py collectstatic --noinput --clear -v 0
+    python manage.py collectstatic --noinput -v 0
 
-    log "Deploying Firebase Hosting"
-    firebase deploy --only hosting --project "${PROJECT_ID}"
-    ok "Firebase Hosting deployed → https://${PROJECT_ID}.web.app"
+    log "Deploying Firebase Hosting site '${HOSTING_SITE}'"
+    firebase deploy --only "hosting:${HOSTING_SITE}" --project "${PROJECT_ID}"
+    ok "Firebase Hosting deployed → https://${HOSTING_SITE}.web.app"
 fi
 
 echo ""
-ok "🚀 CARBOMICA is live at: https://${PROJECT_ID}.web.app"
-echo "   Admin:              https://${PROJECT_ID}.web.app/admin/"
-echo "   Firebase console:   https://console.firebase.google.com/project/${PROJECT_ID}"
-echo "   Cloud Run console:  https://console.cloud.google.com/run?project=${PROJECT_ID}"
+ok "🚀 Verdex is live at: https://${HOSTING_SITE}.web.app"

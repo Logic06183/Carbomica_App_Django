@@ -30,24 +30,20 @@ SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', '(j=&pjt1#^j(005!8vb!)%=^o2#=!76*r0w
 # Debug is off unless explicitly enabled
 DEBUG = os.getenv('DEBUG', 'False') == 'True'
 
-# ── Brand & deploy mode (Verdex commercial vs CARBOMICA EU edition) ──
-# BRAND_NAME drives template variables; flip via env var on the Verdex
-# deployment without touching the CARBOMICA codebase.
-BRAND_NAME = os.getenv('BRAND_NAME', 'CARBOMICA')
-BRAND_EDITION = os.getenv('BRAND_EDITION', 'eu')   # 'eu' | 'verdex'
+# ── Brand & deploy mode ──
+# BRAND_NAME drives template variables; override via env var per deployment.
+BRAND_NAME = os.getenv('BRAND_NAME', 'Verdex')
+BRAND_EDITION = os.getenv('BRAND_EDITION', 'verdex')   # 'verdex' (default for this branch)
 
 # DEMO_MODE: when true, bypass Google OAuth and auto-log every visitor in
-# as a shared 'demo' user. For the Verdex preview deployment ONLY — never
+# as a shared 'demo' user. For the preview deployment ONLY — never
 # enable in any environment serving real users.
 DEMO_MODE = os.getenv('DEMO_MODE', 'False') == 'True'
 
-# Localhost + Heroku legacy + Firebase Hosting + Cloud Run
+# Hosts permitted by Django ALLOWED_HOSTS check.
 ALLOWED_HOSTS = [
     'localhost',
     '127.0.0.1',
-    '.herokuapp.com',
-    'carbomica-tool.web.app',
-    'carbomica-tool.firebaseapp.com',
     'verdex-app.web.app',
     'verdex-app.firebaseapp.com',
     '.run.app',          # Cloud Run preview URLs (*.run.app)
@@ -59,8 +55,6 @@ if DEBUG or os.getenv('DJANGO_TESTING') == '1':
 
 # Trust HTTPS from Firebase Hosting and Cloud Run load balancer
 CSRF_TRUSTED_ORIGINS = [
-    'https://carbomica-tool.web.app',
-    'https://carbomica-tool.firebaseapp.com',
     'https://verdex-app.web.app',
     'https://verdex-app.firebaseapp.com',
     'https://*.run.app',
@@ -69,9 +63,10 @@ CSRF_TRUSTED_ORIGINS = [
 # Cloud Run sets X-Forwarded-Proto; tell Django to trust it for HTTPS detection
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
-# Firebase Hosting sets X-Forwarded-Host to the public domain (carbomica-tool.web.app)
-# before proxying to Cloud Run. This ensures Django builds OAuth redirect URIs
-# using the Firebase URL, not the raw Cloud Run URL.
+# Firebase Hosting sets X-Forwarded-Host to the public domain
+# (e.g. verdex-app.web.app) before proxying to Cloud Run. This ensures
+# Django builds OAuth redirect URIs using the Firebase URL, not the raw
+# Cloud Run URL.
 USE_X_FORWARDED_HOST = True
 
 # Application definition
@@ -228,14 +223,17 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # ---------------------------------------------------------------------------
 # django-allauth — Google OAuth configuration
 #
-# To activate Google login:
+# To activate Google login (production — DEMO_MODE=False):
 #   1. Go to console.cloud.google.com → APIs & Services → Credentials
 #   2. Create an OAuth 2.0 Client ID (Web application)
-#   3. Add Authorised redirect URI: https://carbomica-tool.web.app/accounts/google/login/callback/
+#   3. Add Authorised redirect URI: https://verdex-app.web.app/accounts/google/login/callback/
 #      (and http://localhost:8000/accounts/google/login/callback/ for local dev)
 #   4. Set GOOGLE_CLIENT_ID and GOOGLE_SECRET in your .env file or Cloud Run secrets
-#   5. In Django admin → Sites → change example.com to carbomica-tool.web.app
+#   5. In Django admin → Sites → change example.com to verdex-app.web.app
 #   6. In Django admin → Social Applications → add Google app with above credentials
+#
+# Preview mode (current): DEMO_MODE=True bypasses OAuth — every visitor is
+# auto-logged-in as a shared 'demo_guest' user via DemoAutoLoginMiddleware.
 # ---------------------------------------------------------------------------
 LOGIN_REDIRECT_URL = '/'
 LOGOUT_REDIRECT_URL = '/accounts/login/'   # land on login page after sign-out

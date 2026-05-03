@@ -8,7 +8,6 @@
 {#  UNAUTHENTICATED — public landing page                                #}
 {# ══════════════════════════════════════════════════════════════════════ #}
 
-{% if BRAND_EDITION == 'verdex' %}
 <div class="hh-hero mb-5">
     <div class="row align-items-center">
         <div class="col-lg-7">
@@ -38,41 +37,12 @@
                 <i class="fas fa-leaf fa-5x d-block mb-3"></i>
                 <p class="small mb-0" style="font-size:.85rem;">
                     7 sectors · 13 countries · 11 emission categories<br>
-                    Methodology built on HIGH Horizons / CARBOMICA
+                    GHG Protocol · IPCC AR6 · audit-grade
                 </p>
             </div>
         </div>
     </div>
 </div>
-{% else %}
-<div class="hh-hero mb-5">
-    <div class="row align-items-center">
-        <div class="col-lg-7">
-            <p class="section-label mb-2" style="color:rgba(255,255,255,.6);">HIGH Horizons · EU Horizon Europe · Grant 101057843</p>
-            <h1 class="fw-bold mb-3" style="font-size:1.9rem;">Optimise carbon investments<br>in your health facility</h1>
-            <p class="mb-4" style="color:rgba(255,255,255,.8);font-size:.95rem;max-width:460px;">
-                CARBOMICA helps health managers find the carbon-reduction interventions
-                that deliver the most tCO₂e per dollar within a real budget —
-                across Kenya, South Africa and Zimbabwe.
-            </p>
-            <a href="{% provider_login_url 'google' %}"
-               style="background:white;border:none;display:inline-flex;align-items:center;gap:.6rem;font-weight:700;font-size:.95rem;padding:.75rem 1.5rem;border-radius:8px;text-decoration:none;color:#3c4043;box-shadow:0 2px 8px rgba(0,0,0,.15);">
-                <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" style="height:20px;" alt="G">
-                Sign in with Google to get started
-            </a>
-        </div>
-        <div class="col-lg-5 d-none d-lg-flex justify-content-center">
-            <div class="text-white text-center" style="opacity:.7;">
-                <i class="fas fa-hospital-symbol fa-5x d-block mb-3"></i>
-                <p class="small mb-0" style="font-size:.85rem;">
-                    6 hospitals · Kenya, South Africa, Zimbabwe<br>
-                    Evidence-based · HIGH Horizons D3.7
-                </p>
-            </div>
-        </div>
-    </div>
-</div>
-{% endif %}
 
 <!-- Feature cards -->
 <div class="row g-3 mb-5">
@@ -81,14 +51,14 @@
         <div class="card h-100 text-center p-3">
             <i class="fas fa-smog fa-2x mb-2" style="color:var(--hh-red);"></i>
             <strong class="d-block small mb-1">Track emissions</strong>
-            <span class="text-muted" style="font-size:.78rem;">11 AKDN-aligned categories · converts raw usage (kWh, kg, litres) to tCO₂e automatically</span>
+            <span class="text-muted" style="font-size:.78rem;">11 GHG-Protocol categories · converts raw usage (kWh, kg, litres) to tCO₂e automatically</span>
         </div>
     </div>
     <div class="col-md-3">
         <div class="card h-100 text-center p-3">
             <i class="fas fa-bolt fa-2x mb-2" style="color:var(--hh-success);"></i>
             <strong class="d-block small mb-1">Optimise interventions</strong>
-            <span class="text-muted" style="font-size:.78rem;">Greedy knapsack ranks 8 interventions by tCO₂e per dollar within your budget</span>
+            <span class="text-muted" style="font-size:.78rem;">Greedy knapsack ranks 59 interventions by tCO₂e per dollar within your budget</span>
         </div>
     </div>
     <div class="col-md-3">
@@ -120,7 +90,6 @@
 {#  EMPTY STATE — first-time user, no facilities yet                     #}
 {# ══════════════════════════════════════════════════════════════════════ #}
 
-{% if BRAND_EDITION == 'verdex' %}
 <div class="hh-hero mb-5">
     <div class="row align-items-center">
         <div class="col-lg-7">
@@ -146,33 +115,6 @@
         </div>
     </div>
 </div>
-{% else %}
-<div class="hh-hero mb-5">
-    <div class="row align-items-center">
-        <div class="col-lg-7">
-            <p class="section-label mb-2" style="color:rgba(255,255,255,.6);">HIGH Horizons · EU Horizon Europe · Grant 101057843</p>
-            <h1 class="fw-bold mb-3" style="font-size:1.9rem;">Optimise carbon investments<br>in your health facility</h1>
-            <p class="mb-4" style="color:rgba(255,255,255,.8);font-size:.95rem;max-width:460px;">
-                CARBOMICA helps health managers find the carbon-reduction interventions
-                that deliver the most tCO₂e per dollar within a real budget —
-                across Kenya, South Africa and Zimbabwe.
-            </p>
-            <a href="{% url 'add_facility' %}" class="btn btn-light fw-bold me-2">
-                <i class="fas fa-plus me-1"></i>Add your first facility
-            </a>
-            <button class="btn btn-outline-light" onclick="startTour()">
-                <i class="fas fa-play-circle me-1"></i>Take the tour
-            </button>
-        </div>
-        <div class="col-lg-5 d-none d-lg-flex justify-content-center">
-            <div class="text-white text-center" style="opacity:.6;">
-                <i class="fas fa-hospital-symbol fa-5x d-block mb-2"></i>
-                <small>No facilities added yet</small>
-            </div>
-        </div>
-    </div>
-</div>
-{% endif %}
 
 <!-- 4-step guide -->
 <div class="row mb-5">

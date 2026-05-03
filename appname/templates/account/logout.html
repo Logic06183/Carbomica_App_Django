@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Signed out — CARBOMICA</title>
+    <title>Signed out — {{ BRAND_NAME }}</title>
     <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
@@ -29,11 +29,11 @@
 </head>
 <body>
 <div class="card">
-    <img src="{% static 'img/high_horizons_logo.png' %}" alt="HIGH Horizons" style="height:40px;margin-bottom:1rem;">
-    <div class="fw-bold text-secondary mb-3" style="font-size:.78rem;letter-spacing:.1em;">CARBOMICA</div>
+    <div class="fw-bold mb-2" style="font-size:1.4rem;letter-spacing:-.01em;color:#268dcd;">VERDEX</div>
+    <div class="text-muted mb-3" style="font-size:.74rem;letter-spacing:.04em;">Grant-ready emissions reporting</div>
     <i class="fas fa-check-circle fa-3x mb-3" style="color:#2e8b57;"></i>
     <h5 class="fw-bold mb-2">You've been signed out</h5>
-    <p class="text-muted small mb-4">Your session has ended. Sign back in to continue working with your facility data.</p>
+    <p class="text-muted small mb-4">Your session has ended. Sign back in to continue working with your organisation data.</p>
     <a href="{% url 'account_login' %}" class="btn w-100 fw-bold"
        style="background:#268dcd;color:white;border-radius:8px;padding:.7rem;">
         <i class="fas fa-sign-in-alt me-2"></i>Sign in again

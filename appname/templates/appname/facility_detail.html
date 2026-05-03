@@ -25,7 +25,7 @@
 <!-- ── Header ── -->
 <div class="row mb-4 align-items-center">
     <div class="col">
-        <p class="section-label mb-1">CARBOMICA · Facility Profile</p>
+        <p class="section-label mb-1">{{ BRAND_NAME }} · Facility Profile</p>
         <h2 class="fw-bold mb-0">{{ facility.display_name }}</h2>
         <p class="text-muted mt-1 mb-0">
             {{ facility.get_facility_type_display }} &nbsp;·&nbsp;
@@ -283,7 +283,7 @@
     <div class="card-body">
         <div class="empty-state py-3">
             <i class="fas fa-seedling d-block"></i>
-            <p class="mb-3 small">No interventions linked yet. Add from the CARBOMICA library to run optimisation.</p>
+            <p class="mb-3 small">No interventions linked yet. Add from the {{ BRAND_NAME }} library to run optimisation.</p>
             <a href="{% url 'upload_interventions' %}" class="btn btn-outline-success btn-sm">
                 <i class="fas fa-plus me-1"></i>Add interventions
             </a>

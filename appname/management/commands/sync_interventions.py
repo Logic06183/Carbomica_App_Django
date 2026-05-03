@@ -16,7 +16,7 @@ from appname.modeling import INTERVENTION_LIBRARY
 
 # Default cost assumptions (USD) for each intervention type.
 # Users can override these per-facility in Upload data → Facility interventions.
-# Sources: CARBOMICA D3.7 Carbon Saving Calculator + Cost Saving Calculator.
+# Sources: HIGH Horizons D3.7 Carbon Saving Calculator + Cost Saving Calculator.
 # impl = unit CapEx (USD), maint = annual maintenance (USD), savings = annual cost saving (USD).
 DEFAULT_COSTS = {
     # ── Legacy / generic entries ──────────────────────────────────────────────
@@ -112,7 +112,7 @@ DEFAULT_COSTS = {
 # For per-unit interventions (LED, refrigerants) the % is relative to the device baseline.
 # For facility-level interventions (solar) it is relative to a typical 55,158 kWh/year facility.
 # Users should set FacilityIntervention.emission_reduction_achieved for site-specific values.
-# Sources: CARBOMICA D3.7 Carbon Saving + Cost Saving Calculators (ZW baseline).
+# Sources: HIGH Horizons D3.7 Carbon Saving + Cost Saving Calculators (ZW baseline).
 REDUCTION_PCT = {
     # ── Legacy entries ────────────────────────────────────────────────────────
     'SOLAR_PV':             70,
@@ -198,7 +198,7 @@ REDUCTION_PCT = {
 
 
 class Command(BaseCommand):
-    help = 'Seed Intervention table from the CARBOMICA intervention library in modeling.py'
+    help = 'Seed Intervention table from the INTERVENTION_LIBRARY in modeling.py'
 
     def handle(self, *args, **options):
         created_count = 0

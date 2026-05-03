@@ -15,7 +15,7 @@ from datetime import date
 from django.db.models import Q
 
 # Cost defaults for the 59 interventions, keyed by Intervention.code_name.
-# Sourced from CARBOMICA D3.7 Carbon Saving / Cost Saving calculators.
+# Sourced from HIGH Horizons D3.7 Carbon Saving / Cost Saving calculators.
 from appname.management.commands.sync_interventions import DEFAULT_COSTS
 
 # Placeholder = unweighted median of the 8 original D3.7 interventions
@@ -138,7 +138,7 @@ def _aggregate_tco2e_all(user):
 # ---------------------------------------------------------------------------
 
 def home(request):
-    """Landing page — guides health managers into the CARBOMICA tool."""
+    """Landing page — guides organisation managers into the tool."""
     facility_count = Facility.objects.count()
     all_eds = EmissionData.objects.select_related('emission_source__facility').all()
     total_emissions = sum(
@@ -490,13 +490,13 @@ def interventions(request):
 
 
 # ---------------------------------------------------------------------------
-# Optimisation — CARBOMICA three-scenario engine
+# Optimisation — three-scenario engine
 # ---------------------------------------------------------------------------
 
 @login_required
 def optimize_interventions(request, facility_id):
     """
-    Run CARBOMICA's three-scenario optimisation for a facility:
+    Run three-scenario optimisation for a facility:
       1. Full coverage  — all available interventions
       2. Fixed budget   — cheapest first within budget
       3. Optimised      — maximum tCO2e reduction per USD (greedy knapsack)

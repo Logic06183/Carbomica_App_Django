@@ -1,10 +1,10 @@
 """
-seed_demo_data — populate CARBOMICA with representative LMIC health facility data.
+seed_demo_data — populate the database with representative LMIC health facility data.
 
 Data sources:
   - Emission baselines: HIGH Horizons D2.11 Carbon Emission Assessment Report
     (DOI: 10.5281/zenodo.12703876)
-  - Intervention costs/savings: CARBOMICA D3.7 Mt Darwin and AKHS Mombasa case studies
+  - Intervention costs/savings: HIGH Horizons D3.7 Mt Darwin and AKHS Mombasa case studies
     (DOI: 10.5281/zenodo.12730527)
   - SDG alignments: HIGH Horizons D5.7 Protocol for Mitigation Interventions Evaluation
 
@@ -142,7 +142,7 @@ FACILITIES = [
     },
 ]
 
-# CARBOMICA intervention library with realistic LMIC costs (USD)
+# Intervention library with realistic LMIC costs (USD)
 # Costs derived from D3.7 case studies and regional procurement benchmarks.
 INTERVENTIONS = [
     {
@@ -307,7 +307,7 @@ FACILITY_INTERVENTIONS = [
 
 
 class Command(BaseCommand):
-    help = 'Seed CARBOMICA with representative LMIC health facility demo data.'
+    help = 'Seed the database with representative LMIC health facility demo data.'
 
     def add_arguments(self, parser):
         parser.add_argument(

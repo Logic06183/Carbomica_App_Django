@@ -4,7 +4,7 @@
 {% block content %}
 <div class="row mb-4 align-items-center">
     <div class="col">
-        <p class="section-label mb-1">CARBOMICA · Optimisation results</p>
+        <p class="section-label mb-1">{{ BRAND_NAME }} · Optimisation results</p>
         <h2 class="fw-bold mb-0">{{ scenario.facility.display_name }}</h2>
         <p class="text-muted mt-1 mb-0">
             Scenario: <strong>{{ scenario.name }}</strong> &nbsp;·&nbsp;
@@ -24,13 +24,13 @@
 
 <!-- ── Help banner ── -->
 <div class="alert mb-4" style="background:#f0f7ff;border:1px solid rgba(38,141,205,.2);border-radius:10px;"
-     data-intro="CARBOMICA ran three scenarios for you. The <strong style='color:#2e8b57;'>Optimised</strong> scenario (green) selects interventions by <em>tCO₂e per dollar</em> — it's the recommended starting point for your investment decision."
+     data-intro="{{ BRAND_NAME }} ran three scenarios for you. The <strong style='color:#2e8b57;'>Optimised</strong> scenario (green) selects interventions by <em>tCO₂e per dollar</em> — it's the recommended starting point for your investment decision."
      data-title="How to Read These Results" data-step="1">
     <div class="row align-items-center">
         <div class="col-auto"><i class="fas fa-info-circle fa-lg" style="color:var(--hh-blue);"></i></div>
         <div class="col">
             <strong>How to read these results</strong> &mdash;
-            CARBOMICA runs three scenarios to show the trade-offs.
+            {{ BRAND_NAME }} runs three scenarios to show the trade-offs.
             The <span style="color:var(--hh-success);font-weight:600;">Optimised</span> scenario selects interventions by
             <em>tCO₂e reduced per dollar spent</em> (greedy knapsack), giving the best bang-for-buck within your budget.
             Compare it with <em>Full coverage</em> (all interventions) and <em>Fixed budget</em> (cheapest first) to make your decision.

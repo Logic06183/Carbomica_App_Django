@@ -171,7 +171,7 @@ document.getElementById('downloadTemplate').addEventListener('click', function(e
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'carbomica_emissions_template.csv';
+    a.download = 'verdex_emissions_template.csv';
     a.click();
     URL.revokeObjectURL(url);
 });

@@ -102,21 +102,12 @@
     <!-- ── Login card ── -->
     <div class="login-card">
         <div class="login-header">
-            {% if BRAND_EDITION == 'verdex' %}
             <div class="fw-bold" style="font-size:1.6rem;letter-spacing:-.01em;color:var(--hh-blue);margin-bottom:.25rem;">VERDEX</div>
             <div class="text-muted" style="font-size:.78rem;letter-spacing:.04em;">Grant-ready emissions reporting</div>
             <h5 class="fw-bold mt-3 mb-0" style="color:#1a1a1a;">Sign in to your account</h5>
             <p class="text-muted mt-1 mb-0" style="font-size:.83rem;">
                 Carbon emissions baseline & reduction planning for any organisation
             </p>
-            {% else %}
-            <img src="{% static 'img/high_horizons_logo.png' %}" alt="HIGH Horizons" style="height:44px;margin-bottom:.75rem;">
-            <div class="fw-bold text-secondary" style="font-size:.8rem;letter-spacing:.1em;">CARBOMICA</div>
-            <h5 class="fw-bold mt-2 mb-0" style="color:#1a1a1a;">Sign in to your account</h5>
-            <p class="text-muted mt-1 mb-0" style="font-size:.83rem;">
-                Carbon mitigation tool for healthcare facilities
-            </p>
-            {% endif %}
         </div>
 
         <div class="login-body">
@@ -138,7 +129,6 @@
 
             <div class="divider">What you can do</div>
 
-            {% if BRAND_EDITION == 'verdex' %}
             <div class="feature-item"><i class="fas fa-building"></i> Register an organisation: hospital, NGO, research lab, university, government, or business</div>
             <div class="feature-item"><i class="fas fa-smog"></i> Track emissions across 11 GHG-Protocol-aligned categories</div>
             <div class="feature-item"><i class="fas fa-bolt"></i> Run three-scenario carbon optimisation within a real budget</div>
@@ -149,25 +139,10 @@
 
             <div class="text-center text-muted" style="font-size:.74rem;line-height:1.5;">
                 <i class="fas fa-shield-alt me-1" style="color:var(--hh-success);"></i>
-                Built on GHG Protocol scope structure, IPCC AR6 emission factors,
-                and the HIGH Horizons / CARBOMICA optimisation framework.
+                GHG Protocol Corporate Standard · IPCC AR6 emission factors ·
+                IEA country grid factors · DEFRA conversion factors.
+                Every emission figure has a traceable source.
             </div>
-            {% else %}
-            <div class="feature-item"><i class="fas fa-hospital"></i> Register healthcare facilities across Kenya, South Africa &amp; Zimbabwe</div>
-            <div class="feature-item"><i class="fas fa-smog"></i> Track emissions across 11 AKDN-aligned categories</div>
-            <div class="feature-item"><i class="fas fa-bolt"></i> Run three-scenario carbon optimisation within a real budget</div>
-            <div class="feature-item"><i class="fas fa-leaf"></i> Compare interventions by tCO₂e reduced per dollar</div>
-            <div class="feature-item"><i class="fas fa-lock"></i> Your facility data is private to your account</div>
-
-            <div class="divider">Funded by</div>
-
-            <div class="text-center">
-                <img src="{% static 'img/eu_funded_badge.png' %}" alt="EU Funded" style="height:36px;opacity:.75;">
-                <p class="text-muted mt-2 mb-0" style="font-size:.72rem;">
-                    EU Horizon Europe · Grant No. 101057843 · HIGH Horizons
-                </p>
-            </div>
-            {% endif %}
         </div>
     </div>
 
