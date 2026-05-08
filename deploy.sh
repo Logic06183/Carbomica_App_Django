@@ -9,7 +9,7 @@
 # Prerequisites:
 #   brew install google-cloud-sdk firebase-cli
 #   gcloud auth login
-#   gcloud auth configure-docker us-central1-docker.pkg.dev
+#   gcloud auth configure-docker europe-west1-docker.pkg.dev
 #   firebase login
 
 set -euo pipefail
@@ -17,8 +17,9 @@ set -euo pipefail
 # ── Config ─────────────────────────────────────────────────────────────────
 PROJECT_ID="carbomica-tool"
 SERVICE_NAME="carbomica-backend"
-REGION="us-central1"
-IMAGE="us-central1-docker.pkg.dev/${PROJECT_ID}/${SERVICE_NAME}/app"
+# Co-located with Supabase Postgres (eu-west-1) — see commit 51d2df5.
+REGION="europe-west1"
+IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${SERVICE_NAME}/app"
 
 # ── Colours ────────────────────────────────────────────────────────────────
 GREEN='\033[0;32m'; BLUE='\033[0;34m'; YELLOW='\033[1;33m'; NC='\033[0m'
@@ -27,8 +28,18 @@ ok()   { echo -e "${GREEN}✔ $1${NC}"; }
 warn() { echo -e "${YELLOW}⚠ $1${NC}"; }
 
 # ── Database check ─────────────────────────────────────────────────────────
+# Tries env var first, then macOS keychain (s=carbomica-database-url).
+# Store once with:
+#   security add-generic-password -a "craig" -s "carbomica-database-url" -w "<URL>" -U
 check_database_url() {
     if [ -z "${DATABASE_URL:-}" ]; then
+        warn "DATABASE_URL not set — attempting to load from macOS keychain..."
+        DATABASE_URL=$(security find-generic-password -a "craig" -s "carbomica-database-url" -w 2>/dev/null || true)
+        if [ -n "${DATABASE_URL:-}" ]; then
+            export DATABASE_URL
+            ok "Loaded DATABASE_URL from keychain"
+            return
+        fi
         warn "DATABASE_URL is not set."
         echo ""
         echo "  CARBOMICA needs a PostgreSQL database. The easiest free option:"
@@ -104,15 +115,27 @@ if [ "$BACKEND" = true ]; then
         --quiet
 
     # ── Google OAuth credentials ─────────────────────────────────────────────
+    # Resolution order: env var → .env file → macOS keychain.
+    # Store once with:
+    #   security add-generic-password -a "craig" -s "carbomica-google-client-id" -w "<ID>" -U
+    #   security add-generic-password -a "craig" -s "carbomica-google-secret"    -w "<SECRET>" -U
     if [ -z "${GOOGLE_CLIENT_ID:-}" ] || [ -z "${GOOGLE_SECRET:-}" ]; then
-        warn "GOOGLE_CLIENT_ID or GOOGLE_SECRET not set — loading from .env if present"
         if [ -f .env ]; then
+            warn "GOOGLE_CLIENT_ID/GOOGLE_SECRET not set — loading from .env"
             export $(grep -E '^(GOOGLE_CLIENT_ID|GOOGLE_SECRET)=' .env | xargs) 2>/dev/null || true
         fi
     fi
+    if [ -z "${GOOGLE_CLIENT_ID:-}" ]; then
+        GOOGLE_CLIENT_ID=$(security find-generic-password -a "craig" -s "carbomica-google-client-id" -w 2>/dev/null || true)
+        [ -n "${GOOGLE_CLIENT_ID:-}" ] && export GOOGLE_CLIENT_ID && ok "Loaded GOOGLE_CLIENT_ID from keychain"
+    fi
+    if [ -z "${GOOGLE_SECRET:-}" ]; then
+        GOOGLE_SECRET=$(security find-generic-password -a "craig" -s "carbomica-google-secret" -w 2>/dev/null || true)
+        [ -n "${GOOGLE_SECRET:-}" ] && export GOOGLE_SECRET && ok "Loaded GOOGLE_SECRET from keychain"
+    fi
     if [ -z "${GOOGLE_CLIENT_ID:-}" ] || [ -z "${GOOGLE_SECRET:-}" ]; then
         warn "Google OAuth credentials missing — Google login will not work on Cloud Run"
-        warn "Set GOOGLE_CLIENT_ID and GOOGLE_SECRET env vars before deploying"
+        warn "Set GOOGLE_CLIENT_ID and GOOGLE_SECRET env vars (or store them in keychain) before deploying"
     else
         ok "Google OAuth credentials loaded"
     fi
