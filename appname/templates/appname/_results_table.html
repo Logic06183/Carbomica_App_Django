@@ -1,4 +1,5 @@
 {% load humanize %}
+{% load carbomica_extras %}
 {% if results %}
 <div class="table-responsive">
     <table class="table table-hover align-middle mb-0">
@@ -48,13 +49,15 @@
                     {% endif %}
                 </td>
                 <td>
-                    {% if r.sdg_goals %}
-                        {% for sdg in r.sdg_goals.split:"," %}
-                        <span class="badge rounded-pill me-1" style="background:#268dcd;font-size:.7rem;">{{ sdg }}</span>
-                        {% endfor %}
-                    {% else %}
-                        <span class="text-muted small">—</span>
-                    {% endif %}
+                    {% with sdg_list=r.sdg_goals|split:"," %}
+                        {% if sdg_list %}
+                            {% for sdg in sdg_list %}
+                            <span class="badge rounded-pill me-1" style="background:#268dcd;font-size:.7rem;">SDG&nbsp;{{ sdg }}</span>
+                            {% endfor %}
+                        {% else %}
+                            <span class="text-muted small">—</span>
+                        {% endif %}
+                    {% endwith %}
                 </td>
             </tr>
             {% endfor %}

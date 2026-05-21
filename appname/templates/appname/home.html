@@ -258,6 +258,13 @@
             <p class="mb-4" style="color:rgba(255,255,255,.8);font-size:.93rem;">
                 Carbon mitigation resource allocation for health facilities — Kenya, South Africa &amp; Zimbabwe.
             </p>
+            <p class="small mb-2" style="color:rgba(255,255,255,.65);">
+                {% if is_user_scope %}
+                    <i class="fas fa-user-check me-1"></i>Showing your facilities and emissions
+                {% else %}
+                    <i class="fas fa-globe-africa me-1"></i>Showing all CARBOMICA facilities (sign in to see only yours)
+                {% endif %}
+            </p>
             <div class="d-flex flex-wrap gap-3">
                 <div class="stat-chip"><i class="fas fa-hospital"></i> {{ facility_count }} facilit{{ facility_count|pluralize:"y,ies" }}</div>
                 <div class="stat-chip"><i class="fas fa-smog"></i> {{ total_emissions|floatformat:0|intcomma }} tCO₂e</div>

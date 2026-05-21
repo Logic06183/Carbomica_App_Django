@@ -672,3 +672,233 @@ class AttachDetachInterventionTest(TestCase):
             f'/facilities/{self.facility.id}/interventions/{self.intervention.id}/detach/'
         )
         self.assertEqual(response.status_code, 405)
+
+
+class OptimizationResultsRenderTest(TestCase):
+    """
+    Production 500 on /optimization-results/<id>/ (2026-05-21): the
+    _results_table.html partial used `{% for sdg in r.sdg_goals.split:"," %}`,
+    which is invalid Django template syntax — Django's template language
+    cannot call str methods with arguments. The compiled template raised
+    TemplateSyntaxError on first GET, taking down the whole results page.
+
+    This test exists to make any future "split-with-arg" mistake fail
+    immediately in CI rather than silently in production.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        from appname.models import OptimizationScenario, OptimizationResult
+        call_command('sync_interventions', stdout=StringIO())
+        cls.user = User.objects.create_user('jay', 'jay@example.com', 'pw')
+        cls.facility = Facility.objects.create(
+            code_name='RENDER_FAC',
+            display_name='Render Test Facility',
+            country='KE',
+            facility_type='district_hospital',
+            created_by=cls.user,
+        )
+        cls.scenario = OptimizationScenario.objects.create(
+            facility=cls.facility,
+            name='Render Test',
+            budget=Decimal('50000'),
+            target_reduction=Decimal('25'),
+        )
+        intervention = Intervention.objects.first()
+        OptimizationResult.objects.create(
+            scenario=cls.scenario,
+            intervention=intervention,
+            priority=1,
+            expected_roi=Decimal('15'),
+            emission_reduction=Decimal('10'),
+            implementation_cost=Decimal('1000'),
+            annual_savings=Decimal('500'),
+            payback_months=24,
+        )
+
+    def test_results_page_renders_with_db_fallback_path(self):
+        """No session data — view falls back to persisted OptimizationResult rows."""
+        self.client.login(username='jay', password='pw')
+        response = self.client.get(f'/optimization-results/{self.scenario.id}/')
+        self.assertEqual(
+            response.status_code, 200,
+            f'Expected 200, got {response.status_code} — likely a TemplateSyntaxError regression',
+        )
+        # SDG badges should actually render — verifies the split filter works.
+        # Default intervention #1 has sdg_goals like "7,13".
+        self.assertIn(b'SDG', response.content)
+
+    def test_results_page_handles_empty_sdg_goals(self):
+        """An intervention with no SDG goals must render — not a UnicodeDecodeError, not a 500."""
+        from appname.models import OptimizationResult
+        intervention = Intervention.objects.create(
+            code_name='TEST_NO_SDG',
+            display_name='No-SDG Test Intervention',
+            sdg_goals='',
+            emission_reduction_percentage=Decimal('5'),
+        )
+        OptimizationResult.objects.create(
+            scenario=self.scenario,
+            intervention=intervention,
+            priority=99,
+            expected_roi=Decimal('10'),
+            emission_reduction=Decimal('5'),
+            implementation_cost=Decimal('500'),
+            annual_savings=Decimal('100'),
+            payback_months=60,
+        )
+        self.client.login(username='jay', password='pw')
+        response = self.client.get(f'/optimization-results/{self.scenario.id}/')
+        self.assertEqual(response.status_code, 200)
+
+
+class OptimiseDoesNotDuplicateEmissionsTest(TestCase):
+    """
+    Production data corruption (2026-05-21): the optimize_interventions view
+    used to unconditionally create a new EmissionData row from the form on
+    POST. Because the form was pre-filled with the latest values, simply
+    clicking "Run optimisation" without editing anything doubled the
+    facility's baseline emissions. A second click tripled them, etc.
+
+    The fix is one line — `if emission_form.has_changed():` around the
+    create. This test guards it.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command('sync_interventions', stdout=StringIO())
+        cls.user = User.objects.create_user('eve', 'eve@example.com', 'pw')
+        cls.facility = Facility.objects.create(
+            code_name='EVE_FAC',
+            display_name='Eve Hospital',
+            country='KE',
+            facility_type='district_hospital',
+            created_by=cls.user,
+        )
+        cls.source = EmissionSource.objects.create(
+            facility=cls.facility,
+            code_name='EVE_BASELINE',
+            display_name='Eve baseline',
+        )
+        EmissionData.objects.create(
+            emission_source=cls.source,
+            date='2026-01-01',
+            grid_electricity=Decimal('500000'),
+        )
+
+    def _post_optimise(self, **overrides):
+        """POST the optimise form with the current baseline values unchanged."""
+        # All emission fields must be present; default to the existing baseline.
+        payload = {
+            'name': 'Repeat-click test',
+            'budget': '50000',
+            'target_reduction': '25',
+            'date': '2026-01-01',
+            'grid_electricity': '500000',
+            'grid_gas': '0',
+            'bottled_gas': '0',
+            'liquid_fuel': '0',
+            'vehicle_fuel_owned': '0',
+            'business_travel': '0',
+            'anaesthetic_gases': '0',
+            'refrigeration_gases': '0',
+            'waste_management': '0',
+            'medical_inhalers': '0',
+            'contractor_logistics': '0',
+        }
+        payload.update(overrides)
+        self.client.login(username='eve', password='pw')
+        return self.client.post(f'/optimize/{self.facility.id}/', payload)
+
+    def test_unchanged_form_does_not_create_duplicate_emission_record(self):
+        before = EmissionData.objects.filter(emission_source=self.source).count()
+        self.assertEqual(before, 1, 'Sanity: setUpTestData created exactly one row')
+        response = self._post_optimise()
+        self.assertIn(response.status_code, (200, 302),
+                      f'Optimise POST failed: {response.status_code}')
+        after = EmissionData.objects.filter(emission_source=self.source).count()
+        self.assertEqual(
+            after, 1,
+            'Re-running optimise with unchanged values must NOT create a duplicate '
+            'EmissionData row — that was the silent doubling bug.',
+        )
+
+    def test_changed_form_creates_a_new_snapshot(self):
+        """A genuine update — different kWh value — should be recorded."""
+        before = EmissionData.objects.filter(emission_source=self.source).count()
+        response = self._post_optimise(grid_electricity='600000')
+        self.assertIn(response.status_code, (200, 302))
+        after = EmissionData.objects.filter(emission_source=self.source).count()
+        self.assertEqual(after, before + 1,
+                         'A real edit (500000→600000) must be recorded as a new snapshot')
+
+
+class HomeScopeTest(TestCase):
+    """
+    Home page used to show platform-wide counts to logged-in users,
+    silently contradicting the user-scoped Dashboard. Now it scopes
+    counts to the authenticated user.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command('sync_interventions', stdout=StringIO())
+        cls.alice = User.objects.create_user('alice', 'alice@example.com', 'pw')
+        cls.bob = User.objects.create_user('bob', 'bob@example.com', 'pw')
+        # Alice has one facility; Bob has two. Home should show 1 to Alice,
+        # 2 to Bob, and 3 to an anonymous visitor.
+        Facility.objects.create(
+            code_name='ALICE_1', display_name='Alice Hospital', country='ZA',
+            facility_type='district_hospital', created_by=cls.alice,
+        )
+        Facility.objects.create(
+            code_name='BOB_1', display_name='Bob Hospital', country='KE',
+            facility_type='district_hospital', created_by=cls.bob,
+        )
+        Facility.objects.create(
+            code_name='BOB_2', display_name='Bob Clinic', country='KE',
+            facility_type='health_centre', created_by=cls.bob,
+        )
+
+    def test_anonymous_sees_platform_wide_count(self):
+        response = self.client.get('/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['facility_count'], 3)
+        self.assertFalse(response.context['is_user_scope'])
+
+    def test_alice_sees_only_her_facility(self):
+        self.client.login(username='alice', password='pw')
+        response = self.client.get('/')
+        self.assertEqual(response.context['facility_count'], 1)
+        self.assertTrue(response.context['is_user_scope'])
+
+    def test_bob_sees_only_his_two_facilities(self):
+        self.client.login(username='bob', password='pw')
+        response = self.client.get('/')
+        self.assertEqual(response.context['facility_count'], 2)
+        self.assertTrue(response.context['is_user_scope'])
+
+
+class SplitFilterTest(TestCase):
+    """Unit coverage for the carbomica_extras.split filter."""
+
+    def test_csv_string_split_into_list(self):
+        from appname.templatetags.carbomica_extras import split_filter
+        self.assertEqual(split_filter('7,13'), ['7', '13'])
+
+    def test_strips_whitespace_around_tokens(self):
+        from appname.templatetags.carbomica_extras import split_filter
+        self.assertEqual(split_filter(' 7 , 13 '), ['7', '13'])
+
+    def test_drops_empty_tokens(self):
+        from appname.templatetags.carbomica_extras import split_filter
+        self.assertEqual(split_filter('7,,13,'), ['7', '13'])
+
+    def test_empty_string_returns_empty_list(self):
+        from appname.templatetags.carbomica_extras import split_filter
+        self.assertEqual(split_filter(''), [])
+        self.assertEqual(split_filter(None), [])
+
+    def test_custom_separator(self):
+        from appname.templatetags.carbomica_extras import split_filter
+        self.assertEqual(split_filter('7|13|17', '|'), ['7', '13', '17'])

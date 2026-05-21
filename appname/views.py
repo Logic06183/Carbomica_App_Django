@@ -139,30 +139,68 @@ def _aggregate_tco2e_all(user):
 # ---------------------------------------------------------------------------
 
 def home(request):
-    """Landing page — guides health managers into the CARBOMICA tool."""
-    facility_count = Facility.objects.count()
-    all_eds = EmissionData.objects.select_related('emission_source__facility').all()
-    total_emissions = sum(
-        compute_tco2e(ed, country=ed.emission_source.facility.country if ed.emission_source and ed.emission_source.facility else 'OTHER')['total']
-        for ed in all_eds
-    ) or Decimal('0')
-    active_interventions = FacilityIntervention.objects.filter(
-        intervention__status__in=['Planned', 'In Progress']
-    ).count()
-    optimized_scenarios = OptimizationScenario.objects.filter(status='Optimized').count()
+    """Landing page — guides health managers into the CARBOMICA tool.
 
-    recent_facilities = Facility.objects.order_by('-id')[:3]
-    recent_scenarios = (
-        OptimizationScenario.objects
-        .select_related('facility')
-        .order_by('-created_at')[:3]
-    )
-    upcoming_interventions = (
-        FacilityIntervention.objects
-        .select_related('facility', 'intervention')
-        .filter(implementation_date__isnull=False)
-        .order_by('implementation_date')[:3]
-    )
+    Scoped to the logged-in user's facilities; anonymous visitors get a
+    platform-wide overview labelled as such. Previously this view always
+    queried global counts, so a user with one facility would see a tCO₂e
+    total that included every other tenant's data — which silently
+    contradicted the user-scoped dashboard and undermined trust.
+    """
+    if request.user.is_authenticated:
+        facilities_qs = _user_facilities(request.user)
+        ed_qs = EmissionData.objects.select_related('emission_source__facility').filter(
+            emission_source__facility__in=facilities_qs
+        )
+        active_interventions = FacilityIntervention.objects.filter(
+            facility__in=facilities_qs,
+            intervention__status__in=['Planned', 'In Progress'],
+        ).count()
+        optimized_scenarios = OptimizationScenario.objects.filter(
+            facility__in=facilities_qs, status='Optimized',
+        ).count()
+        recent_facilities = facilities_qs.order_by('-id')[:3]
+        recent_scenarios = (
+            OptimizationScenario.objects
+            .select_related('facility')
+            .filter(facility__in=facilities_qs)
+            .order_by('-created_at')[:3]
+        )
+        upcoming_interventions = (
+            FacilityIntervention.objects
+            .select_related('facility', 'intervention')
+            .filter(facility__in=facilities_qs, implementation_date__isnull=False)
+            .order_by('implementation_date')[:3]
+        )
+        is_user_scope = True
+    else:
+        facilities_qs = Facility.objects.all()
+        ed_qs = EmissionData.objects.select_related('emission_source__facility').all()
+        active_interventions = FacilityIntervention.objects.filter(
+            intervention__status__in=['Planned', 'In Progress'],
+        ).count()
+        optimized_scenarios = OptimizationScenario.objects.filter(status='Optimized').count()
+        recent_facilities = Facility.objects.order_by('-id')[:3]
+        recent_scenarios = (
+            OptimizationScenario.objects.select_related('facility').order_by('-created_at')[:3]
+        )
+        upcoming_interventions = (
+            FacilityIntervention.objects
+            .select_related('facility', 'intervention')
+            .filter(implementation_date__isnull=False)
+            .order_by('implementation_date')[:3]
+        )
+        is_user_scope = False
+
+    facility_count = facilities_qs.count()
+    total_emissions = sum(
+        compute_tco2e(
+            ed,
+            country=ed.emission_source.facility.country
+            if ed.emission_source and ed.emission_source.facility else 'OTHER',
+        )['total']
+        for ed in ed_qs
+    ) or Decimal('0')
 
     call_to_actions = [
         {
@@ -194,6 +232,7 @@ def home(request):
         'recent_scenarios': recent_scenarios,
         'upcoming_interventions': upcoming_interventions,
         'call_to_actions': call_to_actions,
+        'is_user_scope': is_user_scope,
     }
     return render(request, 'appname/home.html', context)
 
@@ -576,17 +615,30 @@ def optimize_interventions(request, facility_id):
     facility = get_object_or_404(_user_facilities(request.user), id=facility_id)
 
     if request.method == 'POST':
+        # Bind the emission form to the latest snapshot so `has_changed()`
+        # has a real baseline to compare against. Without `instance=`, every
+        # field looks "changed" (empty initial vs populated POST), which is
+        # what caused the silent doubling bug.
+        latest_emission_for_diff = (
+            EmissionData.objects
+            .filter(emission_source__facility=facility)
+            .order_by('-date')
+            .first()
+        )
         scenario_form = OptimizationScenarioForm(request.POST)
-        emission_form = EmissionDataUpdateForm(request.POST)
+        emission_form = EmissionDataUpdateForm(request.POST, instance=latest_emission_for_diff)
 
         if scenario_form.is_valid() and emission_form.is_valid():
             scenario = scenario_form.save(commit=False)
             scenario.facility = facility
             scenario.save()
 
-            # Record updated emission data snapshot
+            # Record a fresh emission data snapshot ONLY if the user actually
+            # edited a value. Otherwise the form's `instance=latest` binding
+            # means save() would update that row in place — we don't want
+            # either (no change → no new row, full stop).
             emission_source = facility.emission_sources.first()
-            if emission_source:
+            if emission_source and emission_form.has_changed():
                 EmissionData.objects.create(
                     emission_source=emission_source,
                     **emission_form.cleaned_data,
