@@ -576,3 +576,99 @@ class FreshFacilityOptimiserTest(TestCase):
                 len(scenarios[name]['results']), 0,
                 f'Scenario "{name}" returned empty results — Bug 2 is back'
             )
+
+
+class AttachDetachInterventionTest(TestCase):
+    """
+    Jetina-flow regression coverage: a logged-in facility owner can
+    detach and re-attach interventions from their facility detail page.
+    Previously impossible — no URL/view existed, so the only way to
+    "remove" an intervention was via Django admin.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command('sync_interventions', stdout=StringIO())
+        cls.owner = User.objects.create_user('owner', 'owner@example.com', 'pw')
+        cls.outsider = User.objects.create_user('outsider', 'outsider@example.com', 'pw')
+        cls.facility = Facility.objects.create(
+            code_name='JET_FAC',
+            display_name='Mt Darwin Hospital',
+            country='ZW',
+            facility_type='district_hospital',
+            created_by=cls.owner,
+        )
+        from appname.views import _seed_facility_interventions
+        _seed_facility_interventions(cls.facility)
+        cls.intervention = Intervention.objects.first()
+
+    def test_detach_removes_facility_intervention_row(self):
+        self.client.login(username='owner', password='pw')
+        before = FacilityIntervention.objects.filter(facility=self.facility).count()
+        response = self.client.post(
+            f'/facilities/{self.facility.id}/interventions/{self.intervention.id}/detach/'
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response['Location'], f'/facilities/{self.facility.id}/')
+        after = FacilityIntervention.objects.filter(facility=self.facility).count()
+        self.assertEqual(after, before - 1, 'detach should remove exactly one row')
+        self.assertFalse(
+            FacilityIntervention.objects.filter(
+                facility=self.facility, intervention=self.intervention,
+            ).exists()
+        )
+
+    def test_attach_recreates_row_with_library_defaults(self):
+        self.client.login(username='owner', password='pw')
+        FacilityIntervention.objects.filter(
+            facility=self.facility, intervention=self.intervention,
+        ).delete()
+        response = self.client.post(
+            f'/facilities/{self.facility.id}/interventions/{self.intervention.id}/attach/'
+        )
+        self.assertEqual(response.status_code, 302)
+        fi = FacilityIntervention.objects.get(
+            facility=self.facility, intervention=self.intervention,
+        )
+        self.assertIn(fi.cost_source, ('DEFAULT', 'PLACEHOLDER'))
+
+    def test_attach_is_idempotent_and_does_not_clobber_custom_costs(self):
+        """Re-attaching must NOT overwrite a row a user has customised."""
+        self.client.login(username='owner', password='pw')
+        fi = FacilityIntervention.objects.get(
+            facility=self.facility, intervention=self.intervention,
+        )
+        fi.implementation_cost = Decimal('99999')
+        fi.cost_source = 'USER'
+        fi.save()
+
+        response = self.client.post(
+            f'/facilities/{self.facility.id}/interventions/{self.intervention.id}/attach/'
+        )
+        self.assertEqual(response.status_code, 302)
+        fi.refresh_from_db()
+        self.assertEqual(fi.implementation_cost, Decimal('99999'),
+                         'Re-attach must NOT overwrite user-customised costs')
+        self.assertEqual(fi.cost_source, 'USER',
+                         'Re-attach must preserve USER cost_source')
+
+    def test_outsider_cannot_detach_from_someone_elses_facility(self):
+        self.client.login(username='outsider', password='pw')
+        response = self.client.post(
+            f'/facilities/{self.facility.id}/interventions/{self.intervention.id}/detach/'
+        )
+        self.assertEqual(response.status_code, 404)
+        self.assertTrue(
+            FacilityIntervention.objects.filter(
+                facility=self.facility, intervention=self.intervention,
+            ).exists(),
+            'Outsider must not be able to detach from another user\'s facility'
+        )
+
+    def test_get_is_not_allowed_for_detach(self):
+        """Detach must be POST-only to prevent CSRF and link-based mistakes."""
+        self.client.login(username='owner', password='pw')
+        response = self.client.get(
+            f'/facilities/{self.facility.id}/interventions/{self.intervention.id}/detach/'
+        )
+        self.assertEqual(response.status_code, 405)

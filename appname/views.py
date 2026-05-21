@@ -9,6 +9,7 @@ from django.db.models import Sum, F, Avg, Count
 from django.db.models.functions import TruncMonth
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.views.decorators.http import require_POST
 from decimal import Decimal, InvalidOperation
 from datetime import date
 
@@ -335,12 +336,7 @@ def _seed_facility_interventions(facility):
     before = FacilityIntervention.objects.filter(facility=facility).count()
     rows = []
     for intervention in Intervention.objects.all():
-        costs = DEFAULT_COSTS.get(intervention.code_name)
-        if costs:
-            source = 'DEFAULT'
-        else:
-            costs = PLACEHOLDER_COSTS
-            source = 'PLACEHOLDER'
+        costs, source = _intervention_default_costs(intervention)
         rows.append(FacilityIntervention(
             facility=facility,
             intervention=intervention,
@@ -356,6 +352,82 @@ def _seed_facility_interventions(facility):
     after = FacilityIntervention.objects.filter(facility=facility).count()
     inserted = after - before
     return inserted, len(rows) - inserted
+
+
+def _intervention_default_costs(intervention):
+    """
+    Resolve cost defaults for an intervention. Mirrors the logic in
+    _seed_facility_interventions so manual attach picks the same numbers
+    that auto-attach would have applied at facility creation.
+    """
+    costs = DEFAULT_COSTS.get(intervention.code_name)
+    if costs:
+        return costs, 'DEFAULT'
+    return PLACEHOLDER_COSTS, 'PLACEHOLDER'
+
+
+@login_required
+@require_POST
+def attach_intervention(request, facility_id, intervention_id):
+    """
+    Attach an intervention from the library to a facility with LMIC default
+    costs. Idempotent: if the (facility, intervention) row already exists,
+    we silently skip and tell the user — `update_or_create` would clobber
+    user-customised costs, which is not what "attach" means.
+    """
+    facility = get_object_or_404(_user_facilities(request.user), id=facility_id)
+    intervention = get_object_or_404(Intervention, id=intervention_id)
+
+    costs, source = _intervention_default_costs(intervention)
+    fi, created = FacilityIntervention.objects.get_or_create(
+        facility=facility,
+        intervention=intervention,
+        defaults={
+            'implementation_cost': Decimal(costs['impl']),
+            'maintenance_cost': Decimal(costs['maint']),
+            'annual_savings': Decimal(costs['savings']),
+            'cost_source': source,
+        },
+    )
+    if created:
+        fi.roi = fi.calculate_roi()
+        fi.save(update_fields=['roi'])
+        messages.success(
+            request,
+            f'Added "{intervention.display_name}" to {facility.display_name} '
+            f'with default costs. Edit the row to override with site-specific values.'
+        )
+    else:
+        messages.info(
+            request,
+            f'"{intervention.display_name}" was already linked to {facility.display_name}.'
+        )
+    return redirect('facility_detail', facility_id=facility.id)
+
+
+@login_required
+@require_POST
+def detach_intervention(request, facility_id, intervention_id):
+    """Remove an intervention from a facility. Hard delete — re-attaching
+    later will pull library defaults again."""
+    facility = get_object_or_404(_user_facilities(request.user), id=facility_id)
+    intervention = get_object_or_404(Intervention, id=intervention_id)
+
+    deleted, _ = FacilityIntervention.objects.filter(
+        facility=facility, intervention=intervention,
+    ).delete()
+    if deleted:
+        messages.success(
+            request,
+            f'Removed "{intervention.display_name}" from {facility.display_name}. '
+            f'Re-add it from the library section below at any time.'
+        )
+    else:
+        messages.info(
+            request,
+            f'"{intervention.display_name}" was not linked to {facility.display_name}.'
+        )
+    return redirect('facility_detail', facility_id=facility.id)
 
 
 @login_required
@@ -1077,13 +1149,17 @@ def facility_detail(request, facility_id):
 
     # Linked interventions with financial metrics
     facility_interventions = []
+    attached_intervention_ids = set()
     for fi in facility.facility_interventions.select_related('intervention').all():
         impl = fi.implementation_cost or Decimal('0')
         maint = fi.maintenance_cost or Decimal('0')
         savings = fi.annual_savings or Decimal('0')
         total_cost = impl + maint
         payback_yrs = (total_cost / savings) if savings > 0 else None
+        attached_intervention_ids.add(fi.intervention_id)
         facility_interventions.append({
+            'id': fi.id,
+            'intervention_id': fi.intervention_id,
             'name': fi.intervention.display_name,
             'status': fi.intervention.status,
             'sdg_goals': fi.intervention.sdg_goals,
@@ -1093,7 +1169,16 @@ def facility_detail(request, facility_id):
             'payback_yrs': payback_yrs,
             'roi': fi.calculate_roi(),
             'emission_reduction_pct': fi.intervention.emission_reduction_percentage,
+            'cost_source': fi.cost_source,
         })
+
+    # Library interventions NOT yet attached — surfaced so the user can
+    # re-add them after a removal without leaving the facility page.
+    available_interventions = (
+        Intervention.objects
+        .exclude(id__in=attached_intervention_ids)
+        .order_by('display_name')
+    )
 
     # Baseline tCO₂e (most recent record)
     baseline_tco2e = latest_breakdown['total_tco2e'] if latest_breakdown else Decimal('0')
@@ -1109,6 +1194,7 @@ def facility_detail(request, facility_id):
         'records_with_tco2e': records_with_tco2e,
         'latest_breakdown': latest_breakdown,
         'facility_interventions': facility_interventions,
+        'available_interventions': available_interventions,
         'baseline_tco2e': baseline_tco2e,
         'potential_savings_tco2e': potential_savings_tco2e,
         'category_chart_data': category_chart_data,
