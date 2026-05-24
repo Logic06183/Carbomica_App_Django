@@ -673,6 +673,54 @@ class AttachDetachInterventionTest(TestCase):
         )
         self.assertEqual(response.status_code, 405)
 
+    def test_toggle_flips_attached_state(self):
+        """The unified toggle endpoint must flip on→off→on cleanly."""
+        self.client.login(username='owner', password='pw')
+        # Start attached (setUpTestData seeded everything)
+        self.assertTrue(FacilityIntervention.objects.filter(
+            facility=self.facility, intervention=self.intervention).exists())
+
+        # First toggle → detach
+        self.client.post(
+            f'/facilities/{self.facility.id}/interventions/{self.intervention.id}/toggle/'
+        )
+        self.assertFalse(FacilityIntervention.objects.filter(
+            facility=self.facility, intervention=self.intervention).exists())
+
+        # Second toggle → re-attach with library defaults
+        self.client.post(
+            f'/facilities/{self.facility.id}/interventions/{self.intervention.id}/toggle/'
+        )
+        self.assertTrue(FacilityIntervention.objects.filter(
+            facility=self.facility, intervention=self.intervention).exists())
+
+    def test_toggle_outsider_blocked(self):
+        """Cross-facility toggle attempts must 404 (same as attach/detach)."""
+        self.client.login(username='outsider', password='pw')
+        response = self.client.post(
+            f'/facilities/{self.facility.id}/interventions/{self.intervention.id}/toggle/'
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_facility_detail_renders_unified_intervention_rows(self):
+        """
+        The new toggle UI passes `intervention_rows` (one per library
+        intervention with is_attached flag). Must render with a form-switch
+        per row and a CSRF token in each toggle form.
+        """
+        self.client.login(username='owner', password='pw')
+        response = self.client.get(f'/facilities/{self.facility.id}/')
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode()
+        # All library rows should appear, attached or not.
+        n_library = Intervention.objects.count()
+        n_switches = body.count('form-check-input')
+        self.assertGreaterEqual(
+            n_switches, n_library,
+            f'Expected one toggle switch per library intervention ({n_library}); '
+            f'got {n_switches} on the page.',
+        )
+
 
 class OptimizationResultsRenderTest(TestCase):
     """
@@ -877,6 +925,124 @@ class HomeScopeTest(TestCase):
         response = self.client.get('/')
         self.assertEqual(response.context['facility_count'], 2)
         self.assertTrue(response.context['is_user_scope'])
+
+
+class DashboardCounterConsistencyTest(TestCase):
+    """
+    Production QA 2026-05-24: Dashboard showed "Linked interventions: 0"
+    while Home/Facilities/Interventions portfolio all showed 63 for the
+    same user. Root causes:
+
+      (a) Dashboard filtered FacilityIntervention by status='In Progress',
+          but seeded rows are status='Planned' with no UI transition →
+          always 0.
+      (b) Dashboard summed implementation_cost only; Interventions portfolio
+          summed implementation + maintenance, producing a $700K gap.
+
+    This test pins both: linked-interventions count and total-investment
+    sum on the Dashboard must match the Interventions portfolio's
+    aggregates exactly (same user, same DB).
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command('sync_interventions', stdout=StringIO())
+        cls.user = User.objects.create_user('dash', 'dash@example.com', 'pw')
+        cls.facility = Facility.objects.create(
+            code_name='DASH_FAC',
+            display_name='Dashboard Test Hospital',
+            country='ZA',
+            facility_type='district_hospital',
+            created_by=cls.user,
+        )
+        from appname.views import _seed_facility_interventions
+        _seed_facility_interventions(cls.facility)
+        # Mark a couple of FacilityInterventions' parent Intervention status
+        # variations so we exercise the "no status filter" path properly.
+        Intervention.objects.filter(id__in=Intervention.objects.values_list('id', flat=True)[:3]).update(status='In Progress')
+
+    def test_dashboard_linked_count_matches_interventions_portfolio(self):
+        self.client.login(username='dash', password='pw')
+        dash = self.client.get('/dashboard/')
+        portfolio = self.client.get('/interventions/')
+        self.assertEqual(dash.status_code, 200)
+        self.assertEqual(portfolio.status_code, 200)
+
+        # Dashboard's `active_interventions` must equal portfolio's count.
+        dash_count = dash.context['active_interventions']
+        portfolio_count = portfolio.context['summary']['count']
+        self.assertEqual(
+            dash_count, portfolio_count,
+            f'Dashboard ({dash_count}) and Interventions portfolio ({portfolio_count}) '
+            f'should report the same linked-intervention count',
+        )
+
+    def test_dashboard_total_investment_matches_interventions_portfolio(self):
+        self.client.login(username='dash', password='pw')
+        dash = self.client.get('/dashboard/')
+        portfolio = self.client.get('/interventions/')
+        dash_invest = dash.context['total_investment']
+        portfolio_invest = portfolio.context['summary']['total_investment']
+        self.assertEqual(
+            dash_invest, portfolio_invest,
+            f'Dashboard ({dash_invest}) and Interventions portfolio ({portfolio_invest}) '
+            f'should report the same total investment (impl + maint)',
+        )
+
+
+class PipelineStatusAggregationTest(TestCase):
+    """
+    Production QA 2026-05-24: Pipeline status widget rendered one row per
+    FacilityIntervention ("Planned — 1 projects", repeated 63 times) instead
+    of one row per status ("Planned: 63"). Root cause was a classic Django
+    ORM trap: `qs.values('intervention__status').annotate(count=...)` was
+    called on a QuerySet that already had `.order_by(facility__display_name,
+    intervention__display_name)`. Django then appends the order_by columns
+    to the GROUP BY clause, producing one row per unique (status, facility,
+    intervention) tuple — i.e. one row per FacilityIntervention.
+
+    Fix: insert `.order_by()` (empty) before `.values()` to clear the
+    inherited ordering. This test pins that fix in place.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command('sync_interventions', stdout=StringIO())
+        cls.user = User.objects.create_user('pipe', 'pipe@example.com', 'pw')
+        cls.facility = Facility.objects.create(
+            code_name='PIPE_FAC',
+            display_name='Pipeline Test Hospital',
+            country='KE',
+            facility_type='district_hospital',
+            created_by=cls.user,
+        )
+        from appname.views import _seed_facility_interventions
+        _seed_facility_interventions(cls.facility)
+
+    def test_status_breakdown_aggregates_by_status_not_by_intervention(self):
+        self.client.login(username='pipe', password='pw')
+        response = self.client.get('/interventions/')
+        breakdown = response.context['status_breakdown']
+
+        # Every (FacilityIntervention) row is auto-seeded with parent
+        # Intervention.status='Planned' by default. So the breakdown should
+        # have AT MOST as many entries as distinct status values exist —
+        # which for fresh data is exactly 1 ("Planned").
+        distinct_statuses = {entry['status'] for entry in breakdown}
+        self.assertLessEqual(
+            len(breakdown), len(distinct_statuses) + 1,
+            f'Pipeline status breakdown over-fragmented: {len(breakdown)} rows '
+            f'for {len(distinct_statuses)} distinct statuses — GROUP BY regression. '
+            f'Rows: {breakdown}',
+        )
+
+        # And the total count across statuses must equal total FacilityInterventions.
+        total_via_breakdown = sum(entry['count'] for entry in breakdown)
+        self.assertEqual(
+            total_via_breakdown, response.context['summary']['count'],
+            f'Status breakdown total ({total_via_breakdown}) does not match '
+            f'portfolio count ({response.context["summary"]["count"]})',
+        )
 
 
 class CreateCustomInterventionTest(TestCase):

@@ -229,84 +229,100 @@
 
 {% endif %}
 
-<!-- ── Linked interventions ── -->
+<!-- ── Interventions for this facility (toggle to attach/detach) ── -->
 <div class="card mb-4">
-    <div class="card-header d-flex align-items-center justify-content-between">
+    <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
         <span>
             <i class="fas fa-leaf me-2" style="color:var(--hh-success);"></i>
-            Linked interventions
-            <span class="badge bg-light text-muted ms-2">{{ facility_interventions|length }}</span>
+            Interventions
+            <span class="badge bg-success-subtle text-success-emphasis ms-2">{{ attached_count }} attached</span>
+            <span class="badge bg-light text-muted ms-1">{{ intervention_rows|length }} in library</span>
         </span>
         <span class="text-muted small no-print">
-            Step 1 · Pick the interventions that apply to this facility &nbsp;·&nbsp;
-            Step 2 · Customise costs &nbsp;·&nbsp;
-            Step 3 ·
-            <a href="{% url 'optimize_interventions' facility.id %}" class="fw-semibold">Run optimisation</a>
+            Toggle to attach or detach &nbsp;·&nbsp;
+            <a href="{% url 'optimize_interventions' facility.id %}" class="fw-semibold">
+                <i class="fas fa-bolt me-1"></i>Run optimisation
+            </a>
         </span>
     </div>
-    {% if facility_interventions %}
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0 small">
                 <thead class="table-light">
                     <tr>
+                        <th style="width:6rem;" class="no-print">Apply</th>
                         <th>Intervention</th>
-                        <th>Impl. cost (USD)</th>
-                        <th>Annual savings</th>
-                        <th>Payback</th>
-                        <th>Emission reduction</th>
+                        <th>Target category</th>
+                        <th class="text-end">Impl. cost</th>
+                        <th class="text-end">Annual savings</th>
+                        <th class="text-end">Payback</th>
+                        <th class="text-end">Reduction</th>
                         <th>SDGs</th>
-                        <th class="no-print text-end">Actions</th>
+                        <th class="no-print"></th>
                     </tr>
                 </thead>
                 <tbody>
-                    {% for fi in facility_interventions %}
-                    <tr>
+                    {% for row in intervention_rows %}
+                    <tr {% if not row.is_attached %}class="text-muted-row" style="opacity:.6;"{% endif %}>
+                        <td class="no-print">
+                            <form method="post"
+                                  action="{% url 'toggle_intervention' facility.id row.intervention_id %}"
+                                  class="d-inline">
+                                {% csrf_token %}
+                                <div class="form-check form-switch m-0">
+                                    <input class="form-check-input"
+                                           type="checkbox"
+                                           role="switch"
+                                           id="toggle-{{ row.intervention_id }}"
+                                           {% if row.is_attached %}checked{% endif %}
+                                           onchange="this.form.submit();"
+                                           title="{% if row.is_attached %}Click to detach{% else %}Click to attach with LMIC default costs{% endif %}">
+                                </div>
+                            </form>
+                        </td>
                         <td class="fw-semibold">
-                            {{ fi.name }}
-                            {% if fi.cost_source == 'PLACEHOLDER' %}
-                            <span class="badge bg-warning-subtle text-warning-emphasis ms-1"
-                                  title="Costs are a library median — replace with site-specific numbers before reporting.">
-                                placeholder
-                            </span>
-                            {% elif fi.cost_source == 'DEFAULT' %}
-                            <span class="badge bg-info-subtle text-info-emphasis ms-1"
-                                  title="LMIC default costs from CARBOMICA D3.7 calculators.">
-                                default
-                            </span>
+                            {{ row.name }}
+                            {% if row.is_attached %}
+                                {% if row.cost_source == 'PLACEHOLDER' %}
+                                <span class="badge bg-warning-subtle text-warning-emphasis ms-1"
+                                      title="Costs are a library median — replace with site-specific numbers before reporting.">placeholder</span>
+                                {% elif row.cost_source == 'DEFAULT' %}
+                                <span class="badge bg-info-subtle text-info-emphasis ms-1"
+                                      title="LMIC default costs from CARBOMICA D3.7 calculators.">default</span>
+                                {% elif row.cost_source == 'USER' %}
+                                <span class="badge bg-success-subtle text-success-emphasis ms-1"
+                                      title="Costs have been customised for this facility.">custom</span>
+                                {% endif %}
                             {% endif %}
                         </td>
-                        <td>${{ fi.implementation_cost|floatformat:0|intcomma }}</td>
-                        <td>${{ fi.annual_savings|floatformat:0|intcomma }}/yr</td>
-                        <td>
-                            {% if fi.payback_yrs %}
-                                {{ fi.payback_yrs|floatformat:1 }} yrs
+                        <td class="text-muted">{{ row.target_category_display|default:"—" }}</td>
+                        <td class="text-end">
+                            {% if row.is_attached %}${{ row.implementation_cost|floatformat:0|intcomma }}{% else %}<span class="text-muted">—</span>{% endif %}
+                        </td>
+                        <td class="text-end">
+                            {% if row.is_attached %}${{ row.annual_savings|floatformat:0|intcomma }}/yr{% else %}<span class="text-muted">—</span>{% endif %}
+                        </td>
+                        <td class="text-end">
+                            {% if row.is_attached and row.payback_yrs %}
+                                {{ row.payback_yrs|floatformat:1 }} yrs
                             {% else %}
                                 <span class="text-muted">—</span>
                             {% endif %}
                         </td>
-                        <td>{{ fi.emission_reduction_pct|floatformat:0 }}%</td>
+                        <td class="text-end">{{ row.emission_reduction_pct|floatformat:0 }}%</td>
                         <td>
-                            {% if fi.sdg_goals %}
-                            <span class="text-muted">SDG {{ fi.sdg_goals }}</span>
+                            {% if row.sdg_goals %}
+                                <span class="text-muted">SDG&nbsp;{{ row.sdg_goals }}</span>
                             {% else %}<span class="text-muted">—</span>{% endif %}
                         </td>
                         <td class="no-print text-end text-nowrap">
-                            <a href="{% url 'upload_interventions' %}?facility={{ facility.id }}&amp;intervention={{ fi.intervention_id }}"
-                               class="btn btn-link btn-sm p-0 me-2"
+                            {% if row.is_attached %}
+                            <a href="{% url 'upload_interventions' %}?facility={{ facility.id }}&amp;intervention={{ row.intervention_id }}"
+                               class="btn btn-link btn-sm p-0"
                                title="Edit implementation cost, maintenance cost, and annual savings">
                                 <i class="fas fa-pen me-1"></i>Edit costs
                             </a>
-                            <form method="post"
-                                  action="{% url 'detach_intervention' facility.id fi.intervention_id %}"
-                                  class="d-inline"
-                                  onsubmit="return confirm('Remove “{{ fi.name|escapejs }}” from {{ facility.display_name|escapejs }}? You can re-add it from the library below.');">
-                                {% csrf_token %}
-                                <button type="submit" class="btn btn-link btn-sm p-0 text-danger"
-                                        title="Remove this intervention from the facility">
-                                    <i class="fas fa-times me-1"></i>Remove
-                                </button>
-                            </form>
+                            {% endif %}
                         </td>
                     </tr>
                     {% endfor %}
@@ -314,66 +330,13 @@
             </table>
         </div>
     </div>
-    {% else %}
-    <div class="card-body">
-        <div class="empty-state py-3">
-            <i class="fas fa-seedling d-block"></i>
-            <p class="mb-3 small">
-                No interventions linked yet — add one or more from the library below to run an optimisation.
-            </p>
-        </div>
+    {% if attached_count == 0 %}
+    <div class="card-footer bg-light small text-muted no-print">
+        <i class="fas fa-info-circle me-1"></i>
+        Toggle on the interventions that apply to this facility, then run an optimisation to see which ones give the best tCO₂e per dollar.
     </div>
     {% endif %}
 </div>
-
-<!-- ── Available from library (re-attach after removal) ── -->
-{% if available_interventions %}
-<div class="card mb-4 no-print">
-    <div class="card-header d-flex align-items-center justify-content-between">
-        <span>
-            <i class="fas fa-book-open me-2" style="color:var(--hh-blue);"></i>
-            Available from the CARBOMICA library
-            <span class="badge bg-light text-muted ms-2">{{ available_interventions|length }}</span>
-        </span>
-        <span class="text-muted small">
-            Click <em>Add to facility</em> — LMIC default costs are pre-filled and editable.
-        </span>
-    </div>
-    <div class="card-body p-0">
-        <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0 small">
-                <thead class="table-light">
-                    <tr>
-                        <th>Intervention</th>
-                        <th>Target category</th>
-                        <th>Expected reduction</th>
-                        <th class="text-end">Action</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for iv in available_interventions %}
-                    <tr>
-                        <td class="fw-semibold">{{ iv.display_name }}</td>
-                        <td class="text-muted">{{ iv.get_target_category_display|default:"—" }}</td>
-                        <td>{{ iv.emission_reduction_percentage|floatformat:0 }}%</td>
-                        <td class="text-end">
-                            <form method="post"
-                                  action="{% url 'attach_intervention' facility.id iv.id %}"
-                                  class="d-inline">
-                                {% csrf_token %}
-                                <button type="submit" class="btn btn-outline-success btn-sm">
-                                    <i class="fas fa-plus me-1"></i>Add to facility
-                                </button>
-                            </form>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
-</div>
-{% endif %}
 
 <!-- ── Methodology note (report-friendly) ── -->
 <div class="card mb-4" style="border-left:4px solid var(--hh-blue);">

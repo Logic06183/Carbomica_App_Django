@@ -61,7 +61,7 @@
                         <div class="mb-3">
                             <div class="d-flex justify-content-between mb-1">
                                 <span class="fw-semibold">{{ status.status }}</span>
-                                <span class="text-muted small">{{ status.count }} projects</span>
+                                <span class="text-muted small">{{ status.count }} project{{ status.count|pluralize }}</span>
                             </div>
                             <div class="progress" style="height: 8px;">
                                 <div class="progress-bar bg-success" role="progressbar"

@@ -251,15 +251,22 @@ def dashboard(request):
 
     user_facility_ids = facilities_qs.values_list('id', flat=True)
 
-    active_interventions = FacilityIntervention.objects.filter(
-        facility_id__in=user_facility_ids,
-        intervention__status='In Progress',
-    ).count()
+    # "Linked interventions" means linked, full stop — same semantics as
+    # the Facilities list and the Interventions portfolio page. The previous
+    # status='In Progress' filter made this column always zero in practice,
+    # because seeded interventions get status='Planned' and nothing
+    # transitions them automatically. See QA report 2026-05-24.
+    active_interventions = (
+        FacilityIntervention.objects.filter(facility_id__in=user_facility_ids).count()
+    )
 
+    # Match the Interventions portfolio (line ~417): total investment is
+    # implementation + maintenance, not implementation alone. Previously
+    # the Dashboard understated investment by the maintenance portion.
     total_investment = (
         FacilityIntervention.objects
         .filter(facility_id__in=user_facility_ids)
-        .aggregate(total=Sum('implementation_cost'))['total']
+        .aggregate(total=Sum(F('implementation_cost') + F('maintenance_cost')))['total']
         or Decimal('0')
     )
 
@@ -446,6 +453,25 @@ def attach_intervention(request, facility_id, intervention_id):
 
 @login_required
 @require_POST
+def toggle_intervention(request, facility_id, intervention_id):
+    """
+    Single endpoint that flips a (facility, intervention) link on or off.
+    Powers the toggle-switch UI on facility_detail. Internally delegates
+    to attach_intervention / detach_intervention so the semantics stay
+    consistent (e.g. attach keeps user-customised costs intact via
+    get_or_create rather than update_or_create).
+    """
+    facility = get_object_or_404(_user_facilities(request.user), id=facility_id)
+    is_attached = FacilityIntervention.objects.filter(
+        facility=facility, intervention_id=intervention_id,
+    ).exists()
+    if is_attached:
+        return detach_intervention(request, facility_id, intervention_id)
+    return attach_intervention(request, facility_id, intervention_id)
+
+
+@login_required
+@require_POST
 def detach_intervention(request, facility_id, intervention_id):
     """Remove an intervention from a facility. Hard delete — re-attaching
     later will pull library defaults again."""
@@ -531,8 +557,14 @@ def interventions(request):
 
     total_count = qs.count()
 
+    # CRITICAL: .order_by() must be cleared BEFORE .values().annotate() — Django
+    # otherwise appends the inherited order_by columns to the GROUP BY clause,
+    # which produces one row per FacilityIntervention ("Planned: 1, Planned: 1, …"
+    # 63 times) instead of one row per status ("Planned: 63"). Without this
+    # line the Pipeline status widget is unusable. See QA report 2026-05-24.
     status_qs = (
-        qs.values('intervention__status')
+        qs.order_by()
+        .values('intervention__status')
         .annotate(count=Count('id'))
     )
 
@@ -1206,38 +1238,59 @@ def facility_detail(request, facility_id):
         category_chart_data = json.dumps({'labels': [], 'values': []})
         bar_chart_data = json.dumps({'labels': [], 'values': []})
 
-    # Linked interventions with financial metrics
-    facility_interventions = []
-    attached_intervention_ids = set()
-    for fi in facility.facility_interventions.select_related('intervention').all():
-        impl = fi.implementation_cost or Decimal('0')
-        maint = fi.maintenance_cost or Decimal('0')
-        savings = fi.annual_savings or Decimal('0')
-        total_cost = impl + maint
-        payback_yrs = (total_cost / savings) if savings > 0 else None
-        attached_intervention_ids.add(fi.intervention_id)
-        facility_interventions.append({
-            'id': fi.id,
-            'intervention_id': fi.intervention_id,
-            'name': fi.intervention.display_name,
-            'status': fi.intervention.status,
-            'sdg_goals': fi.intervention.sdg_goals,
-            'implementation_cost': impl,
-            'maintenance_cost': maint,
-            'annual_savings': savings,
-            'payback_yrs': payback_yrs,
-            'roi': fi.calculate_roi(),
-            'emission_reduction_pct': fi.intervention.emission_reduction_percentage,
-            'cost_source': fi.cost_source,
-        })
+    # Build a UNIFIED row-per-library-intervention list. Each row knows
+    # whether it's currently attached to this facility and, if so, carries
+    # the cost data for inline display + editing. Powers the toggle-switch
+    # UI on facility_detail (replaces the old two-table "linked vs available"
+    # split which confused users into thinking adding and removing were
+    # different concepts).
+    attached_by_intervention_id = {
+        fi.intervention_id: fi
+        for fi in facility.facility_interventions.select_related('intervention').all()
+    }
+    intervention_rows = []
+    for iv in Intervention.objects.order_by('display_name'):
+        fi = attached_by_intervention_id.get(iv.id)
+        if fi is not None:
+            impl = fi.implementation_cost or Decimal('0')
+            maint = fi.maintenance_cost or Decimal('0')
+            savings = fi.annual_savings or Decimal('0')
+            payback_yrs = ((impl + maint) / savings) if savings > 0 else None
+            intervention_rows.append({
+                'intervention_id': iv.id,
+                'name': iv.display_name,
+                'is_attached': True,
+                'target_category': iv.target_category,
+                'target_category_display': CATEGORY_LABELS.get(iv.target_category, iv.target_category or ''),
+                'sdg_goals': iv.sdg_goals,
+                'emission_reduction_pct': iv.emission_reduction_percentage,
+                'implementation_cost': impl,
+                'maintenance_cost': maint,
+                'annual_savings': savings,
+                'payback_yrs': payback_yrs,
+                'cost_source': fi.cost_source,
+            })
+        else:
+            intervention_rows.append({
+                'intervention_id': iv.id,
+                'name': iv.display_name,
+                'is_attached': False,
+                'target_category': iv.target_category,
+                'target_category_display': CATEGORY_LABELS.get(iv.target_category, iv.target_category or ''),
+                'sdg_goals': iv.sdg_goals,
+                'emission_reduction_pct': iv.emission_reduction_percentage,
+                'implementation_cost': None,
+                'maintenance_cost': None,
+                'annual_savings': None,
+                'payback_yrs': None,
+                'cost_source': None,
+            })
 
-    # Library interventions NOT yet attached — surfaced so the user can
-    # re-add them after a removal without leaving the facility page.
-    available_interventions = (
-        Intervention.objects
-        .exclude(id__in=attached_intervention_ids)
-        .order_by('display_name')
-    )
+    # Legacy list — still referenced by parts of the page (KPI strip count,
+    # potential-savings calc below). Keep it as a thin view over the attached
+    # subset of intervention_rows.
+    facility_interventions = [r for r in intervention_rows if r['is_attached']]
+    attached_count = len(facility_interventions)
 
     # Baseline tCO₂e (most recent record)
     baseline_tco2e = latest_breakdown['total_tco2e'] if latest_breakdown else Decimal('0')
@@ -1253,7 +1306,8 @@ def facility_detail(request, facility_id):
         'records_with_tco2e': records_with_tco2e,
         'latest_breakdown': latest_breakdown,
         'facility_interventions': facility_interventions,
-        'available_interventions': available_interventions,
+        'intervention_rows': intervention_rows,
+        'attached_count': attached_count,
         'baseline_tco2e': baseline_tco2e,
         'potential_savings_tco2e': potential_savings_tco2e,
         'category_chart_data': category_chart_data,

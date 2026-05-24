@@ -10,6 +10,8 @@ urlpatterns = [
          views.attach_intervention, name='attach_intervention'),
     path('facilities/<int:facility_id>/interventions/<int:intervention_id>/detach/',
          views.detach_intervention, name='detach_intervention'),
+    path('facilities/<int:facility_id>/interventions/<int:intervention_id>/toggle/',
+         views.toggle_intervention, name='toggle_intervention'),
     path('add-facility/', views.add_facility, name='add_facility'),
     path('interventions/', views.interventions, name='interventions'),
     path('optimize/<int:facility_id>/', views.optimize_interventions, name='optimize_interventions'),
