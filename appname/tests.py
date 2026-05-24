@@ -879,6 +879,57 @@ class HomeScopeTest(TestCase):
         self.assertTrue(response.context['is_user_scope'])
 
 
+class CreateCustomInterventionTest(TestCase):
+    """
+    Production 404 on the "Add to library" button (reported 2026-05-21):
+    upload_interventions had two `if request.method == 'POST'` blocks,
+    and the first one called get_object_or_404(_user_facilities, id=None)
+    before checking the request's `action` field. The custom-intervention
+    form has no `facility` field by design — it adds to the global library —
+    so every click 404'd before reaching the create_custom dispatch.
+
+    This test pins the fix in place: POST with action=create_custom MUST
+    succeed without a `facility` in the payload, AND must add the row
+    to the Intervention library.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create_user('janet', 'janet@example.com', 'pw')
+
+    def test_create_custom_intervention_without_facility(self):
+        self.client.login(username='janet', password='pw')
+        before = Intervention.objects.filter(code_name__startswith='CUSTOM_').count()
+        response = self.client.post('/upload/interventions/', {
+            'action': 'create_custom',
+            'custom_name': 'Biogas digester',
+            'custom_target_category': 'liquid_fuel',
+            'custom_reduction_pct': '15',
+        })
+        self.assertEqual(
+            response.status_code, 302,
+            f'Expected 302 redirect, got {response.status_code} — "Add to library" 404 regression',
+        )
+        after = Intervention.objects.filter(code_name__startswith='CUSTOM_').count()
+        self.assertEqual(after, before + 1, 'Custom intervention row was not created')
+        new_row = Intervention.objects.get(code_name='CUSTOM_BIOGAS-DIGESTER')
+        self.assertEqual(new_row.display_name, 'Biogas digester')
+        self.assertEqual(new_row.emission_reduction_percentage, Decimal('15'))
+
+    def test_blank_name_rejected_with_user_message(self):
+        self.client.login(username='janet', password='pw')
+        response = self.client.post('/upload/interventions/', {
+            'action': 'create_custom',
+            'custom_name': '   ',  # whitespace only
+        }, follow=True)
+        self.assertEqual(response.status_code, 200)
+        msgs = [str(m) for m in response.context['messages']]
+        self.assertTrue(
+            any('name' in m.lower() for m in msgs),
+            f'Expected a user-facing "name required" message, got {msgs}',
+        )
+
+
 class SplitFilterTest(TestCase):
     """Unit coverage for the carbomica_extras.split filter."""
 

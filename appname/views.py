@@ -923,6 +923,35 @@ def upload_interventions(request):
     facilities = _user_facilities(request.user).order_by('display_name')
     interventions_qs = Intervention.objects.order_by('display_name')
 
+    # ── Create a custom intervention ──────────────────────────────────────
+    # Dispatched BEFORE the facility lookup because this form intentionally
+    # has no `facility` field — it adds to the global library, not to a
+    # specific facility. Previously this branch lived AFTER the facility
+    # lookup so every "Add to library" click 404'd on get_object_or_404
+    # with id=None (see test_create_custom_intervention).
+    if request.method == 'POST' and request.POST.get('action') == 'create_custom':
+        name = request.POST.get('custom_name', '').strip()
+        if name:
+            from django.utils.text import slugify
+            target_cat = request.POST.get('custom_target_category', '').strip()
+            try:
+                red_pct = Decimal(request.POST.get('custom_reduction_pct', '0') or '0')
+            except InvalidOperation:
+                red_pct = Decimal('0')
+            Intervention.objects.get_or_create(
+                code_name=f'CUSTOM_{slugify(name).upper()[:80]}',
+                defaults={
+                    'display_name': name,
+                    'emission_reduction_percentage': red_pct,
+                    'target_category': target_cat,
+                    'status': 'Planned',
+                },
+            )
+            messages.success(request, f'Custom intervention "{name}" added to the library.')
+        else:
+            messages.error(request, 'Please enter a name for the custom intervention.')
+        return redirect('upload_interventions')
+
     if request.method == 'POST':
         facility_id = request.POST.get('facility')
         facility = get_object_or_404(_user_facilities(request.user), id=facility_id)
@@ -1023,30 +1052,6 @@ def upload_interventions(request):
                 f'Added {intervention.display_name} to {facility.display_name}.'
             )
 
-        return redirect('upload_interventions')
-
-    # ── Create a custom intervention ──────────────────────────────────────
-    if request.method == 'POST' and request.POST.get('action') == 'create_custom':
-        name = request.POST.get('custom_name', '').strip()
-        if name:
-            from django.utils.text import slugify
-            target_cat = request.POST.get('custom_target_category', '').strip()
-            try:
-                red_pct = Decimal(request.POST.get('custom_reduction_pct', '0') or '0')
-            except InvalidOperation:
-                red_pct = Decimal('0')
-            Intervention.objects.get_or_create(
-                code_name=f'CUSTOM_{slugify(name).upper()[:80]}',
-                defaults={
-                    'display_name': name,
-                    'emission_reduction_percentage': red_pct,
-                    'target_category': target_cat,
-                    'status': 'Planned',
-                }
-            )
-            messages.success(request, f'Custom intervention "{name}" created and added to the list.')
-        else:
-            messages.error(request, 'Please enter a name for the custom intervention.')
         return redirect('upload_interventions')
 
     return render(request, 'appname/upload_interventions.html', {
