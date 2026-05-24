@@ -1058,7 +1058,9 @@ def upload_interventions(request):
         'facilities': facilities,
         'interventions': interventions_qs,
         'cost_defaults': json.dumps(INTERVENTION_COST_DEFAULTS),
-        'emission_fields': list(EMISSION_FIELDS),
+        # (code, human-label) tuples so the template doesn't have to do
+        # title|cut:"_" gymnastics that produce "GridElectricity".
+        'emission_field_choices': [(f, CATEGORY_LABELS[f]) for f in EMISSION_FIELDS],
     })
 
 

@@ -929,6 +929,42 @@ class CreateCustomInterventionTest(TestCase):
             f'Expected a user-facing "name required" message, got {msgs}',
         )
 
+    def test_success_alert_renders_exactly_once(self):
+        """
+        Bootstrap-with-duplicate-alerts bug: upload_interventions.html used
+        to repeat the messages block already present in base.html, which
+        meant Bootstrap initialised two alert components on the same DOM
+        and one would silently dismiss the other. The success flash never
+        rendered visibly in production. After removing the duplicate the
+        success alert must appear exactly once.
+        """
+        self.client.login(username='janet', password='pw')
+        response = self.client.post('/upload/interventions/', {
+            'action': 'create_custom',
+            'custom_name': 'Duplicate-Alert Regression',
+        }, follow=True)
+        body = response.content.decode()
+        self.assertEqual(body.count('alert-success'), 1,
+                         f'Expected exactly one alert-success on the page, got {body.count("alert-success")}')
+
+    def test_category_dropdown_uses_human_labels_not_run_together(self):
+        """
+        Cosmetic regression: target-category dropdown used to render
+        "GridElectricity" (no space) because the template did
+        `{{ field|title|cut:"_" }}` — `cut` removes the underscore
+        without inserting a space. Now we pass CATEGORY_LABELS from the
+        view so the template has nothing to munge.
+        """
+        self.client.login(username='janet', password='pw')
+        response = self.client.get('/upload/interventions/')
+        body = response.content.decode()
+        # Positive: the human label appears
+        self.assertIn('>Grid Electricity</option>', body,
+                      'Dropdown should render "Grid Electricity" with a space')
+        # Negative: no run-together regression
+        self.assertNotIn('GridElectricity', body,
+                         'Run-together label leaked back in — dropdown regression')
+
 
 class SplitFilterTest(TestCase):
     """Unit coverage for the carbomica_extras.split filter."""
