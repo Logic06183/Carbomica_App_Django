@@ -30,30 +30,34 @@ class EmissionSourceForm(forms.ModelForm):
             'display_name': forms.TextInput(attrs={'class': 'form-control'})
         }
 
+# RAW ACTIVITY UNITS for every emission field. Users enter these physical
+# quantities — CARBOMICA converts to tCO₂e in the background via the factors
+# in modeling.py (see /methodology/). Shared by EmissionDataForm and
+# EmissionDataUpdateForm so the unit guidance can never diverge again
+# (the 2026-05 incident: one form said "enter tCO₂e directly" while the
+# backend expected raw units — users who complied got garbage numbers).
+EMISSION_FIELD_LABELS = {
+    'grid_electricity':    'Grid Electricity (kWh/yr)',
+    'grid_gas':            'Grid Gas (m³/yr)',
+    'bottled_gas':         'Bottled Gas / LPG (kg/yr)',
+    'liquid_fuel':         'Liquid Fuel (litres/yr)',
+    'vehicle_fuel_owned':  'Vehicle Fuel — Owned (litres/yr)',
+    'business_travel':     'Business Travel (km/yr)',
+    'anaesthetic_gases':   'Anaesthetic Gases (kg/yr)',
+    'refrigeration_gases': 'Refrigeration Gases (kg/yr)',
+    'waste_management':    'Waste Management (tonnes/yr)',
+    'medical_inhalers':    'Medical Inhalers — pMDIs (units/yr)',
+    'contractor_logistics': 'Contractor Logistics (km/yr)',
+}
+
+
 class EmissionDataForm(forms.ModelForm):
     class Meta:
         model = EmissionData
-        fields = [
-            'grid_electricity', 'grid_gas', 'bottled_gas',
-            'liquid_fuel', 'vehicle_fuel_owned', 'business_travel',
-            'anaesthetic_gases', 'refrigeration_gases',
-            'waste_management', 'medical_inhalers', 'contractor_logistics',
-        ]
-        labels = {
-            'grid_electricity':    'Grid Electricity (kWh/yr)',
-            'grid_gas':            'Grid Gas (m³/yr)',
-            'bottled_gas':         'Bottled Gas / LPG (kg/yr)',
-            'liquid_fuel':         'Liquid Fuel (litres/yr)',
-            'vehicle_fuel_owned':  'Vehicle Fuel — Owned (litres/yr)',
-            'business_travel':     'Business Travel (km/yr)',
-            'anaesthetic_gases':   'Anaesthetic Gases (kg/yr)',
-            'refrigeration_gases': 'Refrigeration Gases (kg/yr)',
-            'waste_management':    'Waste Management (tonnes/yr)',
-            'medical_inhalers':    'Medical Inhalers — pMDIs (units/yr)',
-            'contractor_logistics': 'Contractor Logistics (km/yr)',
-        }
+        fields = list(EMISSION_FIELD_LABELS)
+        labels = EMISSION_FIELD_LABELS
         widgets = {f: forms.NumberInput(attrs={'class': 'form-control', 'placeholder': '0.00'})
-                   for f in fields}
+                   for f in EMISSION_FIELD_LABELS}
 
 class InterventionForm(forms.ModelForm):
     class Meta:
@@ -145,11 +149,7 @@ class OptimizationScenarioForm(forms.ModelForm):
 class EmissionDataUpdateForm(forms.ModelForm):
     class Meta:
         model = EmissionData
-        fields = [
-            'grid_electricity', 'grid_gas', 'bottled_gas', 'liquid_fuel',
-            'vehicle_fuel_owned', 'business_travel', 'anaesthetic_gases',
-            'refrigeration_gases', 'waste_management', 'medical_inhalers',
-            'contractor_logistics',
-        ]
+        fields = list(EMISSION_FIELD_LABELS)
+        labels = EMISSION_FIELD_LABELS
         widgets = {field: forms.NumberInput(attrs={'class': 'form-control'})
-                   for field in fields}
+                   for field in EMISSION_FIELD_LABELS}

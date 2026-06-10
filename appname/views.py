@@ -695,6 +695,22 @@ def interventions(request):
     })
 
 
+def _emission_factors_json():
+    """
+    Factors as a JSON-safe dict for the live tCO₂e preview on data-entry
+    forms. Values mirror modeling.EMISSION_FACTORS / ELECTRICITY_EF exactly —
+    the preview must show the same numbers the backend will compute.
+    """
+    from .modeling import EMISSION_FACTORS, ELECTRICITY_EF
+    return {
+        'fields': {
+            field: float(factor) if factor is not None else None
+            for field, factor in EMISSION_FACTORS.items()
+        },
+        'electricity': {country: float(ef) for country, ef in ELECTRICITY_EF.items()},
+    }
+
+
 # ---------------------------------------------------------------------------
 # Methodology & emission factors — full transparency on every conversion
 # ---------------------------------------------------------------------------
@@ -1056,6 +1072,8 @@ def upload_emissions(request):
                     'facilities': facilities,
                     'form': form,
                     'selected_facility_id': int(facility_id),
+                    'emission_factors': _emission_factors_json(),
+                    'facility_countries': {f.id: f.country for f in facilities},
                 })
 
         return redirect('dashboard')
@@ -1064,6 +1082,8 @@ def upload_emissions(request):
         'facilities': facilities,
         'form': EmissionDataForm(),
         'csv_columns': list(EMISSION_CSV_COLUMNS.keys()),
+        'emission_factors': _emission_factors_json(),
+        'facility_countries': {f.id: f.country for f in facilities},
     })
 
 

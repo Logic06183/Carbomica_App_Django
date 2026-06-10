@@ -103,19 +103,21 @@
     <!-- Manual entry -->
     <div class="col-lg-6">
         <div class="card h-100"
-             data-intro="Prefer typing? Enter tCO₂e values directly for each category. Select the facility, fill in the fields (all in tCO₂e/yr), and save. Fields pre-fill from the most recent record."
+             data-intro="Prefer typing? Enter your RAW activity data — kWh of electricity, litres of fuel, kg of gases. CARBOMICA converts each entry to tCO₂e automatically using internationally published carbon factors (IEA, DEFRA, IPCC) — watch the live conversion as you type."
              data-title="Manual Entry" data-step="4">
             <div class="card-body">
                 <h5 class="mb-3"><i class="fas fa-keyboard me-2 text-primary"></i>Manual entry</h5>
                 <p class="text-muted small mb-3">
-                    Enter emission values directly. All figures in tCO₂e per year.
-                    Fields pre-fill from the most recent record if one exists.
+                    Enter <strong>raw activity data</strong> in the units shown (kWh, litres, kg, km…).
+                    CARBOMICA converts each value to tCO₂e automatically using
+                    <a href="{% url 'methodology' %}">internationally published carbon factors</a>
+                    — the live conversion appears under each field as you type.
                 </p>
                 <form method="post">
                     {% csrf_token %}
                     <div class="mb-3">
                         <label class="form-label fw-semibold">Facility</label>
-                        <select name="facility" class="form-select" required>
+                        <select name="facility" class="form-select" required id="facility-select">
                             <option value="">— select facility —</option>
                             {% for f in facilities %}
                             <option value="{{ f.id }}" {% if f.id == selected_facility_id %}selected{% endif %}>
@@ -123,17 +125,28 @@
                             </option>
                             {% endfor %}
                         </select>
+                        <div class="form-text small">
+                            The facility's country picks the grid-electricity factor.
+                        </div>
                     </div>
                     <div class="row g-2">
                         {% for field in form %}
                         <div class="col-6">
                             <label class="form-label small fw-semibold">{{ field.label }}</label>
                             {{ field }}
+                            <div class="tco2e-preview text-muted" data-for="{{ field.name }}"
+                                 style="font-size:.74rem;min-height:1rem;"></div>
                             {% if field.errors %}
                             <div class="text-danger small">{{ field.errors }}</div>
                             {% endif %}
                         </div>
                         {% endfor %}
+                    </div>
+                    <div class="alert alert-light border mt-3 mb-0 py-2 d-flex justify-content-between align-items-center">
+                        <span class="small text-muted">
+                            <i class="fas fa-calculator me-1"></i>Converted total
+                        </span>
+                        <strong id="tco2e-total" class="text-success">0.0 tCO₂e/yr</strong>
                     </div>
                     <div class="mt-3">
                         <button type="submit" class="btn btn-primary">
@@ -144,6 +157,46 @@
                 </form>
             </div>
         </div>
+
+{{ emission_factors|json_script:"emission-factors" }}
+{{ facility_countries|json_script:"facility-countries" }}
+<script>
+// Live tCO₂e preview — applies the SAME carbon factors the backend uses
+// (modeling.EMISSION_FACTORS / ELECTRICITY_EF, surfaced at /methodology/).
+document.addEventListener('DOMContentLoaded', function () {
+    const FACTORS   = JSON.parse(document.getElementById('emission-factors').textContent);
+    const COUNTRIES = JSON.parse(document.getElementById('facility-countries').textContent);
+    const facilitySel = document.getElementById('facility-select');
+
+    function factorFor(field) {
+        if (field === 'grid_electricity') {
+            const country = COUNTRIES[facilitySel.value] || 'OTHER';
+            return FACTORS.electricity[country] ?? FACTORS.electricity['OTHER'];
+        }
+        return FACTORS.fields[field] || 0;
+    }
+
+    function recompute() {
+        let total = 0;
+        document.querySelectorAll('.tco2e-preview').forEach(el => {
+            const field = el.dataset.for;
+            const input = document.querySelector(`[name="${field}"]`);
+            const qty = parseFloat(input && input.value) || 0;
+            const tco2e = qty * factorFor(field);
+            total += tco2e;
+            el.textContent = qty > 0 ? `≈ ${tco2e.toFixed(2)} tCO₂e  (× ${factorFor(field)})` : '';
+        });
+        document.getElementById('tco2e-total').textContent = total.toFixed(1) + ' tCO₂e/yr';
+    }
+
+    document.querySelectorAll('.tco2e-preview').forEach(el => {
+        const input = document.querySelector(`[name="${el.dataset.for}"]`);
+        if (input) input.addEventListener('input', recompute);
+    });
+    facilitySel.addEventListener('change', recompute);
+    recompute();
+});
+</script>
     </div>
 </div>
 

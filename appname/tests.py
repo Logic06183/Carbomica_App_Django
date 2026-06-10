@@ -1097,6 +1097,62 @@ class DashboardCounterConsistencyTest(TestCase):
         )
 
 
+class EmissionEntryUnitsGuidanceTest(TestCase):
+    """
+    Incident (2026-05, reported by Jetina): the manual-entry card on
+    /upload/emissions/ instructed users to "Enter tCO₂e values directly.
+    All figures in tCO₂e per year" — but the backend stores RAW activity
+    units (kWh, litres, kg…) and multiplies by carbon factors at read time.
+    Users who followed the instructions got double-converted garbage, and
+    concluded (reasonably) that the tool wasn't applying factors at all.
+
+    These tests pin the corrected guidance: raw-units copy, per-field unit
+    labels on BOTH emission forms, and the factors JSON that powers the
+    live tCO₂e preview.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create_user('units', 'units@example.com', 'pw')
+        cls.facility = Facility.objects.create(
+            code_name='UNIT_FAC', display_name='Units Hospital', country='KE',
+            facility_type='district_hospital', created_by=cls.user,
+        )
+
+    def test_manual_entry_page_says_raw_units_not_tco2e(self):
+        self.client.login(username='units', password='pw')
+        response = self.client.get('/upload/emissions/')
+        body = response.content.decode()
+        self.assertNotIn('Enter emission values directly. All figures in tCO₂e per year', body,
+                         'The wrong "enter tCO₂e directly" instruction is back')
+        self.assertIn('raw activity data', body)
+        # Live preview machinery present
+        self.assertIn('emission-factors', body)
+        self.assertIn('tco2e-preview', body)
+
+    def test_factors_json_matches_modeling(self):
+        """The preview must use the exact same factors as the backend."""
+        from appname.views import _emission_factors_json
+        from appname.modeling import EMISSION_FACTORS, ELECTRICITY_EF
+        data = _emission_factors_json()
+        self.assertEqual(data['electricity']['KE'], float(ELECTRICITY_EF['KE']))
+        self.assertEqual(data['fields']['liquid_fuel'], float(EMISSION_FACTORS['liquid_fuel']))
+        self.assertIsNone(data['fields']['grid_electricity'],
+                          'grid_electricity is per-country, not a flat factor')
+
+    def test_both_emission_forms_share_unit_labels(self):
+        """EmissionDataUpdateForm (optimise page) must carry the same
+        unit-suffixed labels as EmissionDataForm — it used to render bare
+        field names with no unit guidance at all."""
+        from appname.forms import EmissionDataForm, EmissionDataUpdateForm
+        f1, f2 = EmissionDataForm(), EmissionDataUpdateForm()
+        self.assertEqual(f1.fields['grid_electricity'].label, 'Grid Electricity (kWh/yr)')
+        self.assertEqual(f2.fields['grid_electricity'].label, 'Grid Electricity (kWh/yr)')
+        for name in f1.fields:
+            self.assertEqual(f1.fields[name].label, f2.fields[name].label,
+                             f'Label mismatch between the two emission forms for {name}')
+
+
 class BudgetXorTargetTest(TestCase):
     """
     User feedback (2026-05-24, via Jetina): "you shouldn't have a scenario
