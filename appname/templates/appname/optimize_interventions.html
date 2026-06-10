@@ -92,10 +92,30 @@
                         {% endif %}
                     </div>
 
-                    <!-- Budget -->
+                    <!-- Constraint mode: budget XOR reduction target -->
                     <div class="mb-3"
-                         data-intro="Set your maximum available capital (USD). Scenarios 2 and 3 will not exceed this. Multi-year grant budgets can be combined here. Scenario 1 (full coverage) is shown regardless for comparison."
-                         data-title="Set Your Budget" data-step="2">
+                         data-intro="Choose ONE way to constrain the optimiser: a maximum budget (it maximises tCO₂e reduction within it) or a reduction target (it finds the cheapest set of interventions achieving it)."
+                         data-title="Pick Your Constraint" data-step="2">
+                        <label class="form-label fw-semibold d-block">What should drive this scenario?</label>
+                        <div class="btn-group w-100" role="group" aria-label="Constraint mode">
+                            <input type="radio" class="btn-check" name="mode" id="mode-budget" value="budget"
+                                   {% if scenario_form.mode.value != 'target' %}checked{% endif %}>
+                            <label class="btn btn-outline-primary btn-sm" for="mode-budget">
+                                <i class="fas fa-coins me-1"></i>Optimise within a budget
+                            </label>
+                            <input type="radio" class="btn-check" name="mode" id="mode-target" value="target"
+                                   {% if scenario_form.mode.value == 'target' %}checked{% endif %}>
+                            <label class="btn btn-outline-primary btn-sm" for="mode-target">
+                                <i class="fas fa-bullseye me-1"></i>Hit a reduction target
+                            </label>
+                        </div>
+                        {% if scenario_form.mode.errors %}
+                        <div class="text-danger small mt-1">{{ scenario_form.mode.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+
+                    <!-- Budget (budget mode only) -->
+                    <div class="mb-3" id="budget-field">
                         <label class="form-label fw-semibold">Budget (USD)
                             <i class="fas fa-question-circle help-icon"
                                data-bs-toggle="popover" data-bs-placement="right"
@@ -105,19 +125,21 @@
                         {% if scenario_form.budget.errors %}
                         <div class="text-danger small mt-1">{{ scenario_form.budget.errors.0 }}</div>
                         {% endif %}
+                        <div class="form-text small">The optimiser maximises tCO₂e reduction without exceeding this.</div>
                     </div>
 
-                    <!-- Target reduction -->
-                    <div class="mb-4">
+                    <!-- Target reduction (target mode only) -->
+                    <div class="mb-4" id="target-field" style="display:none;">
                         <label class="form-label fw-semibold">Target reduction (%)
                             <i class="fas fa-question-circle help-icon"
                                data-bs-toggle="popover" data-bs-placement="right"
-                               data-bs-content="Your desired percentage reduction in total facility emissions (e.g. 30 for 30%). This is used for reporting only — the optimiser maximises reduction within the budget, not the target. The results page will show how each scenario compares against this goal."></i>
+                               data-bs-content="Your goal as a percentage of current facility emissions (e.g. 30 for a 30% cut). The optimiser finds the CHEAPEST set of interventions that reaches it."></i>
                         </label>
                         {{ scenario_form.target_reduction }}
                         {% if scenario_form.target_reduction.errors %}
                         <div class="text-danger small mt-1">{{ scenario_form.target_reduction.errors.0 }}</div>
                         {% endif %}
+                        <div class="form-text small">The optimiser finds the cheapest path to this goal.</div>
                     </div>
 
                     <hr class="my-3">
@@ -233,4 +255,22 @@
     </div>
 </div>
 {% endwith %}
+
+<script>
+// Budget XOR target: show only the field for the selected constraint mode.
+document.addEventListener('DOMContentLoaded', function () {
+    const budgetField = document.getElementById('budget-field');
+    const targetField = document.getElementById('target-field');
+    const radios = document.querySelectorAll('input[name="mode"]');
+
+    function syncFields() {
+        const mode = document.querySelector('input[name="mode"]:checked');
+        const isTarget = mode && mode.value === 'target';
+        budgetField.style.display = isTarget ? 'none' : '';
+        targetField.style.display = isTarget ? '' : 'none';
+    }
+    radios.forEach(r => r.addEventListener('change', syncFields));
+    syncFields();  // honour server-rendered state (e.g. validation re-render)
+});
+</script>
 {% endblock %}

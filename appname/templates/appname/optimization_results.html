@@ -8,8 +8,11 @@
         <h2 class="fw-bold mb-0">{{ scenario.facility.display_name }}</h2>
         <p class="text-muted mt-1 mb-0">
             Scenario: <strong>{{ scenario.name }}</strong> &nbsp;·&nbsp;
-            Budget: <strong>${{ scenario.budget|floatformat:0|intcomma }}</strong> &nbsp;·&nbsp;
-            Target reduction: <strong>{{ scenario.target_reduction }}%</strong>
+            {% if scenario.budget is not None %}
+            Constraint: <strong>budget ${{ scenario.budget|floatformat:0|intcomma }}</strong>
+            {% else %}
+            Constraint: <strong>{{ scenario.target_reduction|floatformat:0 }}% reduction target</strong>
+            {% endif %}
         </p>
     </div>
     <div class="col-auto">
@@ -115,7 +118,13 @@
                     <div class="text-end">
                         <div class="text-muted small">Spent</div>
                         <div class="fw-bold">${{ opt.total_cost|floatformat:0|intcomma }}</div>
-                        <div class="text-muted" style="font-size:.78rem;">${{ opt.budget_remaining|floatformat:0|intcomma }} remaining</div>
+                        <div class="text-muted" style="font-size:.78rem;">
+                            {% if opt.budget_remaining is not None %}
+                                ${{ opt.budget_remaining|floatformat:0|intcomma }} remaining
+                            {% elif opt.target_pct is not None %}
+                                {% if opt.target_met %}✓ {{ opt.target_pct|floatformat:0 }}% target met{% else %}{{ opt.target_pct|floatformat:0 }}% target not reachable{% endif %}
+                            {% endif %}
+                        </div>
                     </div>
                 </div>
             </div>

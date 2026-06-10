@@ -765,22 +765,39 @@ class CarbomicaOptimizer:
     """
     Implements the CARBOMICA three-scenario analysis described in HIGH Horizons D3.7:
 
-      Scenario 1 — Full coverage:   all interventions regardless of budget
-      Scenario 2 — Fixed budget:    cheapest interventions first until budget exhausted
-      Scenario 3 — Optimised:       greedy knapsack maximising tCO2e reduced per USD
+      Scenario 1 — Full coverage:   all interventions regardless of constraint
+      Scenario 2 — Constrained:     cheapest interventions first until the
+                                    constraint is hit
+      Scenario 3 — Optimised:       greedy by tCO2e-per-USD until the
+                                    constraint is hit
+
+    The constraint is EXACTLY ONE of:
+      budget      — stop adding interventions once the budget is exhausted
+      target_pct  — stop once cumulative reduction reaches target_pct % of
+                    the facility baseline (cheapest way to hit a goal)
 
     Inputs are FacilityIntervention ORM records, which carry facility-specific
     implementation and maintenance costs from the database rather than defaults.
     """
 
-    def __init__(self, facility_interventions, budget, total_baseline_emissions,
-                 category_baselines=None):
+    def __init__(self, facility_interventions, total_baseline_emissions,
+                 budget=None, target_pct=None, category_baselines=None):
+        if budget is None and target_pct is None:
+            raise ValueError('Provide either budget or target_pct')
         self.interventions = list(facility_interventions)
-        self.budget = Decimal(str(budget))
+        self.budget = Decimal(str(budget)) if budget is not None else None
+        self.target_pct = Decimal(str(target_pct)) if target_pct is not None else None
         self.baseline = Decimal(str(total_baseline_emissions)) if total_baseline_emissions else Decimal('1')
         # Per-category tCO₂e breakdown for the facility (from compute_tco2e).
         # Used to apply each intervention's reduction to the correct emission slice.
         self.category_baselines = category_baselines or {}
+
+    @property
+    def target_tco2e(self):
+        """Absolute reduction goal in tCO₂e (target mode only)."""
+        if self.target_pct is None:
+            return None
+        return (self.target_pct / 100) * self.baseline
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -849,7 +866,17 @@ class CarbomicaOptimizer:
             'total_reduction': total_reduction,
             'pct_of_baseline': pct_of_baseline,
             'total_annual_savings': total_savings,
-            'budget_remaining': max(self.budget - total_cost, Decimal('0')),
+            # budget_remaining is only meaningful in budget mode; None in
+            # target mode (template renders the target progress instead).
+            'budget_remaining': (
+                max(self.budget - total_cost, Decimal('0'))
+                if self.budget is not None else None
+            ),
+            'target_pct': self.target_pct,
+            'target_met': (
+                pct_of_baseline >= self.target_pct
+                if self.target_pct is not None else None
+            ),
         }
 
     # ------------------------------------------------------------------
@@ -857,30 +884,41 @@ class CarbomicaOptimizer:
     # ------------------------------------------------------------------
 
     def full_coverage(self):
-        """Scenario 1: apply all interventions, ignoring budget constraint."""
+        """Scenario 1: apply all interventions, ignoring the constraint."""
         return [self._build_result(fi, i + 1) for i, fi in enumerate(self.interventions)]
 
-    def fixed_budget(self):
-        """Scenario 2: lowest-cost interventions first until budget exhausted."""
-        ordered = sorted(self.interventions, key=self._total_cost)
-        results, remaining = [], self.budget
-        for fi in ordered:
-            cost = self._total_cost(fi)
-            if cost <= remaining:
+    def _select(self, ordered):
+        """
+        Walk `ordered` interventions, adding each while the active constraint
+        allows. Budget mode: skip anything that doesn't fit the remaining
+        budget. Target mode: keep adding until cumulative reduction reaches
+        the target, then stop.
+        """
+        results = []
+        if self.budget is not None:
+            remaining = self.budget
+            for fi in ordered:
+                cost = self._total_cost(fi)
+                if cost <= remaining:
+                    results.append(self._build_result(fi, len(results) + 1))
+                    remaining -= cost
+        else:
+            achieved = Decimal('0')
+            goal = self.target_tco2e
+            for fi in ordered:
+                if achieved >= goal:
+                    break
                 results.append(self._build_result(fi, len(results) + 1))
-                remaining -= cost
+                achieved += self._emission_reduction(fi)
         return results
 
+    def fixed_budget(self):
+        """Scenario 2: lowest-cost interventions first until the constraint is hit."""
+        return self._select(sorted(self.interventions, key=self._total_cost))
+
     def optimised(self):
-        """Scenario 3: greedy knapsack — maximise tCO2e reduction per USD spent."""
-        ordered = sorted(self.interventions, key=self._cost_effectiveness, reverse=True)
-        results, remaining = [], self.budget
-        for fi in ordered:
-            cost = self._total_cost(fi)
-            if cost <= remaining:
-                results.append(self._build_result(fi, len(results) + 1))
-                remaining -= cost
-        return results
+        """Scenario 3: greedy — best tCO2e-per-USD first until the constraint is hit."""
+        return self._select(sorted(self.interventions, key=self._cost_effectiveness, reverse=True))
 
     def run_all_scenarios(self):
         full = self.full_coverage()

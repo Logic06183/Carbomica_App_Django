@@ -16,7 +16,7 @@ from io import StringIO
 
 from appname.models import (
     Facility, EmissionData, EmissionSource,
-    Intervention, FacilityIntervention,
+    Intervention, FacilityIntervention, OptimizationScenario,
 )
 from appname.modeling import (
     INTERVENTION_LIBRARY,
@@ -462,6 +462,7 @@ class FacilityAutoAttachTest(TestCase):
         cls.user = User.objects.create_user('tinah', 'tinah@example.com', 'pw')
 
     def test_authenticated_post_creates_one_facility_intervention_per_library_entry(self):
+        """Opt-IN path: prefill_interventions='on' attaches the full library."""
         self.client.login(username='tinah', password='pw')
         intervention_count = Intervention.objects.count()
         self.assertGreater(intervention_count, 0, 'Sanity: sync_interventions populated the library')
@@ -483,6 +484,7 @@ class FacilityAutoAttachTest(TestCase):
             'waste_management': '0',
             'medical_inhalers': '0',
             'contractor_logistics': '0',
+            'prefill_interventions': 'on',
         })
 
         # Form-validation issues would render 200; success is a 302 to facilities.
@@ -544,9 +546,12 @@ class FacilityAutoAttachTest(TestCase):
             'Unchecking "Pre-attach" must create the facility with no interventions',
         )
 
-    def test_prefill_absent_defaults_to_attaching(self):
-        """Backward compat: a payload with no prefill field at all still
-        attaches the full library (safe default for old forms / API callers)."""
+    def test_prefill_absent_defaults_to_empty(self):
+        """
+        Default flipped 2026-05-24 per user feedback: a payload with no
+        prefill field creates the facility with NO interventions attached.
+        Users opt IN to the attach-everything behaviour.
+        """
         self.client.login(username='tinah', password='pw')
         payload = self._facility_payload('PREFILL_ABSENT')
         payload.pop('prefill_interventions', None)
@@ -554,8 +559,8 @@ class FacilityAutoAttachTest(TestCase):
         self.assertEqual(resp.status_code, 302)
         facility = Facility.objects.get(code_name='PREFILL_ABSENT')
         self.assertEqual(
-            FacilityIntervention.objects.filter(facility=facility).count(),
-            Intervention.objects.count(),
+            FacilityIntervention.objects.filter(facility=facility).count(), 0,
+            'New facilities must start empty unless prefill is explicitly on',
         )
 
 
@@ -941,8 +946,8 @@ class OptimiseDoesNotDuplicateEmissionsTest(TestCase):
         # All emission fields must be present; default to the existing baseline.
         payload = {
             'name': 'Repeat-click test',
+            'mode': 'budget',
             'budget': '50000',
-            'target_reduction': '25',
             'date': '2026-01-01',
             'grid_electricity': '500000',
             'grid_gas': '0',
@@ -1090,6 +1095,125 @@ class DashboardCounterConsistencyTest(TestCase):
             f'Dashboard ({dash_invest}) and Interventions portfolio ({portfolio_invest}) '
             f'should report the same total investment (impl + maint)',
         )
+
+
+class BudgetXorTargetTest(TestCase):
+    """
+    User feedback (2026-05-24, via Jetina): "you shouldn't have a scenario
+    where you choose the budget AND the percentage of reduction — it should
+    be one or the other." Previously the form required both, but the
+    optimiser silently ignored target_reduction entirely.
+
+    Now: OptimizationScenarioForm has a `mode` radio. Budget mode nulls the
+    target; target mode nulls the budget; the optimiser honours whichever
+    is set (budget = maximise reduction within cap; target = cheapest set
+    achieving the goal).
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command('sync_interventions', stdout=StringIO())
+        cls.user = User.objects.create_user('xor', 'xor@example.com', 'pw')
+        cls.facility = Facility.objects.create(
+            code_name='XOR_FAC', display_name='Xor Hospital', country='ZW',
+            facility_type='district_hospital', created_by=cls.user,
+        )
+        cls.source = EmissionSource.objects.create(
+            facility=cls.facility, code_name='XOR_BASE', display_name='Xor baseline',
+        )
+        EmissionData.objects.create(
+            emission_source=cls.source, date='2026-01-01',
+            grid_electricity=Decimal('500000'),
+        )
+        from appname.views import _seed_facility_interventions
+        _seed_facility_interventions(cls.facility)
+
+    # ── Form validation ────────────────────────────────────────────────
+
+    def test_budget_mode_clears_target(self):
+        from appname.forms import OptimizationScenarioForm
+        form = OptimizationScenarioForm({
+            'name': 'B', 'mode': 'budget', 'budget': '50000', 'target_reduction': '25',
+        })
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertIsNone(form.cleaned_data['target_reduction'],
+                          'Budget mode must null out target_reduction')
+
+    def test_target_mode_clears_budget(self):
+        from appname.forms import OptimizationScenarioForm
+        form = OptimizationScenarioForm({
+            'name': 'T', 'mode': 'target', 'budget': '50000', 'target_reduction': '25',
+        })
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertIsNone(form.cleaned_data['budget'],
+                          'Target mode must null out budget')
+
+    def test_budget_mode_requires_budget(self):
+        from appname.forms import OptimizationScenarioForm
+        form = OptimizationScenarioForm({'name': 'B', 'mode': 'budget'})
+        self.assertFalse(form.is_valid())
+        self.assertIn('budget', form.errors)
+
+    def test_target_mode_requires_target(self):
+        from appname.forms import OptimizationScenarioForm
+        form = OptimizationScenarioForm({'name': 'T', 'mode': 'target'})
+        self.assertFalse(form.is_valid())
+        self.assertIn('target_reduction', form.errors)
+
+    # ── Optimizer target mode ──────────────────────────────────────────
+
+    def test_optimizer_target_mode_stops_at_goal(self):
+        from appname.modeling import CarbomicaOptimizer
+        fis = FacilityIntervention.objects.select_related('facility', 'intervention').filter(
+            facility=self.facility)
+        opt = CarbomicaOptimizer(
+            facility_interventions=fis,
+            total_baseline_emissions=Decimal('1000'),
+            target_pct=Decimal('10'),
+            category_baselines={'grid_electricity': Decimal('1000')},
+        )
+        scenarios = opt.run_all_scenarios()
+        summary = scenarios['optimised']['summary']
+        self.assertGreaterEqual(
+            summary['pct_of_baseline'], Decimal('10'),
+            'Target mode must select interventions until the goal is reached',
+        )
+        # And it must NOT select everything — cheapest-path means stopping early.
+        self.assertLess(
+            summary['count'], fis.count(),
+            'Target mode should stop once the goal is met, not run the full library',
+        )
+        self.assertIsNone(summary['budget_remaining'],
+                          'budget_remaining is meaningless in target mode')
+        self.assertTrue(summary['target_met'])
+
+    def test_optimizer_requires_exactly_one_constraint(self):
+        from appname.modeling import CarbomicaOptimizer
+        with self.assertRaises(ValueError):
+            CarbomicaOptimizer(
+                facility_interventions=[],
+                total_baseline_emissions=Decimal('1000'),
+            )
+
+    # ── End-to-end: target-mode POST renders results ────────────────────
+
+    def test_target_mode_post_runs_and_renders(self):
+        self.client.login(username='xor', password='pw')
+        payload = {
+            'name': 'Target run', 'mode': 'target', 'target_reduction': '20',
+            'date': '2026-01-01',
+            'grid_electricity': '500000', 'grid_gas': '0', 'bottled_gas': '0',
+            'liquid_fuel': '0', 'vehicle_fuel_owned': '0', 'business_travel': '0',
+            'anaesthetic_gases': '0', 'refrigeration_gases': '0',
+            'waste_management': '0', 'medical_inhalers': '0', 'contractor_logistics': '0',
+        }
+        resp = self.client.post(f'/optimize/{self.facility.id}/', payload, follow=True)
+        self.assertEqual(resp.status_code, 200)
+        scenario = OptimizationScenario.objects.get(name='Target run')
+        self.assertIsNone(scenario.budget)
+        self.assertEqual(scenario.target_reduction, Decimal('20'))
+        # Results page renders with the target constraint shown
+        self.assertIn(b'reduction target', resp.content)
 
 
 class PipelineStatusAggregationTest(TestCase):

@@ -96,14 +96,51 @@ class PolicyForm(forms.ModelForm):
         }
 
 class OptimizationScenarioForm(forms.ModelForm):
+    """
+    A scenario is constrained by EXACTLY ONE of budget / target_reduction —
+    the `mode` radio picks which. Requiring both made no sense (and
+    target_reduction wasn't even read by the optimiser): the optimiser
+    either maximises reduction within a budget, or finds the cheapest set
+    of interventions that achieves a reduction target.
+    """
+    MODE_CHOICES = [
+        ('budget', 'Optimise within a budget'),
+        ('target', 'Hit a reduction target'),
+    ]
+    mode = forms.ChoiceField(
+        choices=MODE_CHOICES,
+        initial='budget',
+        widget=forms.RadioSelect(attrs={'class': 'form-check-input'}),
+    )
+
     class Meta:
         model = OptimizationScenario
         fields = ['name', 'budget', 'target_reduction']
         widgets = {
             'name': forms.TextInput(attrs={'class': 'form-control'}),
-            'budget': forms.NumberInput(attrs={'class': 'form-control'}),
-            'target_reduction': forms.NumberInput(attrs={'class': 'form-control'})
+            'budget': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0'}),
+            'target_reduction': forms.NumberInput(attrs={'class': 'form-control', 'step': '1', 'min': '1', 'max': '100'}),
         }
+
+    def clean(self):
+        cleaned = super().clean()
+        mode = cleaned.get('mode')
+        budget = cleaned.get('budget')
+        target = cleaned.get('target_reduction')
+
+        if mode == 'budget':
+            if budget in (None, ''):
+                self.add_error('budget', 'Enter a budget, or switch to "Hit a reduction target".')
+            elif budget <= 0:
+                self.add_error('budget', 'Budget must be greater than zero.')
+            cleaned['target_reduction'] = None   # explicitly unused in this mode
+        elif mode == 'target':
+            if target in (None, ''):
+                self.add_error('target_reduction', 'Enter a reduction target, or switch to "Optimise within a budget".')
+            elif not (0 < target <= 100):
+                self.add_error('target_reduction', 'Target must be between 1 and 100 percent.')
+            cleaned['budget'] = None             # explicitly unused in this mode
+        return cleaned
 
 class EmissionDataUpdateForm(forms.ModelForm):
     class Meta:

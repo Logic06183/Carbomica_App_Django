@@ -1,0 +1,117 @@
+{% extends 'appname/base.html' %}
+{% load humanize %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <p class="section-label mb-1">CARBOMICA · Transparency</p>
+        <h2 class="fw-bold mb-0">Methodology &amp; emission factors</h2>
+        <p class="text-muted mt-2 mb-0" style="max-width:46rem;">
+            Every quantity you enter (kWh, litres, kg, km, units) is converted to tonnes of
+            CO₂-equivalent <em>at the moment it is displayed or optimised</em>, using the factors
+            below. Grid electricity uses a country-specific factor; all other categories use
+            internationally published combustion and GWP factors. Cite this page in reports.
+        </p>
+    </div>
+</div>
+
+<!-- ── Grid electricity factors (country-specific) ── -->
+<div class="card mb-4">
+    <div class="card-header">
+        <i class="fas fa-bolt me-2" style="color:var(--hh-blue);"></i>
+        Grid electricity — country-specific factors
+        <span class="badge bg-light text-muted ms-2">IEA 2022</span>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table align-middle mb-0 small">
+                <thead class="table-light">
+                    <tr>
+                        <th>Country</th>
+                        <th class="text-end">kg CO₂e / kWh</th>
+                        <th>Why</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in grid_rows %}
+                    <tr>
+                        <td class="fw-semibold">{{ row.country }}</td>
+                        <td class="text-end">{% widthratio row.value 1 1000 %}</td>
+                        <td class="text-muted">{{ row.note }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <div class="card-footer bg-light small text-muted">
+        <i class="fas fa-info-circle me-1"></i>
+        Kenya's factor (0.032) is roughly 10&times; lower than the global coal-grid average —
+        that is correct, not a bug: Kenya's grid is over 90% hydro and geothermal. The same
+        500,000&nbsp;kWh produces ~16&nbsp;tCO₂e in Kenya but ~278&nbsp;tCO₂e in Zimbabwe and
+        ~464&nbsp;tCO₂e in South Africa.
+    </div>
+</div>
+
+<!-- ── All other emission factors ── -->
+<div class="card mb-4">
+    <div class="card-header">
+        <i class="fas fa-smog me-2" style="color:var(--hh-red);"></i>
+        Emission category factors
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table align-middle mb-0 small">
+                <thead class="table-light">
+                    <tr>
+                        <th>Category</th>
+                        <th>Input unit</th>
+                        <th class="text-end">tCO₂e per unit</th>
+                        <th>Source</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in factor_rows %}
+                    <tr>
+                        <td class="fw-semibold">{{ row.label }}</td>
+                        <td class="text-muted">{{ row.unit }}</td>
+                        <td class="text-end">
+                            {% if row.value is None %}
+                                <span class="text-muted">country-specific (table above)</span>
+                            {% else %}
+                                {{ row.value }}
+                            {% endif %}
+                        </td>
+                        <td class="text-muted">{{ row.source }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- ── How conversion happens ── -->
+<div class="card mb-4" style="border-left:4px solid var(--hh-blue);">
+    <div class="card-body py-3">
+        <h6 class="fw-bold mb-2"><i class="fas fa-graduation-cap me-2" style="color:var(--hh-blue);"></i>How conversion happens</h6>
+        <p class="text-muted small mb-2">
+            You enter raw activity data — e.g. <code>500000</code> kWh of grid electricity.
+            CARBOMICA stores the raw value and converts on the fly:
+            <code>tCO₂e&nbsp;=&nbsp;quantity&nbsp;×&nbsp;factor</code>, with the factor chosen
+            by your facility's country for electricity and by category for everything else.
+            The dashboard, facility profiles, and optimiser all run on these converted values.
+        </p>
+        <p class="text-muted small mb-2">
+            Intervention impacts are modelled as a percentage reduction applied to the relevant
+            emission category's converted baseline — e.g. Solar PV (70%) applies to your
+            grid-electricity tCO₂e, not to your total.
+        </p>
+        <p class="text-muted small mb-0">
+            Factors are reviewed against their sources (IEA, DEFRA/GHG&nbsp;Protocol, IPCC&nbsp;AR6)
+            when those bodies publish updates — values on this page always reflect what the tool
+            is currently using.
+        </p>
+    </div>
+</div>
+{% endblock %}

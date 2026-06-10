@@ -23,4 +23,5 @@ urlpatterns = [
     path('upload/emissions/', views.upload_emissions, name='upload_emissions'),
     path('upload/interventions/', views.upload_interventions, name='upload_interventions'),
     path('organisation/', views.my_organisation, name='my_organisation'),
+    path('methodology/', views.methodology, name='methodology'),
 ]

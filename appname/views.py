@@ -564,11 +564,12 @@ def add_facility(request):
                 emission_data = emission_data_form.save(commit=False)
                 emission_data.emission_source = emission_source
                 emission_data.save()
-                # Pre-attach the whole library by default so the optimiser has
-                # something to work with on first visit. Users who want to
-                # hand-pick a small subset can untick "Pre-attach…" to start
-                # from zero (checkbox in add_facility.html).
-                prefill = request.POST.get('prefill_interventions', 'on') == 'on'
+                # Facilities start EMPTY by default — users hand-pick from the
+                # library on the facility profile (or tick "Pre-attach" on the
+                # form for the old attach-everything behaviour). Default flipped
+                # per user feedback 2026-05-24: starting with all 59 attached
+                # buried users' own selections in noise.
+                prefill = request.POST.get('prefill_interventions', 'off') == 'on'
                 created = 0
                 if prefill:
                     created, _ = _seed_facility_interventions(facility)
@@ -695,6 +696,60 @@ def interventions(request):
 
 
 # ---------------------------------------------------------------------------
+# Methodology & emission factors — full transparency on every conversion
+# ---------------------------------------------------------------------------
+
+# Static metadata describing each factor's unit, source, and vintage. The
+# VALUES live in modeling.py (EMISSION_FACTORS / ELECTRICITY_EF) — this table
+# documents them for the user-facing methodology page so nobody has to take
+# "we convert with international factors" on faith.
+FACTOR_SOURCES = {
+    'grid_electricity':    ('kWh',   'IEA Emission Factors 2022 — country-specific grid intensity'),
+    'grid_gas':            ('m³',    'GHG Protocol / DEFRA 2023 — natural gas combustion'),
+    'bottled_gas':         ('kg',    'GHG Protocol / DEFRA 2023 — LPG combustion'),
+    'liquid_fuel':         ('litre', 'GHG Protocol / DEFRA 2023 — diesel/petrol combustion'),
+    'vehicle_fuel_owned':  ('litre', 'GHG Protocol / DEFRA 2023 — fleet diesel'),
+    'business_travel':     ('km',    'DEFRA 2023 — average medium car'),
+    'anaesthetic_gases':   ('kg',    'IPCC AR6 GWP100 — weighted mix: isoflurane 50%, sevoflurane 30%, desflurane 20%'),
+    'refrigeration_gases': ('kg',    'IPCC AR6 GWP100 — average HFC blend (R-410A, R-134a, R-22)'),
+    'waste_management':    ('tonne', 'DEFRA 2022 — mixed clinical waste treatment'),
+    'medical_inhalers':    ('unit',  'NHS England / DEFRA — propellant pMDI'),
+    'contractor_logistics': ('km',   'DEFRA 2022 — average diesel logistics vehicle'),
+}
+
+
+def methodology(request):
+    """
+    Public transparency page: every emission factor the tool uses, with its
+    unit, value, source, and vintage — plus the country-specific electricity
+    grid factors. Public (no login) so it can be cited in reports.
+    """
+    from .modeling import EMISSION_FACTORS, ELECTRICITY_EF
+
+    factor_rows = []
+    for field, factor in EMISSION_FACTORS.items():
+        unit, source = FACTOR_SOURCES.get(field, ('', ''))
+        factor_rows.append({
+            'label': CATEGORY_LABELS.get(field, field),
+            'unit': unit,
+            'value': factor,           # None for grid electricity (per-country)
+            'source': source,
+        })
+
+    grid_rows = [
+        {'country': 'Zimbabwe (ZW)', 'value': ELECTRICITY_EF['ZW'], 'note': 'Coal-dominated ZESA grid'},
+        {'country': 'South Africa (ZA)', 'value': ELECTRICITY_EF['ZA'], 'note': 'Eskom ≈ 85% coal'},
+        {'country': 'Kenya (KE)', 'value': ELECTRICITY_EF['KE'], 'note': '> 90% renewables (hydro + geothermal) — intentionally low'},
+        {'country': 'Other (SSA default)', 'value': ELECTRICITY_EF['OTHER'], 'note': 'Sub-Saharan Africa average'},
+    ]
+
+    return render(request, 'appname/methodology.html', {
+        'factor_rows': factor_rows,
+        'grid_rows': grid_rows,
+    })
+
+
+# ---------------------------------------------------------------------------
 # Optimisation — CARBOMICA three-scenario engine
 # ---------------------------------------------------------------------------
 
@@ -757,10 +812,12 @@ def optimize_interventions(request, facility_id):
                 .filter(facility=facility)
             )
 
+            # Exactly one of budget / target_reduction is set (form enforces it).
             optimizer = CarbomicaOptimizer(
                 facility_interventions=facility_interventions,
-                budget=scenario.budget,
                 total_baseline_emissions=baseline,
+                budget=scenario.budget,
+                target_pct=scenario.target_reduction,
                 category_baselines=category_baselines,
             )
             scenarios = optimizer.run_all_scenarios()
@@ -865,7 +922,12 @@ def optimization_results(request, scenario_id):
                     'total_reduction': total_reduction,
                     'pct_of_baseline': 0,
                     'total_annual_savings': sum(r['annual_savings'] for r in opt_results),
-                    'budget_remaining': float(scenario.budget) - total_cost,
+                    'budget_remaining': (
+                        float(scenario.budget) - total_cost
+                        if scenario.budget is not None else None
+                    ),
+                    'target_pct': float(scenario.target_reduction) if scenario.target_reduction is not None else None,
+                    'target_met': None,
                 },
             },
             'full_coverage': {'results': [], 'summary': {}},

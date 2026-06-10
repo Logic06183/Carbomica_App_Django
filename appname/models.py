@@ -251,12 +251,19 @@ class InterventionEffect(models.Model):
 class OptimizationScenario(models.Model):
     facility = models.ForeignKey(Facility, related_name='optimization_scenarios', on_delete=models.CASCADE)
     name = models.CharField(max_length=100)
-    budget = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0.0)])
+    # A scenario is driven by EXACTLY ONE constraint: either a budget cap
+    # (optimiser maximises reduction within it) or a reduction target
+    # (optimiser finds the cheapest set achieving it). The unused field is
+    # NULL. Enforced in OptimizationScenarioForm.clean().
+    budget = models.DecimalField(
+        max_digits=12, decimal_places=2, null=True, blank=True,
+        validators=[MinValueValidator(0.0)],
+        help_text="Maximum capital (USD) — leave blank when using a reduction target",
+    )
     target_reduction = models.DecimalField(
-        max_digits=5,
-        decimal_places=2,
+        max_digits=5, decimal_places=2, null=True, blank=True,
         validators=[MinValueValidator(0.0), MaxValueValidator(100.0)],
-        help_text="Target emission reduction percentage"
+        help_text="Target emission reduction percentage — leave blank when using a budget",
     )
     created_at = models.DateTimeField(auto_now_add=True)
     status = models.CharField(
