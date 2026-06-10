@@ -496,6 +496,55 @@ def detach_intervention(request, facility_id, intervention_id):
 
 
 @login_required
+@require_POST
+def bulk_attach_interventions(request, facility_id):
+    """
+    Attach every library intervention to the facility in one click.
+    Idempotent — already-attached rows keep their (possibly customised)
+    costs because _seed_facility_interventions uses bulk_create with
+    ignore_conflicts=True.
+    """
+    facility = get_object_or_404(_user_facilities(request.user), id=facility_id)
+    created, _ = _seed_facility_interventions(facility)
+    if created:
+        messages.success(
+            request,
+            f'Attached {created} intervention{"s" if created != 1 else ""} to '
+            f'{facility.display_name}. Customised costs on existing rows were kept.'
+        )
+    else:
+        messages.info(
+            request,
+            f'All library interventions were already attached to {facility.display_name}.'
+        )
+    return redirect('facility_detail', facility_id=facility.id)
+
+
+@login_required
+@require_POST
+def bulk_detach_interventions(request, facility_id):
+    """
+    Detach ALL interventions from the facility in one click — the
+    "start from zero" control for users who want to hand-pick a small
+    subset rather than pare down from the full library.
+    """
+    facility = get_object_or_404(_user_facilities(request.user), id=facility_id)
+    deleted, _ = FacilityIntervention.objects.filter(facility=facility).delete()
+    if deleted:
+        messages.success(
+            request,
+            f'Detached all {deleted} intervention{"s" if deleted != 1 else ""} from '
+            f'{facility.display_name}. Toggle on just the ones you want, then run an optimisation.'
+        )
+    else:
+        messages.info(
+            request,
+            f'{facility.display_name} had no interventions attached.'
+        )
+    return redirect('facility_detail', facility_id=facility.id)
+
+
+@login_required
 def add_facility(request):
     if request.method == 'POST':
         facility_form = FacilityForm(request.POST)
@@ -515,14 +564,26 @@ def add_facility(request):
                 emission_data = emission_data_form.save(commit=False)
                 emission_data.emission_source = emission_source
                 emission_data.save()
-                # Seed the facility with every library intervention so the
-                # optimiser has something to work with on first visit.
-                created, _ = _seed_facility_interventions(facility)
-            messages.success(
-                request,
-                f'{facility.display_name} added — {created} interventions pre-attached '
-                f'with default LMIC costs. Override site-specific costs anytime.'
-            )
+                # Pre-attach the whole library by default so the optimiser has
+                # something to work with on first visit. Users who want to
+                # hand-pick a small subset can untick "Pre-attach…" to start
+                # from zero (checkbox in add_facility.html).
+                prefill = request.POST.get('prefill_interventions', 'on') == 'on'
+                created = 0
+                if prefill:
+                    created, _ = _seed_facility_interventions(facility)
+            if prefill:
+                messages.success(
+                    request,
+                    f'{facility.display_name} added — {created} interventions pre-attached '
+                    f'with default LMIC costs. Toggle off any that don\'t apply, or override costs anytime.'
+                )
+            else:
+                messages.success(
+                    request,
+                    f'{facility.display_name} added with no interventions attached. '
+                    f'Open its profile and toggle on just the ones you want, then run an optimisation.'
+                )
             return redirect('facilities')
     else:
         facility_form = FacilityForm()
@@ -531,6 +592,7 @@ def add_facility(request):
     return render(request, 'appname/add_facility.html', {
         'facility_form': facility_form,
         'emission_data_form': emission_data_form,
+        'library_count': Intervention.objects.count(),
     })
 
 

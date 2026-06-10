@@ -239,9 +239,30 @@
         </div>
     </div><!-- /row -->
 
+    <div class="card mt-4">
+        <div class="card-body py-3">
+            <div class="form-check">
+                <!-- Hidden field sends "off" when the checkbox is unchecked
+                     (an unchecked checkbox submits nothing). The checkbox below
+                     shares the name and, when checked, overrides this with "on". -->
+                <input type="hidden" name="prefill_interventions" value="off">
+                <input class="form-check-input" type="checkbox" role="switch"
+                       id="prefill_interventions" name="prefill_interventions" value="on" checked>
+                <label class="form-check-label" for="prefill_interventions">
+                    <strong>Pre-attach all {{ library_count }} library interventions</strong>
+                    <span class="text-muted d-block small">
+                        Recommended for a first pass — the optimiser works immediately and you can
+                        toggle off any that don't apply. Untick to start with a blank slate and
+                        hand-pick a focused subset on the facility profile.
+                    </span>
+                </label>
+            </div>
+        </div>
+    </div>
+
     <div class="mt-4 d-flex gap-3">
         <button type="submit" class="btn btn-primary"
-                data-intro="Save the facility and return to the Facilities list. Next step: go to <strong>Upload data → Facility interventions</strong> to attach intervention options, then run the optimisation."
+                data-intro="Save the facility and return to the Facilities list. Next step: open the facility profile to toggle interventions on or off, then run the optimisation."
                 data-title="Save &amp; Continue" data-step="4">
             <i class="fas fa-save me-1"></i>Save facility &amp; emissions
         </button>

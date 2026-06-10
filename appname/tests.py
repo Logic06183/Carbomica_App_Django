@@ -500,6 +500,64 @@ class FacilityAutoAttachTest(TestCase):
         self.assertTrue(sources.issubset({'DEFAULT', 'PLACEHOLDER'}),
                         f'Unexpected cost_source values: {sources}')
 
+    def _facility_payload(self, code, **overrides):
+        payload = {
+            'code_name': code,
+            'display_name': f'{code} Hospital',
+            'country': 'ZW',
+            'facility_type': 'district_hospital',
+            'date': '2026-01-01',
+            'grid_electricity': '100000', 'grid_gas': '0', 'bottled_gas': '0',
+            'liquid_fuel': '0', 'vehicle_fuel_owned': '0', 'business_travel': '0',
+            'anaesthetic_gases': '0', 'refrigeration_gases': '0',
+            'waste_management': '0', 'medical_inhalers': '0', 'contractor_logistics': '0',
+        }
+        payload.update(overrides)
+        return payload
+
+    def test_prefill_checked_attaches_full_library(self):
+        """Default path: checkbox ticked → all interventions attached."""
+        self.client.login(username='tinah', password='pw')
+        resp = self.client.post('/add-facility/',
+                                self._facility_payload('PREFILL_ON', prefill_interventions='on'))
+        self.assertEqual(resp.status_code, 302)
+        facility = Facility.objects.get(code_name='PREFILL_ON')
+        self.assertEqual(
+            FacilityIntervention.objects.filter(facility=facility).count(),
+            Intervention.objects.count(),
+        )
+
+    def test_prefill_unchecked_starts_empty(self):
+        """
+        Opt-out path. With the hidden-field + checkbox pattern, an unticked
+        checkbox submits only the hidden value 'off' (the browser drops the
+        checkbox's own 'on'). So the realistic unchecked payload is
+        prefill_interventions='off'.
+        """
+        self.client.login(username='tinah', password='pw')
+        payload = self._facility_payload('PREFILL_OFF', prefill_interventions='off')
+        resp = self.client.post('/add-facility/', payload)
+        self.assertEqual(resp.status_code, 302)
+        facility = Facility.objects.get(code_name='PREFILL_OFF')
+        self.assertEqual(
+            FacilityIntervention.objects.filter(facility=facility).count(), 0,
+            'Unchecking "Pre-attach" must create the facility with no interventions',
+        )
+
+    def test_prefill_absent_defaults_to_attaching(self):
+        """Backward compat: a payload with no prefill field at all still
+        attaches the full library (safe default for old forms / API callers)."""
+        self.client.login(username='tinah', password='pw')
+        payload = self._facility_payload('PREFILL_ABSENT')
+        payload.pop('prefill_interventions', None)
+        resp = self.client.post('/add-facility/', payload)
+        self.assertEqual(resp.status_code, 302)
+        facility = Facility.objects.get(code_name='PREFILL_ABSENT')
+        self.assertEqual(
+            FacilityIntervention.objects.filter(facility=facility).count(),
+            Intervention.objects.count(),
+        )
+
 
 class BackfillIdempotentTest(TestCase):
     """The backfill command must be safe to run twice."""
@@ -701,6 +759,50 @@ class AttachDetachInterventionTest(TestCase):
             f'/facilities/{self.facility.id}/interventions/{self.intervention.id}/toggle/'
         )
         self.assertEqual(response.status_code, 404)
+
+    def test_bulk_detach_removes_everything(self):
+        self.client.login(username='owner', password='pw')
+        before = FacilityIntervention.objects.filter(facility=self.facility).count()
+        self.assertGreater(before, 0, 'Sanity: facility starts with interventions attached')
+        response = self.client.post(
+            f'/facilities/{self.facility.id}/interventions/detach-all/'
+        )
+        self.assertEqual(response.status_code, 302)
+        after = FacilityIntervention.objects.filter(facility=self.facility).count()
+        self.assertEqual(after, 0, 'Detach-all must remove every FacilityIntervention row')
+
+    def test_bulk_attach_adds_full_library(self):
+        self.client.login(username='owner', password='pw')
+        # Start from empty
+        FacilityIntervention.objects.filter(facility=self.facility).delete()
+        response = self.client.post(
+            f'/facilities/{self.facility.id}/interventions/attach-all/'
+        )
+        self.assertEqual(response.status_code, 302)
+        after = FacilityIntervention.objects.filter(facility=self.facility).count()
+        self.assertEqual(after, Intervention.objects.count(),
+                         'Attach-all must attach exactly the full library')
+
+    def test_bulk_attach_preserves_custom_costs(self):
+        """Attach-all must not clobber a row a user has customised."""
+        self.client.login(username='owner', password='pw')
+        fi = FacilityIntervention.objects.filter(facility=self.facility).first()
+        fi.implementation_cost = Decimal('88888')
+        fi.cost_source = 'USER'
+        fi.save()
+        self.client.post(f'/facilities/{self.facility.id}/interventions/attach-all/')
+        fi.refresh_from_db()
+        self.assertEqual(fi.implementation_cost, Decimal('88888'),
+                         'Attach-all must not overwrite user-customised costs')
+
+    def test_bulk_endpoints_are_post_only(self):
+        self.client.login(username='owner', password='pw')
+        self.assertEqual(
+            self.client.get(f'/facilities/{self.facility.id}/interventions/detach-all/').status_code,
+            405)
+        self.assertEqual(
+            self.client.get(f'/facilities/{self.facility.id}/interventions/attach-all/').status_code,
+            405)
 
     def test_facility_detail_renders_unified_intervention_rows(self):
         """

@@ -238,12 +238,31 @@
             <span class="badge bg-success-subtle text-success-emphasis ms-2">{{ attached_count }} attached</span>
             <span class="badge bg-light text-muted ms-1">{{ intervention_rows|length }} in library</span>
         </span>
-        <span class="text-muted small no-print">
-            Toggle to attach or detach &nbsp;·&nbsp;
-            <a href="{% url 'optimize_interventions' facility.id %}" class="fw-semibold">
+        <div class="d-flex align-items-center gap-2 no-print">
+            <form method="post" action="{% url 'bulk_attach_interventions' facility.id %}" class="d-inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-outline-success btn-sm"
+                        {% if attached_count == intervention_rows|length %}disabled title="All interventions already attached"{% else %}title="Attach every library intervention"{% endif %}>
+                    <i class="fas fa-check-double me-1"></i>Attach all
+                </button>
+            </form>
+            <form method="post" action="{% url 'bulk_detach_interventions' facility.id %}" class="d-inline"
+                  onsubmit="return confirm('Detach all {{ attached_count }} interventions from {{ facility.display_name|escapejs }}? You can re-attach individually or use “Attach all”.');">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-outline-danger btn-sm"
+                        {% if attached_count == 0 %}disabled title="Nothing attached"{% else %}title="Detach all interventions — start from zero"{% endif %}>
+                    <i class="fas fa-eraser me-1"></i>Detach all
+                </button>
+            </form>
+            <a href="{% url 'optimize_interventions' facility.id %}" class="btn btn-success btn-sm fw-semibold">
                 <i class="fas fa-bolt me-1"></i>Run optimisation
             </a>
-        </span>
+        </div>
+    </div>
+    <div class="card-header bg-light py-2 small text-muted no-print">
+        <i class="fas fa-info-circle me-1"></i>
+        Toggle the <strong>Apply</strong> switch on each row to include or exclude it.
+        Use <strong>Detach all</strong> then toggle on just a few to model a focused subset.
     </div>
     <div class="card-body p-0">
         <div class="table-responsive">
