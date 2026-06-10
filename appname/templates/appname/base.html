@@ -441,12 +441,12 @@ function startTour() {
             {
                 element: document.querySelector('[href*="add-facility"], [href*="facilities"]'),
                 title: 'Step 1 — Add your facility',
-                intro: 'Register your health facility with its country and type. Each facility gets its own carbon profile.',
+                intro: 'Register your health facility with its country and type. The country automatically selects the grid-electricity carbon factor used for all conversions (e.g. Zimbabwe 0.556 vs Kenya 0.032 kg CO₂e/kWh) — no extra setup needed.',
             },
             {
                 element: document.querySelector('[href*="upload/emissions"]'),
                 title: 'Step 2 — Upload emission data',
-                intro: 'Enter annual emission figures across 10 categories (electricity, anaesthetic gases, waste, etc.) or upload a CSV from the AKDN Carbon Management Tool.',
+                intro: 'Enter RAW annual usage — kWh of electricity, litres of fuel, kg of gases — straight off your bills and records. CARBOMICA converts everything to tCO₂e automatically using published carbon factors (IEA, DEFRA, IPCC). Or upload a CSV from the AKDN Carbon Management Tool.',
             },
             {
                 element: document.querySelector('[href*="upload/interventions"]'),

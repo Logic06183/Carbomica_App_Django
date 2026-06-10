@@ -65,8 +65,15 @@
                     </div>
                     <div class="row g-3">
                         <div class="col-6">
-                            <label class="form-label fw-semibold">Country <span class="text-danger">*</span></label>
+                            <label class="form-label fw-semibold">Country <span class="text-danger">*</span>
+                                <i class="fas fa-question-circle help-icon"
+                                   data-bs-toggle="popover" data-bs-placement="right"
+                                   data-bs-content="Automatically selects the grid-electricity carbon factor used for ALL conversions at this facility — no extra setup needed. Zimbabwe 0.556, South Africa 0.928, Kenya 0.032 kg CO₂e/kWh (IEA 2022). See Methodology for the full table."></i>
+                            </label>
                             {{ facility_form.country }}
+                            <div class="form-text" style="font-size:.74rem;" id="country-factor-note">
+                                Picks the grid carbon factor automatically.
+                            </div>
                         </div>
                         <div class="col-6">
                             <label class="form-label fw-semibold">Type <span class="text-danger">*</span></label>
@@ -81,8 +88,8 @@
         <!-- ── Right column: emission data ── -->
         <div class="col-lg-7">
             <div class="card"
-                 data-intro="Enter annual tCO₂e figures across the 10 AKDN emission categories. Use 0 for any category that doesn't apply. Hover the ⓘ icon on each field for scope definitions and data tips."
-                 data-title="Emission Baseline (10 AKDN Categories)" data-step="3">
+                 data-intro="Enter your RAW annual usage figures — kWh of electricity, litres of fuel, kg of gases — straight off your utility bills and records. CARBOMICA converts each entry to tCO₂e automatically using the carbon factor for your facility's country (watch the live conversion under each field). Use 0 for any category that doesn't apply. Hover the ⓘ icon on each field for scope definitions and data tips."
+                 data-title="Emission Baseline (Raw Usage — Auto-Converted)" data-step="3">
                 <div class="card-header">
                     <i class="fas fa-smog me-2" style="color:var(--hh-red);"></i>Annual emission baseline
                     <span class="text-muted small fw-normal ms-2">(raw usage units/yr — app converts to tCO₂e automatically)</span>
@@ -269,4 +276,68 @@
         <a href="{% url 'facilities' %}" class="btn btn-outline-secondary">Cancel</a>
     </div>
 </form>
+
+{{ emission_factors|json_script:"emission-factors" }}
+<script>
+// Live tCO₂e preview on the baseline form — identical factors to the
+// backend (modeling.EMISSION_FACTORS / ELECTRICITY_EF, see /methodology/).
+// The country dropdown drives the grid-electricity factor, so switching
+// Zimbabwe → Kenya updates the previews instantly: the answer to
+// "does it automatically pick up the country?" is visibly yes.
+document.addEventListener('DOMContentLoaded', function () {
+    const FACTORS = JSON.parse(document.getElementById('emission-factors').textContent);
+    const FIELDS = Object.keys(FACTORS.fields);
+    const countrySel = document.querySelector('[name="country"]');
+    const note = document.getElementById('country-factor-note');
+
+    function gridFactor() {
+        const c = countrySel ? countrySel.value : 'OTHER';
+        return FACTORS.electricity[c] ?? FACTORS.electricity['OTHER'];
+    }
+    function factorFor(field) {
+        return field === 'grid_electricity' ? gridFactor() : (FACTORS.fields[field] || 0);
+    }
+
+    // Attach a preview div under every emission input + one total bar.
+    const previews = {};
+    let totalBar = null;
+    FIELDS.forEach(field => {
+        const input = document.querySelector(`[name="${field}"]`);
+        if (!input) return;
+        const div = document.createElement('div');
+        div.className = 'text-muted';
+        div.style.cssText = 'font-size:.72rem;min-height:.9rem;';
+        input.insertAdjacentElement('afterend', div);
+        previews[field] = { input, div };
+        if (!totalBar) {
+            const body = input.closest('.card-body');
+            totalBar = document.createElement('div');
+            totalBar.className = 'alert alert-light border mt-3 mb-0 py-2 d-flex justify-content-between align-items-center';
+            totalBar.innerHTML = '<span class="small text-muted"><i class="fas fa-calculator me-1"></i>Converted baseline total</span>' +
+                                 '<strong class="text-success" id="af-tco2e-total">0.0 tCO₂e/yr</strong>';
+            body.appendChild(totalBar);
+        }
+    });
+
+    function recompute() {
+        let total = 0;
+        Object.entries(previews).forEach(([field, { input, div }]) => {
+            const qty = parseFloat(input.value) || 0;
+            const t = qty * factorFor(field);
+            total += t;
+            div.textContent = qty > 0 ? `≈ ${t.toFixed(2)} tCO₂e (× ${factorFor(field)})` : '';
+        });
+        const el = document.getElementById('af-tco2e-total');
+        if (el) el.textContent = total.toFixed(1) + ' tCO₂e/yr';
+        if (note && countrySel) {
+            note.textContent = `Grid factor for ${countrySel.options[countrySel.selectedIndex]?.text || 'selection'}: ` +
+                               `${(gridFactor() * 1000).toFixed(3)} kg CO₂e/kWh (IEA 2022) — applied automatically.`;
+        }
+    }
+
+    Object.values(previews).forEach(({ input }) => input.addEventListener('input', recompute));
+    if (countrySel) countrySel.addEventListener('change', recompute);
+    recompute();
+});
+</script>
 {% endblock %}

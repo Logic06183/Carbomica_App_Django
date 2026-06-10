@@ -643,6 +643,7 @@ def add_facility(request):
         'facility_form': facility_form,
         'emission_data_form': emission_data_form,
         'library_count': Intervention.objects.count(),
+        'emission_factors': _emission_factors_json(),
     })
 
 

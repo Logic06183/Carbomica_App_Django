@@ -1226,6 +1226,24 @@ class EmissionEntryUnitsGuidanceTest(TestCase):
         self.assertIsNone(data['fields']['grid_electricity'],
                           'grid_electricity is per-country, not a flat factor')
 
+    def test_add_facility_tour_and_preview_use_raw_units(self):
+        """
+        Second round of the same incident (2026-06-10): the guided-tour
+        overlay on add_facility still said "Enter annual tCO₂e figures"
+        even after the upload page was fixed. The tour copy, the country
+        help text, and the live preview must all reflect raw-units +
+        automatic conversion.
+        """
+        self.client.login(username='units', password='pw')
+        response = self.client.get('/add-facility/')
+        body = response.content.decode()
+        self.assertNotIn('Enter annual tCO₂e figures', body,
+                         'The wrong tour instruction is back on add_facility')
+        self.assertIn('RAW annual usage', body)
+        # Country → factor linkage is explicit and the preview machinery loads
+        self.assertIn('country-factor-note', body)
+        self.assertIn('emission-factors', body)
+
     def test_both_emission_forms_share_unit_labels(self):
         """EmissionDataUpdateForm (optimise page) must carry the same
         unit-suffixed labels as EmissionDataForm — it used to render bare
