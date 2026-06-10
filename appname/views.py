@@ -545,6 +545,55 @@ def bulk_detach_interventions(request, facility_id):
 
 
 @login_required
+@require_POST
+def delete_facility(request, facility_id):
+    """
+    Permanently delete a facility and everything hanging off it (emission
+    records, intervention links, scenarios, results — Django cascades).
+    Guarded by a type-the-name confirmation: the POST must include the
+    facility's display_name exactly, so a stray click can't destroy data.
+    """
+    facility = get_object_or_404(_user_facilities(request.user), id=facility_id)
+
+    typed = (request.POST.get('confirm_name') or '').strip()
+    if typed != facility.display_name:
+        messages.error(
+            request,
+            f'Deletion cancelled — the name you typed didn\'t match '
+            f'"{facility.display_name}". Nothing was removed.'
+        )
+        return redirect('facility_detail', facility_id=facility.id)
+
+    name = facility.display_name
+    _, per_model = facility.delete()
+    n_records = per_model.get('appname.EmissionData', 0)
+    n_links = per_model.get('appname.FacilityIntervention', 0)
+    n_scenarios = per_model.get('appname.OptimizationScenario', 0)
+    messages.success(
+        request,
+        f'Deleted "{name}" — including {n_records} emission record{"s" if n_records != 1 else ""}, '
+        f'{n_links} intervention link{"s" if n_links != 1 else ""}, and '
+        f'{n_scenarios} scenario{"s" if n_scenarios != 1 else ""}.'
+    )
+    return redirect('facilities')
+
+
+@login_required
+@require_POST
+def delete_scenario(request, scenario_id):
+    """Delete a single optimisation scenario (and its persisted results).
+    Re-running is cheap — scenarios are snapshots, not source data."""
+    user_facility_ids = _user_facilities(request.user).values_list('id', flat=True)
+    scenario = get_object_or_404(
+        OptimizationScenario, id=scenario_id, facility_id__in=user_facility_ids,
+    )
+    name, facility_name = scenario.name, scenario.facility.display_name
+    scenario.delete()
+    messages.success(request, f'Deleted scenario "{name}" for {facility_name}.')
+    return redirect('home')
+
+
+@login_required
 def add_facility(request):
     if request.method == 'POST':
         facility_form = FacilityForm(request.POST)

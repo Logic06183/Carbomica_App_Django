@@ -375,7 +375,16 @@
                             <div class="fw-semibold small">{{ s.name }}</div>
                             <div class="text-muted" style="font-size:.76rem;">{{ s.facility.display_name }}</div>
                         </div>
-                        <a href="{% url 'optimization_results' s.id %}" class="btn btn-sm btn-outline-primary">View</a>
+                        <div class="d-flex gap-1">
+                            <a href="{% url 'optimization_results' s.id %}" class="btn btn-sm btn-outline-primary">View</a>
+                            <form method="post" action="{% url 'delete_scenario' s.id %}" class="d-inline"
+                                  onsubmit="return confirm('Delete scenario “{{ s.name|escapejs }}”? You can re-run a new one any time.');">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete this scenario">
+                                    <i class="fas fa-trash-alt"></i>
+                                </button>
+                            </form>
+                        </div>
                     </li>
                     {% endfor %}
                 </ul>

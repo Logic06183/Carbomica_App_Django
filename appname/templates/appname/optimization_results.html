@@ -15,13 +15,20 @@
             {% endif %}
         </p>
     </div>
-    <div class="col-auto">
-        <a href="{% url 'optimize_interventions' scenario.facility.id %}" class="btn btn-outline-primary me-2">
-            <i class="fas fa-redo me-1"></i>New scenario
+    <div class="col-auto d-flex gap-2">
+        <a href="{% url 'optimize_interventions' scenario.facility.id %}" class="btn btn-outline-primary">
+            <i class="fas fa-redo me-1"></i>Re-run with different interventions
         </a>
         <a href="{% url 'facilities' %}" class="btn btn-outline-secondary">
             <i class="fas fa-arrow-left me-1"></i>Facilities
         </a>
+        <form method="post" action="{% url 'delete_scenario' scenario.id %}" class="d-inline"
+              onsubmit="return confirm('Delete scenario “{{ scenario.name|escapejs }}”? The underlying facility data is untouched — you can re-run a new scenario any time.');">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-outline-danger" title="Delete this scenario">
+                <i class="fas fa-trash-alt me-1"></i>Delete
+            </button>
+        </form>
     </div>
 </div>
 

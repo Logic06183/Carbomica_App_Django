@@ -48,8 +48,65 @@
         <a href="{% url 'facilities' %}" class="btn btn-outline-secondary btn-sm">
             <i class="fas fa-arrow-left me-1"></i>Back
         </a>
+        <button type="button" class="btn btn-outline-danger btn-sm"
+                data-bs-toggle="modal" data-bs-target="#deleteFacilityModal"
+                title="Permanently delete this facility and all its data">
+            <i class="fas fa-trash-alt me-1"></i>Delete
+        </button>
     </div>
 </div>
+
+<!-- ── Delete facility confirmation modal (type the name to confirm) ── -->
+<div class="modal fade" id="deleteFacilityModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="{% url 'delete_facility' facility.id %}">
+                {% csrf_token %}
+                <div class="modal-header" style="border-top:4px solid var(--hh-red);">
+                    <h5 class="modal-title"><i class="fas fa-exclamation-triangle me-2 text-danger"></i>Delete {{ facility.display_name }}?</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-2">
+                        This permanently deletes the facility <strong>and everything attached to it</strong>:
+                    </p>
+                    <ul class="small text-muted mb-3">
+                        <li>{{ records_with_tco2e|length }} emission record{{ records_with_tco2e|length|pluralize }}</li>
+                        <li>{{ attached_count }} linked intervention{{ attached_count|pluralize }} (your customised costs included)</li>
+                        <li>All optimisation scenarios and their results</li>
+                    </ul>
+                    <p class="mb-2 small">
+                        To confirm, type the facility name exactly:
+                        <strong>{{ facility.display_name }}</strong>
+                    </p>
+                    <input type="text" name="confirm_name" class="form-control"
+                           placeholder="{{ facility.display_name }}" autocomplete="off" required
+                           id="delete-confirm-input">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger" id="delete-confirm-btn" disabled>
+                        <i class="fas fa-trash-alt me-1"></i>Delete permanently
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<script>
+// Enable the delete button only when the typed name matches exactly —
+// the server re-checks, this is just immediate feedback.
+document.addEventListener('DOMContentLoaded', function () {
+    const input = document.getElementById('delete-confirm-input');
+    const btn = document.getElementById('delete-confirm-btn');
+    const expected = '{{ facility.display_name|escapejs }}';
+    if (input && btn) {
+        input.addEventListener('input', function () {
+            btn.disabled = input.value.trim() !== expected;
+        });
+    }
+});
+</script>
 
 {% if not latest_breakdown %}
 <!-- ── No data state ── -->

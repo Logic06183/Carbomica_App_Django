@@ -1097,6 +1097,92 @@ class DashboardCounterConsistencyTest(TestCase):
         )
 
 
+class DeleteFacilityAndScenarioTest(TestCase):
+    """
+    User feedback (2026-06-10): "it's a one-way street — you add a facility
+    and can never take it off again." Facilities and scenarios are now
+    deletable, with safety:
+      - delete_facility requires the POST to include the facility's
+        display_name typed exactly (confirm_name) — a mis-click can't
+        destroy data. Cascades to emission records, intervention links,
+        scenarios, and results via Django's collector.
+      - delete_scenario is a plain confirm (scenarios are cheap snapshots).
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command('sync_interventions', stdout=StringIO())
+        cls.owner = User.objects.create_user('delowner', 'del@example.com', 'pw')
+        cls.outsider = User.objects.create_user('deloutsider', 'out@example.com', 'pw')
+        cls.facility = Facility.objects.create(
+            code_name='DEL_FAC', display_name='Deletable Hospital', country='ZW',
+            facility_type='district_hospital', created_by=cls.owner,
+        )
+        source = EmissionSource.objects.create(
+            facility=cls.facility, code_name='DEL_BASE', display_name='Del baseline',
+        )
+        EmissionData.objects.create(
+            emission_source=source, date='2026-01-01', grid_electricity=Decimal('10000'),
+        )
+        from appname.views import _seed_facility_interventions
+        _seed_facility_interventions(cls.facility)
+        cls.scenario = OptimizationScenario.objects.create(
+            facility=cls.facility, name='Del scenario', budget=Decimal('1000'),
+        )
+
+    def test_delete_requires_exact_name_match(self):
+        self.client.login(username='delowner', password='pw')
+        response = self.client.post(
+            f'/facilities/{self.facility.id}/delete/',
+            {'confirm_name': 'Wrong Name'},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(Facility.objects.filter(id=self.facility.id).exists(),
+                        'Facility must survive a mismatched confirm_name')
+
+    def test_delete_with_correct_name_cascades_everything(self):
+        self.client.login(username='delowner', password='pw')
+        fid = self.facility.id
+        response = self.client.post(
+            f'/facilities/{fid}/delete/',
+            {'confirm_name': 'Deletable Hospital'},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(Facility.objects.filter(id=fid).exists())
+        self.assertFalse(FacilityIntervention.objects.filter(facility_id=fid).exists())
+        self.assertFalse(EmissionData.objects.filter(emission_source__facility_id=fid).exists())
+        self.assertFalse(OptimizationScenario.objects.filter(facility_id=fid).exists())
+
+    def test_outsider_cannot_delete(self):
+        self.client.login(username='deloutsider', password='pw')
+        response = self.client.post(
+            f'/facilities/{self.facility.id}/delete/',
+            {'confirm_name': 'Deletable Hospital'},
+        )
+        self.assertEqual(response.status_code, 404)
+        self.assertTrue(Facility.objects.filter(id=self.facility.id).exists())
+
+    def test_delete_facility_is_post_only(self):
+        self.client.login(username='delowner', password='pw')
+        response = self.client.get(f'/facilities/{self.facility.id}/delete/')
+        self.assertEqual(response.status_code, 405)
+
+    def test_delete_scenario(self):
+        self.client.login(username='delowner', password='pw')
+        sid = self.scenario.id
+        response = self.client.post(f'/scenarios/{sid}/delete/')
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(OptimizationScenario.objects.filter(id=sid).exists())
+        # The facility itself is untouched
+        self.assertTrue(Facility.objects.filter(id=self.facility.id).exists())
+
+    def test_outsider_cannot_delete_scenario(self):
+        self.client.login(username='deloutsider', password='pw')
+        response = self.client.post(f'/scenarios/{self.scenario.id}/delete/')
+        self.assertEqual(response.status_code, 404)
+        self.assertTrue(OptimizationScenario.objects.filter(id=self.scenario.id).exists())
+
+
 class EmissionEntryUnitsGuidanceTest(TestCase):
     """
     Incident (2026-05, reported by Jetina): the manual-entry card on

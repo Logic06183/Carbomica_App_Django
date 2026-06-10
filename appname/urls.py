@@ -17,6 +17,8 @@ urlpatterns = [
     path('facilities/<int:facility_id>/interventions/detach-all/',
          views.bulk_detach_interventions, name='bulk_detach_interventions'),
     path('add-facility/', views.add_facility, name='add_facility'),
+    path('facilities/<int:facility_id>/delete/', views.delete_facility, name='delete_facility'),
+    path('scenarios/<int:scenario_id>/delete/', views.delete_scenario, name='delete_scenario'),
     path('interventions/', views.interventions, name='interventions'),
     path('optimize/<int:facility_id>/', views.optimize_interventions, name='optimize_interventions'),
     path('optimization-results/<int:scenario_id>/', views.optimization_results, name='optimization_results'),
