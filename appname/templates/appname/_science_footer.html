@@ -1,0 +1,31 @@
+{% comment %}
+Reusable scientific-provenance footer for report surfaces (facility
+profile, optimisation results). DELIBERATELY shown in print/PDF — when a
+manager exports a report for a funder or district meeting, the carbon
+factors, methodology, and "decision-support estimate" framing travel with
+it. Keeps the rigor attached to the numbers, not stranded on a separate
+page nobody prints.
+{% endcomment %}
+<div class="card mb-4" style="border-left:4px solid var(--hh-blue);">
+    <div class="card-body py-3">
+        <h6 class="fw-bold mb-2" style="font-size:.9rem;">
+            <i class="fas fa-flask me-2" style="color:var(--hh-blue);"></i>Scientific basis &amp; data provenance
+        </h6>
+        <p class="text-muted mb-2" style="font-size:.8rem;line-height:1.6;">
+            Emissions are estimated from activity data (kWh, litres, kg, km) converted to
+            tCO₂e using internationally standardised carbon factors:
+            <strong>grid electricity</strong> — IEA Emissions Factors 2022 (country-specific);
+            <strong>fuels, travel, waste, inhalers</strong> — UK DEFRA/BEIS 2023;
+            <strong>anaesthetic &amp; refrigerant gases</strong> — IPCC AR6 GWP₁₀₀.
+            Optimisation ranks interventions by tCO₂e reduced per USD (deterministic greedy
+            knapsack). Financial metrics use an 8% discount rate over a 10-year horizon.
+        </p>
+        <p class="text-muted mb-0" style="font-size:.78rem;">
+            <strong>These figures are decision-support estimates</strong>, not audited accounts —
+            see assumptions &amp; limitations and full factor tables at
+            <a href="{% url 'methodology' %}">{{ request.scheme }}://{{ request.get_host }}{% url 'methodology' %}</a>.
+            Methodology after HIGH Horizons D3.7 (DOI&nbsp;10.5281/zenodo.12730527),
+            EU Horizon Europe Grant No.&nbsp;101057843.
+        </p>
+    </div>
+</div>

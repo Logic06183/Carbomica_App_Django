@@ -1292,6 +1292,40 @@ class MethodologyPageRigorTest(TestCase):
                             f'Reference {ref["key"]} has neither DOI nor URL')
 
 
+class ScienceFooterOnReportsTest(TestCase):
+    """
+    The scientific-provenance footer must appear on every report surface
+    (facility profile + optimisation results) so exported/printed reports
+    carry the methodology, factor vintages, and decision-support framing —
+    not just the standalone /methodology/ page.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command('sync_interventions', stdout=StringIO())
+        cls.user = User.objects.create_user('sci', 'sci@example.com', 'pw')
+        cls.facility = Facility.objects.create(
+            code_name='SCI_FAC', display_name='Science Hospital', country='ZW',
+            facility_type='district_hospital', created_by=cls.user,
+        )
+        cls.scenario = OptimizationScenario.objects.create(
+            facility=cls.facility, name='Sci scenario', budget=Decimal('1000'),
+        )
+
+    def test_footer_on_facility_profile(self):
+        self.client.login(username='sci', password='pw')
+        body = self.client.get(f'/facilities/{self.facility.id}/').content.decode()
+        self.assertIn('Scientific basis', body)
+        self.assertIn('IPCC AR6', body)
+        self.assertIn('decision-support estimates', body)
+
+    def test_footer_on_optimisation_results(self):
+        self.client.login(username='sci', password='pw')
+        body = self.client.get(f'/optimization-results/{self.scenario.id}/').content.decode()
+        self.assertIn('Scientific basis', body)
+        self.assertIn('10.5281/zenodo.12730527', body)
+
+
 class BudgetXorTargetTest(TestCase):
     """
     User feedback (2026-05-24, via Jetina): "you shouldn't have a scenario

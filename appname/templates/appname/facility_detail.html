@@ -414,21 +414,8 @@ document.addEventListener('DOMContentLoaded', function () {
     {% endif %}
 </div>
 
-<!-- ── Methodology note (report-friendly) ── -->
-<div class="card mb-4" style="border-left:4px solid var(--hh-blue);">
-    <div class="card-body py-3">
-        <h6 class="fw-bold mb-2"><i class="fas fa-graduation-cap me-2" style="color:var(--hh-blue);"></i>Emission conversion methodology</h6>
-        <p class="text-muted small mb-1">
-            Raw usage data (kWh, m³, kg, litres, km, units) is converted to tCO₂e using
-            country-specific grid emission factors (IEA 2022) and GHG Protocol / DEFRA 2023 combustion factors.
-        </p>
-        <p class="text-muted small mb-0">
-            <strong>Electricity factors:</strong> Zimbabwe 0.556 kg CO₂e/kWh (coal grid) · South Africa 0.928 kg CO₂e/kWh (Eskom) · Kenya 0.032 kg CO₂e/kWh (renewables-heavy).
-            Anaesthetic gases use a weighted average GWP of 802 (50% isoflurane GWP 510, 30% sevoflurane GWP 130, 20% desflurane GWP 2540 — IPCC AR6).
-            <a href="{% url 'methodology' %}" class="fw-semibold">See the full factor table →</a>
-        </p>
-    </div>
-</div>
+<!-- ── Scientific basis & data provenance (shared, print-friendly) ── -->
+{% include "appname/_science_footer.html" %}
 
 {% endblock %}
 
