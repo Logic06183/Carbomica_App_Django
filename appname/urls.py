@@ -26,4 +26,5 @@ urlpatterns = [
     path('upload/interventions/', views.upload_interventions, name='upload_interventions'),
     path('organisation/', views.my_organisation, name='my_organisation'),
     path('methodology/', views.methodology, name='methodology'),
+    path('district-planning/', views.district_planning, name='district_planning'),
 ]

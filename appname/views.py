@@ -745,6 +745,117 @@ def interventions(request):
     })
 
 
+def _facility_rollup(facility):
+    """
+    Compute district-planning roll-up metrics for one facility:
+      baseline tCO₂e (latest record), category-aware potential reduction
+      (capped at each category's baseline so stacked interventions can't
+      reduce a slice below zero), total investment, and intervention count.
+    Returns a dict; baseline/reduction are Decimal tCO₂e.
+    """
+    latest = (
+        EmissionData.objects
+        .filter(emission_source__facility=facility)
+        .order_by('-date')
+        .first()
+    )
+    cat = compute_tco2e(latest, facility.country) if latest else {}
+    baseline = cat.get('total', Decimal('0'))
+
+    # Sum each intervention's reduction into its target category, then cap
+    # each category's total reduction at that category's baseline.
+    reduction_by_cat = defaultdict(Decimal)
+    fis = list(
+        FacilityIntervention.objects
+        .select_related('intervention')
+        .filter(facility=facility)
+    )
+    investment = Decimal('0')
+    for fi in fis:
+        investment += (fi.implementation_cost or Decimal('0')) + (fi.maintenance_cost or Decimal('0'))
+        pct = fi.intervention.emission_reduction_percentage or Decimal('0')
+        targets = (fi.intervention.target_category or '').split(',')
+        for t in targets:
+            t = t.strip()
+            if t:
+                reduction_by_cat[t] += (pct / 100) * Decimal(str(cat.get(t, 0)))
+
+    potential = Decimal('0')
+    for t, red in reduction_by_cat.items():
+        potential += min(red, Decimal(str(cat.get(t, 0))))
+
+    return {
+        'id': facility.id,
+        'name': facility.display_name,
+        'country': facility.get_country_display(),
+        'country_code': facility.country,
+        'facility_type': facility.get_facility_type_display(),
+        'baseline': baseline,
+        'potential_reduction': potential,
+        'reduction_pct': (potential / baseline * 100) if baseline > 0 else Decimal('0'),
+        'investment': investment,
+        'n_interventions': len(fis),
+        'has_data': latest is not None,
+    }
+
+
+@login_required
+def district_planning(request):
+    """
+    District-level roll-up across all facilities the user can access. Ranks
+    facilities by baseline emissions, aggregates total district emissions,
+    reduction potential, and investment, and breaks the totals down by
+    country. Built for district health officers prioritising where carbon
+    investment delivers the most tCO₂e per dollar across a portfolio.
+    """
+    facilities = list(_user_facilities(request.user).order_by('display_name'))
+    rows = [_facility_rollup(f) for f in facilities]
+    rows.sort(key=lambda r: r['baseline'], reverse=True)
+
+    totals = {
+        'facilities': len(rows),
+        'baseline': sum((r['baseline'] for r in rows), Decimal('0')),
+        'potential_reduction': sum((r['potential_reduction'] for r in rows), Decimal('0')),
+        'investment': sum((r['investment'] for r in rows), Decimal('0')),
+        'with_data': sum(1 for r in rows if r['has_data']),
+    }
+    totals['reduction_pct'] = (
+        totals['potential_reduction'] / totals['baseline'] * 100
+        if totals['baseline'] > 0 else Decimal('0')
+    )
+    totals['cost_effectiveness'] = (
+        totals['investment'] / totals['potential_reduction']
+        if totals['potential_reduction'] > 0 else None
+    )
+
+    # Per-country (district proxy) aggregates
+    by_country = defaultdict(lambda: {'baseline': Decimal('0'), 'reduction': Decimal('0'),
+                                      'investment': Decimal('0'), 'count': 0})
+    for r in rows:
+        c = by_country[r['country']]
+        c['baseline'] += r['baseline']
+        c['reduction'] += r['potential_reduction']
+        c['investment'] += r['investment']
+        c['count'] += 1
+    country_rows = sorted(
+        [{'country': k, **v} for k, v in by_country.items()],
+        key=lambda x: x['baseline'], reverse=True,
+    )
+
+    chart_data = json.dumps({
+        'labels': [r['name'] for r in rows[:10]],
+        'baseline': [float(r['baseline']) for r in rows[:10]],
+        'reduction': [float(r['potential_reduction']) for r in rows[:10]],
+    })
+
+    return render(request, 'appname/district_planning.html', {
+        'rows': rows,
+        'totals': totals,
+        'country_rows': country_rows,
+        'chart_data': chart_data,
+    })
+
+
 def _emission_factors_json():
     """
     Factors as a JSON-safe dict for the live tCO₂e preview on data-entry

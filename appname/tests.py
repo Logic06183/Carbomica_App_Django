@@ -1257,6 +1257,64 @@ class EmissionEntryUnitsGuidanceTest(TestCase):
                              f'Label mismatch between the two emission forms for {name}')
 
 
+class DistrictPlanningTest(TestCase):
+    """
+    District-level roll-up: aggregates all of a user's facilities, ranks by
+    baseline emissions, and totals district emissions / reduction potential
+    / investment. Scoped per user (a district officer sees only their
+    facilities). Built for the user's explicit "district planning" goal.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command('sync_interventions', stdout=StringIO())
+        cls.user = User.objects.create_user('dist', 'dist@example.com', 'pw')
+        cls.other = User.objects.create_user('distother', 'o@example.com', 'pw')
+        # Two facilities for `user`, different emission sizes
+        cls.big = Facility.objects.create(
+            code_name='BIG', display_name='Big Hospital', country='ZW',
+            facility_type='central_hospital', created_by=cls.user)
+        cls.small = Facility.objects.create(
+            code_name='SMALL', display_name='Small Clinic', country='ZW',
+            facility_type='health_centre', created_by=cls.user)
+        for fac, kwh in ((cls.big, '500000'), (cls.small, '50000')):
+            src = EmissionSource.objects.create(
+                facility=fac, code_name=f'{fac.code_name}_B', display_name='b')
+            EmissionData.objects.create(
+                emission_source=src, date='2026-01-01', grid_electricity=Decimal(kwh))
+        # One facility for `other` — must NOT appear in user's district
+        Facility.objects.create(
+            code_name='OTHERFAC', display_name='Other Hospital', country='KE',
+            facility_type='district_hospital', created_by=cls.other)
+
+    def test_district_page_renders_and_ranks_by_emissions(self):
+        self.client.login(username='dist', password='pw')
+        resp = self.client.get('/district-planning/')
+        self.assertEqual(resp.status_code, 200)
+        rows = resp.context['rows']
+        self.assertEqual(len(rows), 2, 'Only the user\'s own facilities')
+        # Ranked by baseline descending — Big Hospital first
+        self.assertEqual(rows[0]['name'], 'Big Hospital')
+        self.assertGreater(rows[0]['baseline'], rows[1]['baseline'])
+
+    def test_district_totals_sum_facilities(self):
+        self.client.login(username='dist', password='pw')
+        totals = self.client.get('/district-planning/').context['totals']
+        self.assertEqual(totals['facilities'], 2)
+        # ZW grid factor 0.000556 → 500000*0.000556 + 50000*0.000556
+        self.assertAlmostEqual(float(totals['baseline']), 550000 * 0.000556, places=2)
+
+    def test_district_excludes_other_users_facilities(self):
+        self.client.login(username='dist', password='pw')
+        body = self.client.get('/district-planning/').content.decode()
+        self.assertNotIn('Other Hospital', body)
+
+    def test_district_requires_login(self):
+        resp = self.client.get('/district-planning/')
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn('/accounts/login/', resp['Location'])
+
+
 class MethodologyPageRigorTest(TestCase):
     """
     The methodology page is the tool's scientific-credibility surface. It
