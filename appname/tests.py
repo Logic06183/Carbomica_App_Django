@@ -1257,6 +1257,41 @@ class EmissionEntryUnitsGuidanceTest(TestCase):
                              f'Label mismatch between the two emission forms for {name}')
 
 
+class MethodologyPageRigorTest(TestCase):
+    """
+    The methodology page is the tool's scientific-credibility surface. It
+    must render the references (with the D3.7 DOI), the financial
+    parameters, the optimisation-algorithm description, and the explicit
+    assumptions/limitations section — and stay public (no login) so it can
+    be cited.
+    """
+
+    def test_methodology_is_public(self):
+        response = self.client.get('/methodology/')
+        self.assertEqual(response.status_code, 200)
+
+    def test_methodology_contains_scientific_sections(self):
+        body = self.client.get('/methodology/').content.decode()
+        for needle in [
+            'Optimisation algorithm',
+            'Assumptions &amp; limitations',
+            'References',
+            'Financial parameters',
+            '10.5281/zenodo.12730527',   # D3.7 DOI
+            'IPCC',
+            'greedy knapsack',
+        ]:
+            self.assertIn(needle, body, f'Methodology page missing: {needle}')
+
+    def test_references_carry_dois_or_urls(self):
+        from appname.views import SCIENTIFIC_REFERENCES
+        self.assertGreaterEqual(len(SCIENTIFIC_REFERENCES), 4)
+        for ref in SCIENTIFIC_REFERENCES:
+            self.assertTrue(ref.get('citation'))
+            self.assertTrue(ref.get('doi') or ref.get('url'),
+                            f'Reference {ref["key"]} has neither DOI nor URL')
+
+
 class BudgetXorTargetTest(TestCase):
     """
     User feedback (2026-05-24, via Jetina): "you shouldn't have a scenario

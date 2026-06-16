@@ -784,13 +784,63 @@ FACTOR_SOURCES = {
 }
 
 
+# Peer-reviewed / institutional sources behind every number in the tool.
+# Surfaced on /methodology/ so results are auditable and citable.
+SCIENTIFIC_REFERENCES = [
+    {
+        'key': 'D3.7',
+        'citation': 'HIGH Horizons consortium (2024). D3.7 — Report on the tool for '
+                    'modelling of alternative mitigation interventions for healthcare facilities.',
+        'doi': '10.5281/zenodo.12730527',
+        'url': 'https://doi.org/10.5281/zenodo.12730527',
+        'used_for': 'Overall methodology, intervention library, three-scenario framework',
+    },
+    {
+        'key': 'IEA2022',
+        'citation': 'International Energy Agency (2022). Emissions Factors 2022 — '
+                    'country-specific grid electricity CO₂ intensities.',
+        'doi': None,
+        'url': 'https://www.iea.org/data-and-statistics/data-product/emissions-factors-2022',
+        'used_for': 'Grid electricity factors (ZW, ZA, KE)',
+    },
+    {
+        'key': 'DEFRA2023',
+        'citation': 'UK Dept. for Environment, Food & Rural Affairs / BEIS (2023). '
+                    'Greenhouse gas reporting: conversion factors.',
+        'doi': None,
+        'url': 'https://www.gov.uk/government/publications/greenhouse-gas-reporting-conversion-factors-2023',
+        'used_for': 'Fuel combustion, business travel, waste, contractor logistics, inhalers',
+    },
+    {
+        'key': 'IPCC_AR6',
+        'citation': 'IPCC (2021). Sixth Assessment Report, WG1, Ch.7 — Global Warming '
+                    'Potentials (GWP₁₀₀).',
+        'doi': '10.1017/9781009157896',
+        'url': 'https://www.ipcc.ch/report/ar6/wg1/',
+        'used_for': 'Anaesthetic & refrigerant gas CO₂-equivalence',
+    },
+    {
+        'key': 'GHGProtocol',
+        'citation': 'WRI/WBCSD Greenhouse Gas Protocol — Corporate Accounting and '
+                    'Reporting Standard (Scopes 1, 2, 3).',
+        'doi': None,
+        'url': 'https://ghgprotocol.org/corporate-standard',
+        'used_for': 'Emission scope classification and accounting boundaries',
+    },
+]
+
+
 def methodology(request):
     """
-    Public transparency page: every emission factor the tool uses, with its
-    unit, value, source, and vintage — plus the country-specific electricity
-    grid factors. Public (no login) so it can be cited in reports.
+    Public, citable scientific-basis page. Documents every emission factor
+    (value, unit, source, vintage), the country-specific grid factors, the
+    financial parameters behind ROI/NPV, the optimisation algorithm, and an
+    explicit assumptions-and-limitations section. Public (no login) so it
+    can be cited directly in reports and grant submissions.
     """
-    from .modeling import EMISSION_FACTORS, ELECTRICITY_EF
+    from .modeling import (
+        EMISSION_FACTORS, ELECTRICITY_EF, DISCOUNT_RATE, CARBON_CREDIT_PRICE_USD,
+    )
 
     factor_rows = []
     for field, factor in EMISSION_FACTORS.items():
@@ -812,6 +862,10 @@ def methodology(request):
     return render(request, 'appname/methodology.html', {
         'factor_rows': factor_rows,
         'grid_rows': grid_rows,
+        'references': SCIENTIFIC_REFERENCES,
+        'discount_rate_pct': DISCOUNT_RATE * 100,
+        'carbon_credit_price': CARBON_CREDIT_PRICE_USD,
+        'npv_years': 10,
     })
 
 
