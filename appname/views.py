@@ -1715,11 +1715,43 @@ def _org_footprint_context(org, year):
     # Offset volume: round UP to whole credits (1 credit = 1 tCO2e)
     import math
     offset_tco2e = math.ceil(total) if total > 0 else 0
+
+    # Offsets purchased against this year, and the net position
+    purchases = org.offset_purchases.filter(year=year)
+    credits_purchased = sum((p.credits_tco2e for p in purchases), Decimal('0'))
+    net_position = Decimal(offset_tco2e) - credits_purchased  # >0 = still to buy
+
+    # Year-over-year totals (all years with data) for ongoing tracking
+    all_years = sorted(set(
+        list(org.emission_entries.values_list('year', flat=True)) +
+        list(org.offset_purchases.values_list('year', flat=True))
+    ), reverse=True)
+    history = []
+    for y in all_years:
+        y_total = sum(
+            (e.tco2e(org.country) for e in org.emission_entries.filter(year=y)),
+            Decimal('0'),
+        )
+        y_credits = sum(
+            (p.credits_tco2e for p in org.offset_purchases.filter(year=y)),
+            Decimal('0'),
+        )
+        history.append({
+            'year': y,
+            'total_tco2e': y_total,
+            'credits': y_credits,
+            'net': (Decimal(math.ceil(y_total)) if y_total > 0 else Decimal('0')) - y_credits,
+        })
+
     return {
         'entries': entries,
         'by_category': by_category,
         'total_tco2e': total,
         'offset_tco2e': offset_tco2e,
+        'purchases': purchases,
+        'credits_purchased': credits_purchased,
+        'net_position': net_position,
+        'history': history,
     }
 
 
@@ -1730,8 +1762,8 @@ def organisation_footprint(request, org_id):
     activity (flights first), see tCO2e by category, and quantify the offset
     volume to purchase through the accredited provider.
     """
-    from .forms import OrganisationEmissionEntryForm
-    from .models import OrganisationEmissionEntry
+    from .forms import OrganisationEmissionEntryForm, OffsetPurchaseForm
+    from .models import OrganisationEmissionEntry, OffsetPurchase
 
     org = _get_user_org_or_404(request, org_id)
     current_year = date.today().year
@@ -1744,6 +1776,21 @@ def organisation_footprint(request, org_id):
             entry.delete()
             messages.success(request, 'Entry deleted.')
             return redirect('organisation_footprint', org_id=org.id)
+        if request.POST.get('action') == 'delete_purchase':
+            purchase = get_object_or_404(
+                OffsetPurchase, id=request.POST.get('purchase_id'), organisation=org
+            )
+            purchase.delete()
+            messages.success(request, 'Offset purchase deleted.')
+            return redirect('organisation_footprint', org_id=org.id)
+        if request.POST.get('action') == 'mark_retired':
+            purchase = get_object_or_404(
+                OffsetPurchase, id=request.POST.get('purchase_id'), organisation=org
+            )
+            purchase.retired = True
+            purchase.save(update_fields=['retired'])
+            messages.success(request, 'Credits marked as retired.')
+            return redirect('organisation_footprint', org_id=org.id)
         if request.POST.get('action') == 'set_country':
             country = request.POST.get('country', 'OTHER')
             if country in dict(Facility.COUNTRY_CHOICES):
@@ -1751,16 +1798,29 @@ def organisation_footprint(request, org_id):
                 org.save(update_fields=['country'])
                 messages.success(request, 'Organisation country updated.')
             return redirect('organisation_footprint', org_id=org.id)
-        form = OrganisationEmissionEntryForm(request.POST)
-        if form.is_valid():
-            entry = form.save(commit=False)
-            entry.organisation = org
-            entry.created_by = request.user
-            entry.save()
-            messages.success(request, 'Emission entry added.')
-            return redirect(f"{request.path}?year={entry.year}")
+        if request.POST.get('action') == 'add_purchase':
+            purchase_form = OffsetPurchaseForm(request.POST)
+            if purchase_form.is_valid():
+                purchase = purchase_form.save(commit=False)
+                purchase.organisation = org
+                purchase.created_by = request.user
+                purchase.save()
+                messages.success(request, 'Offset purchase recorded.')
+                return redirect(f"{request.path}?year={purchase.year}")
+            form = OrganisationEmissionEntryForm(initial={'year': current_year})
+        else:
+            form = OrganisationEmissionEntryForm(request.POST)
+            purchase_form = OffsetPurchaseForm(initial={'year': current_year})
+            if form.is_valid():
+                entry = form.save(commit=False)
+                entry.organisation = org
+                entry.created_by = request.user
+                entry.save()
+                messages.success(request, 'Emission entry added.')
+                return redirect(f"{request.path}?year={entry.year}")
     else:
         form = OrganisationEmissionEntryForm(initial={'year': current_year})
+        purchase_form = OffsetPurchaseForm(initial={'year': current_year})
 
     try:
         year = int(request.GET.get('year', current_year))
@@ -1776,6 +1836,7 @@ def organisation_footprint(request, org_id):
     context = {
         'organisation': org,
         'form': form,
+        'purchase_form': purchase_form,
         'year': year,
         'years': years,
         'country_choices': Facility.COUNTRY_CHOICES,
@@ -1812,7 +1873,34 @@ def organisation_footprint_export(request, org_id, year):
         writer.writerow([row['label'], row['quantity'], row['unit'], row['tco2e']])
     writer.writerow([])
     writer.writerow(['Total (tCO2e)', ctx['total_tco2e']])
-    writer.writerow(['Offset volume to purchase (whole credits, 1 credit = 1 tCO2e)', ctx['offset_tco2e']])
+    writer.writerow(['Offset volume required (whole credits, 1 credit = 1 tCO2e)', ctx['offset_tco2e']])
+    writer.writerow(['Credits purchased against this year', ctx['credits_purchased']])
+    writer.writerow(['Net position (credits still to purchase)', max(ctx['net_position'], 0)])
+
+    def _safe(text):
+        """Guard against spreadsheet formula injection in free-text fields."""
+        text = str(text or '')
+        return "'" + text if text[:1] in ('=', '+', '-', '@') else text
+
+    writer.writerow([])
+    writer.writerow(['Entry detail'])
+    writer.writerow(['Category', 'Quantity', 'Unit', 'tCO2e', 'Description', 'Added by'])
+    for e in ctx['entries']:
+        writer.writerow([
+            e.get_category_display(), e.quantity, e.unit, e.tco2e(org.country),
+            _safe(e.description), e.created_by.email if e.created_by else '',
+        ])
+
+    if ctx['purchases']:
+        writer.writerow([])
+        writer.writerow(['Offset purchases'])
+        writer.writerow(['Credits (tCO2e)', 'Provider', 'Registry reference', 'Cost (USD)', 'Date', 'Retired'])
+        for p in ctx['purchases']:
+            writer.writerow([
+                p.credits_tco2e, _safe(p.provider), _safe(p.registry_reference),
+                p.cost_usd or '', p.purchase_date or '', 'Yes' if p.retired else 'No',
+            ])
+
     writer.writerow([])
     writer.writerow(['Factors: flights DEFRA 2023 avg passenger flight incl. radiative forcing; '
                      'fuel GHG Protocol/BEIS 2023; electricity IEA country factors; '

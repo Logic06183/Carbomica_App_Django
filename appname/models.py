@@ -430,3 +430,48 @@ class OrganisationEmissionEntry(models.Model):
     def tco2e(self, country='OTHER'):
         from .modeling import org_entry_tco2e
         return org_entry_tco2e(self.category, self.quantity, country)
+
+
+class OffsetPurchase(models.Model):
+    """
+    A purchase of carbon credits against an organisation's reporting year.
+    Captures the evidence trail the Wellcome policy expects: a third-party
+    accredited provider, the registry reference, and retirement status.
+    """
+    organisation = models.ForeignKey(
+        Organisation, related_name='offset_purchases', on_delete=models.CASCADE
+    )
+    year = models.PositiveIntegerField(help_text='Reporting year the credits offset.')
+    credits_tco2e = models.DecimalField(
+        max_digits=10, decimal_places=2, validators=[MinValueValidator(0.0)],
+        help_text='Credits purchased (1 credit = 1 tCO2e).'
+    )
+    provider = models.CharField(
+        max_length=200,
+        help_text='e.g. "Tree Planting in South African Townships (Verra #720)" or "GreenPop".'
+    )
+    registry_reference = models.CharField(
+        max_length=255, blank=True, default='',
+        help_text='Registry serial / retirement reference for audit evidence.'
+    )
+    cost_usd = models.DecimalField(
+        max_digits=12, decimal_places=2, null=True, blank=True,
+        validators=[MinValueValidator(0.0)], help_text='Total cost (USD), optional.'
+    )
+    purchase_date = models.DateField(null=True, blank=True)
+    retired = models.BooleanField(
+        default=False, help_text='Tick once the credits are retired on the registry.'
+    )
+    created_by = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='offset_purchases'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _('Offset Purchase')
+        verbose_name_plural = _('Offset Purchases')
+        ordering = ['-year', '-created_at']
+
+    def __str__(self):
+        return f"{self.organisation.name} {self.year} — {self.credits_tco2e} tCO2e ({self.provider})"

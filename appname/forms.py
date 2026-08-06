@@ -169,3 +169,20 @@ class OrganisationEmissionEntryForm(forms.ModelForm):
                 'placeholder': 'e.g. JNB-LHR return x3, consortium annual meeting',
             }),
         }
+
+
+class OffsetPurchaseForm(forms.ModelForm):
+    class Meta:
+        from .models import OffsetPurchase
+        model = OffsetPurchase
+        fields = ['year', 'credits_tco2e', 'provider', 'registry_reference', 'cost_usd', 'purchase_date']
+        widgets = {
+            'year': forms.NumberInput(attrs={'class': 'form-control', 'min': 2020, 'max': 2100}),
+            'credits_tco2e': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0'}),
+            'provider': forms.TextInput(attrs={'class': 'form-control',
+                'placeholder': 'e.g. Tree Planting in SA Townships (Verra #720)'}),
+            'registry_reference': forms.TextInput(attrs={'class': 'form-control',
+                'placeholder': 'Registry serial / retirement ref (optional)'}),
+            'cost_usd': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0'}),
+            'purchase_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
+        }

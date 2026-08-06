@@ -23,9 +23,17 @@ Wellcome Southern Africa Consortium for Climate Change and Health use case:
 - **M&E CSV export** — category totals, factor basis, annual total, and the
   **offset volume to purchase** (whole credits, 1 credit = 1 tCO₂e) for the
   accredited offset provider.
+- **Offset purchase register** — credits recorded per year with provider,
+  registry reference, cost and retired status; the summary shows the net
+  position (credits still to purchase) and a year-over-year table tracks
+  emissions vs credits for ongoing M&E.
 - Factors: DEFRA 2023 average passenger flight (incl. radiative forcing),
   GHG Protocol/BEIS 2023 fuel, IEA country electricity factors. Route-class
   flight factors (short/long-haul, cabin class) are a documented next step.
+
+**Local deployment:** `./run_local.sh` — creates a venv, migrates, seeds a
+demo partner organisation (`demo_consortium` / `carbomica-demo`) and starts
+the server on http://127.0.0.1:8000 (footprint module under /organisation/).
 
 ---
 

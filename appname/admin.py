@@ -64,3 +64,25 @@ class OptimizationResultAdmin(admin.ModelAdmin):
 class PolicyAdmin(admin.ModelAdmin):
     list_display = ('name', 'status', 'implementation_date', 'compliance_score')
     list_filter = ('status',)
+
+
+from .models import Organisation, OrganisationEmissionEntry, OffsetPurchase
+
+
+@admin.register(Organisation)
+class OrganisationAdmin(admin.ModelAdmin):
+    list_display = ('name', 'country', 'created_by')
+    list_filter = ('country',)
+    search_fields = ('name',)
+
+
+@admin.register(OrganisationEmissionEntry)
+class OrganisationEmissionEntryAdmin(admin.ModelAdmin):
+    list_display = ('organisation', 'year', 'category', 'quantity', 'created_by', 'created_at')
+    list_filter = ('organisation', 'year', 'category')
+
+
+@admin.register(OffsetPurchase)
+class OffsetPurchaseAdmin(admin.ModelAdmin):
+    list_display = ('organisation', 'year', 'credits_tco2e', 'provider', 'retired', 'purchase_date')
+    list_filter = ('organisation', 'year', 'retired')

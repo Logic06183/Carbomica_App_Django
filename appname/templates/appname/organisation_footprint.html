@@ -70,10 +70,22 @@
                             </tr>
                             <tr>
                                 <th colspan="3" class="text-success">
-                                    Offset volume to purchase
+                                    Offset volume required
                                     <small class="text-muted fw-normal">(whole credits, 1 credit = 1 tCO<sub>2</sub>e)</small>
                                 </th>
                                 <th class="text-end text-success">{{ offset_tco2e }}</th>
+                            </tr>
+                            <tr>
+                                <th colspan="3">Credits purchased against {{ year }}</th>
+                                <th class="text-end">{{ credits_purchased|floatformat:2 }}</th>
+                            </tr>
+                            <tr>
+                                <th colspan="3" class="{% if net_position > 0 %}text-danger{% else %}text-success{% endif %}">
+                                    Net position (still to purchase)
+                                </th>
+                                <th class="text-end {% if net_position > 0 %}text-danger{% else %}text-success{% endif %}">
+                                    {% if net_position > 0 %}{{ net_position|floatformat:2 }}{% else %}0{% endif %}
+                                </th>
                             </tr>
                         </tfoot>
                     </table>
@@ -108,7 +120,9 @@
                             <tr>
                                 <td>{{ entry.get_category_display }}</td>
                                 <td class="text-end">{{ entry.quantity|floatformat:1 }} <small class="text-muted">{{ entry.unit }}</small></td>
-                                <td class="text-muted">{{ entry.description }}</td>
+                                <td class="text-muted">{{ entry.description }}
+                                    {% if entry.created_by %}<br><small class="text-muted">by {{ entry.created_by.email }}</small>{% endif %}
+                                </td>
                                 <td class="text-end">
                                     <form method="post" class="d-inline">
                                         {% csrf_token %}
@@ -118,6 +132,129 @@
                                             <i class="fas fa-trash-alt"></i>
                                         </button>
                                     </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- ── Offset purchases ────────────────────────────────────── -->
+        <div class="card shadow-sm mt-4">
+            <div class="card-body">
+                <h6 class="mb-3"><i class="fas fa-certificate me-2 text-success"></i>Offset purchases — {{ year }}</h6>
+                {% if purchases %}
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle">
+                        <thead>
+                            <tr>
+                                <th class="text-end">Credits</th>
+                                <th>Provider</th>
+                                <th>Registry ref</th>
+                                <th>Status</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for p in purchases %}
+                            <tr>
+                                <td class="text-end">{{ p.credits_tco2e|floatformat:2 }}</td>
+                                <td>{{ p.provider }}</td>
+                                <td class="text-muted"><small>{{ p.registry_reference|default:"—" }}</small></td>
+                                <td>
+                                    {% if p.retired %}
+                                    <span class="badge bg-success">Retired</span>
+                                    {% else %}
+                                    <form method="post" class="d-inline">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="mark_retired">
+                                        <input type="hidden" name="purchase_id" value="{{ p.id }}">
+                                        <button class="btn btn-sm btn-outline-success">Mark retired</button>
+                                    </form>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end">
+                                    <form method="post" class="d-inline">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="delete_purchase">
+                                        <input type="hidden" name="purchase_id" value="{{ p.id }}">
+                                        <button class="btn btn-sm btn-outline-danger" title="Delete purchase">
+                                            <i class="fas fa-trash-alt"></i>
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-muted small mb-3">No credits recorded against {{ year }} yet.</p>
+                {% endif %}
+
+                <details>
+                    <summary class="text-success small mb-2" style="cursor:pointer">Record a purchase</summary>
+                    <form method="post" class="mt-3">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="add_purchase">
+                        <div class="row g-2">
+                            <div class="col-4">
+                                <label class="form-label small">Year</label>
+                                {{ purchase_form.year }}
+                            </div>
+                            <div class="col-4">
+                                <label class="form-label small">Credits (tCO<sub>2</sub>e)</label>
+                                {{ purchase_form.credits_tco2e }}
+                            </div>
+                            <div class="col-4">
+                                <label class="form-label small">Cost (USD, optional)</label>
+                                {{ purchase_form.cost_usd }}
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label small">Provider</label>
+                                {{ purchase_form.provider }}
+                            </div>
+                            <div class="col-8">
+                                <label class="form-label small">Registry reference (optional)</label>
+                                {{ purchase_form.registry_reference }}
+                            </div>
+                            <div class="col-4">
+                                <label class="form-label small">Purchase date</label>
+                                {{ purchase_form.purchase_date }}
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-success btn-sm mt-3">Record purchase</button>
+                    </form>
+                </details>
+            </div>
+        </div>
+
+        <!-- ── Year-over-year tracking ─────────────────────────────── -->
+        {% if history|length > 1 %}
+        <div class="card shadow-sm mt-4">
+            <div class="card-body">
+                <h6 class="mb-3"><i class="fas fa-history me-2 text-primary"></i>Year-over-year</h6>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle">
+                        <thead>
+                            <tr>
+                                <th>Year</th>
+                                <th class="text-end">Emissions (tCO<sub>2</sub>e)</th>
+                                <th class="text-end">Credits purchased</th>
+                                <th class="text-end">Net still to purchase</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for h in history %}
+                            <tr>
+                                <td><a href="?year={{ h.year }}">{{ h.year }}</a></td>
+                                <td class="text-end">{{ h.total_tco2e|floatformat:2 }}</td>
+                                <td class="text-end">{{ h.credits|floatformat:2 }}</td>
+                                <td class="text-end {% if h.net > 0 %}text-danger{% else %}text-success{% endif %}">
+                                    {% if h.net > 0 %}{{ h.net|floatformat:2 }}{% else %}0{% endif %}
                                 </td>
                             </tr>
                             {% endfor %}
