@@ -10,7 +10,13 @@
             Distinct from facility assessments: this is your organisation's own
             operational footprint — flights, fleet, office electricity, commuting
             and procurement.
+            {% if organisation.wellcome_grant_ref %}
+            <br><span class="badge bg-light text-dark mt-1">Wellcome grant ref: {{ organisation.wellcome_grant_ref }}</span>
+            {% endif %}
         </p>
+        <a href="{% url 'organisation_planning' organisation.id %}" class="btn btn-sm btn-outline-primary">
+            <i class="fas fa-bullseye me-1"></i>Reduction planning
+        </a>
     </div>
 </div>
 
@@ -217,6 +223,14 @@
                                 <label class="form-label small">Provider</label>
                                 {{ purchase_form.provider }}
                             </div>
+                            <div class="col-12">
+                                <label class="form-label small">Accreditation standard</label>
+                                {{ purchase_form.registry }}
+                                <div class="form-text">
+                                    The Wellcome policy requires third party accredited credits
+                                    (Gold Standard, Verra, Woodland Carbon Code or Plan Vivo).
+                                </div>
+                            </div>
                             <div class="col-8">
                                 <label class="form-label small">Registry reference (optional)</label>
                                 {{ purchase_form.registry_reference }}
@@ -315,6 +329,33 @@
                     </select>
                     <button class="btn btn-sm btn-outline-secondary">Save</button>
                 </form>
+            </div>
+        </div>
+
+        <!-- ── Wellcome alignment ──────────────────────────────────── -->
+        <div class="card shadow-sm mt-4">
+            <div class="card-body">
+                <h6 class="mb-2"><i class="fas fa-clipboard-check me-2 text-primary"></i>Wellcome alignment — {{ year }}</h6>
+                <p class="text-muted small mb-3">
+                    Policy requirement: “{{ policy_quote }}”
+                    <br><em>(Environmental sustainability funding policy, as advised by
+                    Wellcome's Climate &amp; Health team.)</em>
+                </p>
+                <ul class="list-group list-group-flush">
+                    {% for label, state, detail in compliance %}
+                    <li class="list-group-item px-0 py-2">
+                        {% if state == 'pass' %}
+                        <i class="fas fa-check-circle text-success me-2"></i>
+                        {% elif state == 'warn' %}
+                        <i class="fas fa-exclamation-circle text-warning me-2"></i>
+                        {% else %}
+                        <i class="fas fa-times-circle text-danger me-2"></i>
+                        {% endif %}
+                        <strong class="small">{{ label }}</strong>
+                        <div class="text-muted small ms-4">{{ detail }}</div>
+                    </li>
+                    {% endfor %}
+                </ul>
             </div>
         </div>
     </div>

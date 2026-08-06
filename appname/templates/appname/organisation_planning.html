@@ -1,0 +1,171 @@
+{% extends 'appname/base.html' %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <p class="section-label mb-1">Consortium reporting</p>
+        <h2 class="mb-0">{{ organisation.name }} — Reduction Planning</h2>
+        <p class="text-muted mt-1">
+            The Wellcome policy expects reduction ahead of offsetting. Set a target
+            against a baseline year and track your actual totals along a
+            straight-line trajectory. Everything here is calculated from your
+            organisation's own entries — no modelled or simulated values.
+        </p>
+        <a href="{% url 'organisation_footprint' organisation.id %}" class="btn btn-sm btn-outline-secondary">
+            <i class="fas fa-arrow-left me-1"></i>Back to footprint
+        </a>
+    </div>
+</div>
+
+{% if messages %}
+<div class="row mb-3">
+    <div class="col-12">
+        {% for message in messages %}
+        <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<div class="row g-4">
+    <div class="col-lg-7">
+        <div class="card shadow-sm mb-4">
+            <div class="card-body">
+                <h5 class="mb-3"><i class="fas fa-bullseye me-2 text-primary"></i>Current target</h5>
+                {% if target %}
+                <p class="mb-2">
+                    <strong>-{{ target.reduction_pct|floatformat:0 }}%</strong> on the
+                    {{ target.baseline_year }} baseline by {{ target.target_year }}
+                    {% if on_track is not None %}
+                        {% if on_track %}
+                        <span class="badge bg-success ms-2">On track</span>
+                        {% else %}
+                        <span class="badge bg-danger ms-2">Off track</span>
+                        {% endif %}
+                    {% endif %}
+                </p>
+                {% if target.note %}<p class="text-muted small mb-2">{{ target.note }}</p>{% endif %}
+                {% if baseline_missing %}
+                <div class="alert alert-warning py-2 small mb-2">
+                    No emission entries exist for the baseline year
+                    ({{ target.baseline_year }}) yet — enter them on the footprint
+                    page to activate the trajectory.
+                </div>
+                {% endif %}
+
+                {% if trajectory %}
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle">
+                        <thead>
+                            <tr>
+                                <th>Year</th>
+                                <th class="text-end">Trajectory (tCO<sub>2</sub>e)</th>
+                                <th class="text-end">Actual (tCO<sub>2</sub>e)</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in trajectory %}
+                            <tr>
+                                <td>{{ row.year }}</td>
+                                <td class="text-end">{{ row.required|floatformat:2 }}</td>
+                                <td class="text-end">
+                                    {% if row.actual is not None %}{{ row.actual|floatformat:2 }}{% else %}<span class="text-muted">—</span>{% endif %}
+                                </td>
+                                <td>
+                                    {% if row.status == 'on' %}<span class="badge bg-success">On track</span>
+                                    {% elif row.status == 'off' %}<span class="badge bg-danger">Above trajectory</span>
+                                    {% elif row.actual is not None %}<span class="badge bg-secondary">Baseline</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% endif %}
+
+                <form method="post" class="mt-2">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="delete_target">
+                    <input type="hidden" name="target_id" value="{{ target.id }}">
+                    <button class="btn btn-sm btn-outline-danger">Delete target</button>
+                </form>
+                {% else %}
+                <p class="text-muted mb-0">No target set yet — create one on the right.
+                A common starting point is a percentage reduction on your first full
+                reporting year, focused on flights.</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h6 class="mb-3"><i class="fas fa-lightbulb me-2 text-warning"></i>Reduction levers by category</h6>
+                <p class="text-muted small mb-3">
+                    Qualitative levers to plan with your operations team. When you have
+                    real cost estimates for a measure, they can be attached and
+                    optimised in a later phase — the tool will not invent costs.
+                </p>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle">
+                        <tbody>
+                            {% for name, detail in levers %}
+                            <tr>
+                                <td class="fw-semibold" style="white-space:nowrap">{{ name }}</td>
+                                <td class="text-muted small">{{ detail }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-5">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h5 class="mb-3"><i class="fas fa-plus-circle me-2 text-success"></i>Set a reduction target</h5>
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="row g-2">
+                        <div class="col-6">
+                            <label class="form-label">Baseline year</label>
+                            {{ form.baseline_year }}
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Target year</label>
+                            {{ form.target_year }}
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Reduction (%)</label>
+                            {{ form.reduction_pct }}
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Note <span class="text-muted">(optional)</span></label>
+                            {{ form.note }}
+                        </div>
+                    </div>
+                    {% if form.errors %}
+                    <div class="alert alert-danger py-2 small mt-2 mb-0">{{ form.errors }}</div>
+                    {% endif %}
+                    <button type="submit" class="btn btn-success mt-3">Save target</button>
+                </form>
+                {% if year_totals %}
+                <hr>
+                <h6 class="small text-muted mb-2">Annual totals on record</h6>
+                <ul class="list-unstyled small mb-0">
+                    {% for y, t in year_totals.items %}
+                    <li>{{ y }}: <strong>{{ t|floatformat:2 }}</strong> tCO<sub>2</sub>e</li>
+                    {% endfor %}
+                </ul>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -29,6 +29,8 @@ urlpatterns = [
          name='organisation_footprint'),
     path('organisation/<int:org_id>/footprint/export/<int:year>/',
          views.organisation_footprint_export, name='organisation_footprint_export'),
+    path('organisation/<int:org_id>/planning/', views.organisation_planning,
+         name='organisation_planning'),
     path('methodology/', views.methodology, name='methodology'),
     path('district-planning/', views.district_planning, name='district_planning'),
 ]

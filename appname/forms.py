@@ -175,14 +175,36 @@ class OffsetPurchaseForm(forms.ModelForm):
     class Meta:
         from .models import OffsetPurchase
         model = OffsetPurchase
-        fields = ['year', 'credits_tco2e', 'provider', 'registry_reference', 'cost_usd', 'purchase_date']
+        fields = ['year', 'credits_tco2e', 'provider', 'registry', 'registry_reference', 'cost_usd', 'purchase_date']
         widgets = {
             'year': forms.NumberInput(attrs={'class': 'form-control', 'min': 2020, 'max': 2100}),
             'credits_tco2e': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0'}),
             'provider': forms.TextInput(attrs={'class': 'form-control',
                 'placeholder': 'e.g. Tree Planting in SA Townships (Verra #720)'}),
+            'registry': forms.Select(attrs={'class': 'form-select'}),
             'registry_reference': forms.TextInput(attrs={'class': 'form-control',
                 'placeholder': 'Registry serial / retirement ref (optional)'}),
             'cost_usd': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0'}),
             'purchase_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
         }
+
+
+class ReductionTargetForm(forms.ModelForm):
+    class Meta:
+        from .models import ReductionTarget
+        model = ReductionTarget
+        fields = ['baseline_year', 'target_year', 'reduction_pct', 'note']
+        widgets = {
+            'baseline_year': forms.NumberInput(attrs={'class': 'form-control', 'min': 2020, 'max': 2100}),
+            'target_year': forms.NumberInput(attrs={'class': 'form-control', 'min': 2021, 'max': 2100}),
+            'reduction_pct': forms.NumberInput(attrs={'class': 'form-control', 'step': '1', 'min': '0', 'max': '100'}),
+            'note': forms.TextInput(attrs={'class': 'form-control',
+                'placeholder': 'e.g. focus on flights: virtual-first meetings, direct routes'}),
+        }
+
+    def clean(self):
+        cleaned = super().clean()
+        b, t = cleaned.get('baseline_year'), cleaned.get('target_year')
+        if b and t and t <= b:
+            self.add_error('target_year', 'Target year must be after the baseline year.')
+        return cleaned

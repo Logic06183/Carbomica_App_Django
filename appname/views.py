@@ -1833,6 +1833,7 @@ def organisation_footprint(request, org_id):
     if year not in years:
         years = sorted(set(years + [year]), reverse=True)
 
+    fp_ctx = _org_footprint_context(org, year)
     context = {
         'organisation': org,
         'form': form,
@@ -1840,7 +1841,9 @@ def organisation_footprint(request, org_id):
         'year': year,
         'years': years,
         'country_choices': Facility.COUNTRY_CHOICES,
-        **_org_footprint_context(org, year),
+        'compliance': _compliance_checks(org, year, fp_ctx),
+        'policy_quote': WELLCOME_POLICY_QUOTE,
+        **fp_ctx,
     }
     return render(request, 'appname/organisation_footprint.html', context)
 
@@ -1906,3 +1909,170 @@ def organisation_footprint_export(request, org_id, year):
                      'fuel GHG Protocol/BEIS 2023; electricity IEA country factors; '
                      'procurement/other entered as pre-calculated tCO2e.'])
     return response
+
+
+# ---------------------------------------------------------------------------
+# Consortium: Wellcome compliance checks + reduction planning
+# ---------------------------------------------------------------------------
+
+# The policy requirement as advised to the consortium by Wellcome's Climate &
+# Health team (Carbon Offsetting thread, March 2026), quoting the
+# Environmental sustainability funding policy:
+WELLCOME_POLICY_QUOTE = (
+    'Have arrangements to purchase third party accredited carbon credits '
+    '(for example, Gold Standard, Verra, Woodland Carbon Code or Plan Vivo '
+    'provider(s)).'
+)
+
+
+def _compliance_checks(org, year, ctx):
+    """
+    Wellcome-alignment checklist for one reporting year. Each check:
+    (label, state, detail) where state is 'pass' | 'warn' | 'fail'.
+    """
+    checks = []
+
+    has_entries = bool(ctx['by_category'])
+    checks.append((
+        'Emissions tracked for the year',
+        'pass' if has_entries else 'fail',
+        f"{len(ctx['entries'])} entr{'ies' if len(ctx['entries']) != 1 else 'y'} recorded"
+        if has_entries else 'No organisational emission entries yet.',
+    ))
+
+    checks.append((
+        'Offset volume quantified',
+        'pass' if has_entries else 'fail',
+        f"{ctx['offset_tco2e']} credits required (1 credit = 1 tCO2e)"
+        if has_entries else 'Quantified automatically once emissions are entered.',
+    ))
+
+    purchases = list(ctx['purchases'])
+    if not has_entries:
+        cover_state, cover_detail = 'fail', 'Enter emissions first.'
+    elif ctx['net_position'] <= 0 and purchases:
+        cover_state, cover_detail = 'pass', 'Credits purchased cover the full offset volume.'
+    elif purchases:
+        cover_state = 'warn'
+        cover_detail = f"{max(ctx['net_position'], 0)} credits still to purchase."
+    else:
+        cover_state, cover_detail = 'warn', 'No credits purchased against this year yet.'
+    checks.append(('Offset volume covered by purchased credits', cover_state, cover_detail))
+
+    if purchases:
+        unaccredited = [p for p in purchases if not p.is_accredited]
+        checks.append((
+            'Credits from third party accredited registries',
+            'pass' if not unaccredited else 'fail',
+            'All purchases carry an accredited standard (Verra, Gold Standard, '
+            'Plan Vivo or Woodland Carbon Code).' if not unaccredited else
+            f"{len(unaccredited)} purchase(s) not from an accredited registry — "
+            'the Wellcome policy requires third party accreditation.',
+        ))
+        unretired = [p for p in purchases if not p.retired]
+        checks.append((
+            'Credits retired with registry evidence',
+            'pass' if not unretired else 'warn',
+            'All credits marked retired.' if not unretired else
+            f"{len(unretired)} purchase(s) not yet marked retired.",
+        ))
+
+    has_target = org.reduction_targets.exists()
+    checks.append((
+        'Reduction target set (reduce before offsetting)',
+        'pass' if has_target else 'warn',
+        'Target recorded — see Reduction planning.' if has_target else
+        'The policy expects reduction ahead of offsetting; set a target under '
+        'Reduction planning.',
+    ))
+    return checks
+
+
+@login_required
+def organisation_planning(request, org_id):
+    """
+    Reduction planning: set a target (X% below baseline year by target year)
+    and track actual annual totals against a straight-line trajectory.
+    Deliberately uses only the organisation's own data — no simulated costs
+    or synthetic intervention effects.
+    """
+    from .forms import ReductionTargetForm
+
+    org = _get_user_org_or_404(request, org_id)
+
+    if request.method == 'POST':
+        if request.POST.get('action') == 'delete_target':
+            target = get_object_or_404(
+                org.reduction_targets, id=request.POST.get('target_id')
+            )
+            target.delete()
+            messages.success(request, 'Target deleted.')
+            return redirect('organisation_planning', org_id=org.id)
+        form = ReductionTargetForm(request.POST)
+        if form.is_valid():
+            target = form.save(commit=False)
+            target.organisation = org
+            target.created_by = request.user
+            target.save()
+            messages.success(request, 'Reduction target saved.')
+            return redirect('organisation_planning', org_id=org.id)
+    else:
+        form = ReductionTargetForm()
+
+    # Annual totals from real entries
+    year_totals = {}
+    for y in org.emission_entries.values_list('year', flat=True).distinct():
+        year_totals[y] = sum(
+            (e.tco2e(org.country) for e in org.emission_entries.filter(year=y)),
+            Decimal('0'),
+        )
+
+    target = org.reduction_targets.first()  # latest (ordering = -created_at)
+    trajectory = []
+    on_track = None
+    if target:
+        baseline = year_totals.get(target.baseline_year)
+        if baseline is not None and baseline > 0:
+            span = target.target_year - target.baseline_year
+            for i, y in enumerate(range(target.baseline_year, target.target_year + 1)):
+                required = baseline * (
+                    Decimal('1') - (Decimal(target.reduction_pct) / Decimal('100')) * Decimal(i) / Decimal(span)
+                )
+                actual = year_totals.get(y)
+                row = {
+                    'year': y,
+                    'required': required.quantize(Decimal('0.01')),
+                    'actual': actual,
+                    'status': None,
+                }
+                if actual is not None and y > target.baseline_year:
+                    row['status'] = 'on' if actual <= required else 'off'
+                trajectory.append(row)
+            actual_years = [r for r in trajectory if r['status']]
+            if actual_years:
+                on_track = actual_years[-1]['status'] == 'on'
+
+    # Reduction levers: qualitative, evidence-based, no invented costs.
+    levers = [
+        ('Flights', 'Virtual-first meetings; combine trips; direct routes; economy '
+                    'class; approve long-haul only where in-person participation is essential.'),
+        ('Fleet', 'Trip pooling for site visits; route planning; maintenance; '
+                  'transition to efficient or electric vehicles at replacement time.'),
+        ('Office electricity', 'LED lighting; equipment shutdown policy; solar PV '
+                               'where the campus allows; renewable tariffs.'),
+        ('Commuting', 'Hybrid working; lift clubs; secure cycling facilities.'),
+        ('Procurement', 'Consolidated ordering; supplier engagement; low-carbon '
+                        'alternatives for high-volume consumables.'),
+    ]
+
+    return render(request, 'appname/organisation_planning.html', {
+        'organisation': org,
+        'form': form,
+        'target': target,
+        'targets': org.reduction_targets.all(),
+        'year_totals': dict(sorted(year_totals.items())),
+        'trajectory': trajectory,
+        'on_track': on_track,
+        'levers': levers,
+        'baseline_missing': bool(target) and target.baseline_year not in year_totals,
+    })

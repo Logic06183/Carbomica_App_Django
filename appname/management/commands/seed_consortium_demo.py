@@ -14,7 +14,7 @@ from appname.models import Organisation, OrganisationEmissionEntry, OffsetPurcha
 
 
 class Command(BaseCommand):
-    help = 'Seed demo consortium organisation with sample footprint data.'
+    help = 'SYNTHETIC demo data for exploring the UI only — never use for reporting.'
 
     def handle(self, *args, **options):
         user, created = User.objects.get_or_create(

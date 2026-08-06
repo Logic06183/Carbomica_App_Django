@@ -24,6 +24,10 @@ class Organisation(models.Model):
         default='OTHER',
         help_text='Used for the electricity emission factor in organisational reporting.'
     )
+    wellcome_grant_ref = models.CharField(
+        max_length=50, blank=True, default='',
+        help_text='Wellcome grant reference this organisation reports under (e.g. 336423/Z/25/Z).'
+    )
 
     class Meta:
         ordering = ['name']
@@ -450,10 +454,27 @@ class OffsetPurchase(models.Model):
         max_length=200,
         help_text='e.g. "Tree Planting in South African Townships (Verra #720)" or "GreenPop".'
     )
+    REGISTRY_CHOICES = [
+        ('verra', 'Verra (VCS)'),
+        ('gold_standard', 'Gold Standard'),
+        ('plan_vivo', 'Plan Vivo'),
+        ('woodland_carbon_code', 'Woodland Carbon Code'),
+        ('other', 'Other / not yet accredited'),
+    ]
+    registry = models.CharField(
+        max_length=32, choices=REGISTRY_CHOICES, default='verra',
+        help_text='Accreditation standard. The Wellcome environmental sustainability '
+                  'funding policy requires third party accredited carbon credits '
+                  '(for example Gold Standard, Verra, Woodland Carbon Code or Plan Vivo).'
+    )
     registry_reference = models.CharField(
         max_length=255, blank=True, default='',
         help_text='Registry serial / retirement reference for audit evidence.'
     )
+
+    @property
+    def is_accredited(self):
+        return self.registry != 'other'
     cost_usd = models.DecimalField(
         max_digits=12, decimal_places=2, null=True, blank=True,
         validators=[MinValueValidator(0.0)], help_text='Total cost (USD), optional.'
@@ -475,3 +496,42 @@ class OffsetPurchase(models.Model):
 
     def __str__(self):
         return f"{self.organisation.name} {self.year} — {self.credits_tco2e} tCO2e ({self.provider})"
+
+
+class ReductionTarget(models.Model):
+    """
+    An organisational emission reduction target: X percent below the baseline
+    year by the target year. The Wellcome policy expects reduction ahead of
+    offsetting; the planning view tracks actuals against a linear trajectory.
+    """
+    organisation = models.ForeignKey(
+        Organisation, related_name='reduction_targets', on_delete=models.CASCADE
+    )
+    baseline_year = models.PositiveIntegerField()
+    target_year = models.PositiveIntegerField()
+    reduction_pct = models.DecimalField(
+        max_digits=5, decimal_places=2,
+        validators=[MinValueValidator(0.0), MaxValueValidator(100.0)],
+        help_text='Percent reduction on the baseline year total by the target year.'
+    )
+    note = models.CharField(max_length=255, blank=True, default='')
+    created_by = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='reduction_targets'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _('Reduction Target')
+        verbose_name_plural = _('Reduction Targets')
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return (f"{self.organisation.name}: -{self.reduction_pct}% by "
+                f"{self.target_year} (baseline {self.baseline_year})")
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        if (self.target_year is not None and self.baseline_year is not None
+                and self.target_year <= self.baseline_year):
+            raise ValidationError('Target year must be after the baseline year.')

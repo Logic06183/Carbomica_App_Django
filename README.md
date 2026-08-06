@@ -31,9 +31,22 @@ Wellcome Southern Africa Consortium for Climate Change and Health use case:
   GHG Protocol/BEIS 2023 fuel, IEA country electricity factors. Route-class
   flight factors (short/long-haul, cabin class) are a documented next step.
 
-**Local deployment:** `./run_local.sh` — creates a venv, migrates, seeds a
-demo partner organisation (`demo_consortium` / `carbomica-demo`) and starts
-the server on http://127.0.0.1:8000 (footprint module under /organisation/).
+- **Wellcome alignment panel** — per-year checklist against the
+  Environmental sustainability funding policy (emissions tracked, offset
+  volume quantified and covered, credits from third party accredited
+  registries — Verra / Gold Standard / Plan Vivo / Woodland Carbon Code —
+  retired with registry evidence, reduction target set).
+- **Reduction planning** (`/organisation/<id>/planning/`) — set a target
+  (X% below a baseline year by a target year) and track actual annual
+  totals against a straight-line trajectory. Uses only real entered data;
+  the tool never invents costs or synthetic intervention effects.
+
+**Local deployment:** `./run_local.sh` — creates a venv, migrates, seeds the
+REAL consortium structure only (Wits Planetary Health, ZA, grant ref
+336423/Z/25/Z; no synthetic activity data; login `craig_parker` /
+`carbomica-local`) and starts http://127.0.0.1:8000. Add
+`--with-demo-data` to also load clearly-synthetic demo numbers for UI
+exploration — never report those.
 
 ---
 

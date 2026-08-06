@@ -9,12 +9,15 @@ pip install -q -r requirements.txt
 
 export DEBUG=True
 python manage.py migrate
-python manage.py seed_consortium_demo
+python manage.py seed_consortium
+if [ "$1" = "--with-demo-data" ]; then
+  python manage.py seed_consortium_demo   # synthetic numbers — never report these
+fi
 
 echo ""
 echo "──────────────────────────────────────────────────────────"
 echo "  CARBOMICA consortium branch — local deployment"
-echo "  Sign in with username: demo_consortium  password: carbomica-demo"
+echo "  Sign in with username: craig_parker  password: carbomica-local"
 echo "  (or create an admin: python manage.py createsuperuser)"
 echo "  Footprint module: http://127.0.0.1:8000/organisation/"
 echo "──────────────────────────────────────────────────────────"

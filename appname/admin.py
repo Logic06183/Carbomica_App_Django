@@ -86,3 +86,12 @@ class OrganisationEmissionEntryAdmin(admin.ModelAdmin):
 class OffsetPurchaseAdmin(admin.ModelAdmin):
     list_display = ('organisation', 'year', 'credits_tco2e', 'provider', 'retired', 'purchase_date')
     list_filter = ('organisation', 'year', 'retired')
+
+
+from .models import ReductionTarget
+
+
+@admin.register(ReductionTarget)
+class ReductionTargetAdmin(admin.ModelAdmin):
+    list_display = ('organisation', 'baseline_year', 'target_year', 'reduction_pct', 'created_at')
+    list_filter = ('organisation',)
