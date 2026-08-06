@@ -127,6 +127,30 @@
                 Continue with Google
             </a>
 
+            <div class="divider">or sign in with email</div>
+
+            {% if form.non_field_errors %}
+            <div class="alert-msg">
+                <i class="fas fa-exclamation-triangle me-1" style="color:#856404;"></i>
+                {% for error in form.non_field_errors %}{{ error }}{% endfor %}
+            </div>
+            {% endif %}
+
+            <form method="post" action="{% url 'account_login' %}">
+                {% csrf_token %}
+                <input type="email" name="login" class="form-control mb-2" placeholder="Email address"
+                       value="{{ form.login.value|default:'' }}" required autocomplete="email">
+                <input type="password" name="password" class="form-control mb-2" placeholder="Password"
+                       required autocomplete="current-password">
+                {% if redirect_field_value %}
+                <input type="hidden" name="{{ redirect_field_name }}" value="{{ redirect_field_value }}">
+                {% endif %}
+                <button type="submit" class="btn w-100 fw-semibold text-white"
+                        style="background:var(--hh-blue);border-radius:8px;padding:.65rem;">
+                    Sign in
+                </button>
+            </form>
+
             <div class="divider">What you can do</div>
 
             <div class="feature-item"><i class="fas fa-hospital"></i> Register healthcare facilities across Kenya, South Africa &amp; Zimbabwe</div>

@@ -51,7 +51,7 @@ class Command(BaseCommand):
             org.save(update_fields=['country', 'wellcome_grant_ref'])
 
         self.stdout.write(self.style.SUCCESS(
-            f'Consortium structure ready. Login: {username} / carbomica-local\n'
+            f'Consortium structure ready. Login: {email} / carbomica-local\n'
             'No activity data was seeded — enter real flights, fleet, electricity, '
             'commuting and procurement figures on the footprint page.\n'
             'Interim offset provider per the consortium decision: '

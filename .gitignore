@@ -49,3 +49,4 @@ staticfiles/
 .firebase/
 
 .venv/
+.gstack/

@@ -17,7 +17,7 @@ fi
 echo ""
 echo "──────────────────────────────────────────────────────────"
 echo "  CARBOMICA consortium branch — local deployment"
-echo "  Sign in with username: craig_parker  password: carbomica-local"
+echo "  Sign in with email: craig.parker@witsphr.org  password: carbomica-local"
 echo "  (or create an admin: python manage.py createsuperuser)"
 echo "  Footprint module: http://127.0.0.1:8000/organisation/"
 echo "──────────────────────────────────────────────────────────"
