@@ -25,6 +25,10 @@ urlpatterns = [
     path('upload/emissions/', views.upload_emissions, name='upload_emissions'),
     path('upload/interventions/', views.upload_interventions, name='upload_interventions'),
     path('organisation/', views.my_organisation, name='my_organisation'),
+    path('organisation/<int:org_id>/footprint/', views.organisation_footprint,
+         name='organisation_footprint'),
+    path('organisation/<int:org_id>/footprint/export/<int:year>/',
+         views.organisation_footprint_export, name='organisation_footprint_export'),
     path('methodology/', views.methodology, name='methodology'),
     path('district-planning/', views.district_planning, name='district_planning'),
 ]

@@ -974,3 +974,40 @@ class GreenInvestmentAnalyzer:
 
     def calculate_carbon_credits(self, emission_reduction_tco2e):
         return Decimal(str(emission_reduction_tco2e)) * self.CARBON_CREDIT_PRICE
+
+
+# ---------------------------------------------------------------------------
+# Consortium / organisational footprint (partner-level, not facility-level)
+#
+# Added for the Wellcome Southern Africa Consortium use case: each partner
+# organisation tracks its own operational emissions (flights first — the
+# dominant and easiest category), reports independently for M&E, and
+# quantifies the offset volume to purchase through the accredited provider.
+#
+# Factor sources:
+#   Flights      — DEFRA 2023 average passenger flight, economy class,
+#                  WITH radiative forcing uplift (route-class refinement is a
+#                  documented next step; average of short/long-haul factors)
+#   Fleet fuel   — GHG Protocol / UK BEIS 2023 (litre diesel/petrol, as above)
+#   Electricity  — IEA country factors (reuses ELECTRICITY_EF above)
+#   Commuting    — DEFRA 2022 average medium car per km (as business_travel)
+#   Procurement / other — entered directly as tCO₂e (pre-calculated upstream)
+# ---------------------------------------------------------------------------
+
+ORG_EMISSION_FACTORS = {
+    # category key: (tCO₂e per unit, unit label). None → country electricity EF.
+    'flights':          (Decimal('0.000150'), 'passenger-km'),
+    'fleet_fuel':       (Decimal('0.00268'),  'litres'),
+    'grid_electricity': (None,                'kWh'),
+    'commuting':        (Decimal('0.000171'), 'km'),
+    'procurement':      (Decimal('1'),        'tCO2e'),
+    'other':            (Decimal('1'),        'tCO2e'),
+}
+
+
+def org_entry_tco2e(category, quantity, country='OTHER'):
+    """tCO₂e for one organisational emission entry."""
+    factor, _unit = ORG_EMISSION_FACTORS.get(category, (Decimal('1'), 'tCO2e'))
+    if factor is None:
+        factor = ELECTRICITY_EF.get(country, ELECTRICITY_EF['OTHER'])
+    return (Decimal(str(quantity or 0)) * factor).quantize(Decimal('0.001'))

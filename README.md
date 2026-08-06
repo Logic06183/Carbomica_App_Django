@@ -10,6 +10,25 @@ reduce their facility's carbon footprint within real budget constraints.
 
 ---
 
+## Consortium branch — organisational footprint module
+
+This branch adds partner-level (organisational) emissions reporting for the
+Wellcome Southern Africa Consortium for Climate Change and Health use case:
+
+- **Organisational emission entries** per partner organisation and reporting
+  year: flights (passenger-km), fleet fuel (litres), office electricity (kWh),
+  staff commuting (km), and procurement/other (pre-calculated tCO₂e).
+- **Independent partner reporting** — every organisation member can enter and
+  view their organisation's footprint at `/organisation/<id>/footprint/`.
+- **M&E CSV export** — category totals, factor basis, annual total, and the
+  **offset volume to purchase** (whole credits, 1 credit = 1 tCO₂e) for the
+  accredited offset provider.
+- Factors: DEFRA 2023 average passenger flight (incl. radiative forcing),
+  GHG Protocol/BEIS 2023 fuel, IEA country electricity factors. Route-class
+  flight factors (short/long-haul, cabin class) are a documented next step.
+
+---
+
 ## What CARBOMICA does
 
 Given a facility's current carbon emissions and a budget ceiling, CARBOMICA

@@ -153,3 +153,19 @@ class EmissionDataUpdateForm(forms.ModelForm):
         labels = EMISSION_FIELD_LABELS
         widgets = {field: forms.NumberInput(attrs={'class': 'form-control'})
                    for field in EMISSION_FIELD_LABELS}
+
+
+class OrganisationEmissionEntryForm(forms.ModelForm):
+    class Meta:
+        from .models import OrganisationEmissionEntry
+        model = OrganisationEmissionEntry
+        fields = ['year', 'category', 'quantity', 'description']
+        widgets = {
+            'year': forms.NumberInput(attrs={'class': 'form-control', 'min': 2020, 'max': 2100}),
+            'category': forms.Select(attrs={'class': 'form-select'}),
+            'quantity': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0'}),
+            'description': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'e.g. JNB-LHR return x3, consortium annual meeting',
+            }),
+        }

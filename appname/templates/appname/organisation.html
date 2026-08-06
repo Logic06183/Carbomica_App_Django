@@ -34,7 +34,12 @@
             <div class="card mb-4">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <strong><i class="fas fa-users me-2 text-primary"></i>{{ org.name }}</strong>
-                    <span class="badge bg-primary">{{ org.members.count }} member{{ org.members.count|pluralize }}</span>
+                    <span>
+                        <a href="{% url 'organisation_footprint' org.id %}" class="btn btn-sm btn-outline-success me-2">
+                            <i class="fas fa-leaf me-1"></i>Organisational footprint
+                        </a>
+                        <span class="badge bg-primary">{{ org.members.count }} member{{ org.members.count|pluralize }}</span>
+                    </span>
                 </div>
                 <div class="card-body">
 
@@ -141,6 +146,9 @@
             <div class="card-body">
                 <strong>{{ org.name }}</strong>
                 <span class="text-muted small ms-2">owned by {{ org.created_by.email }}</span>
+                <a href="{% url 'organisation_footprint' org.id %}" class="btn btn-sm btn-outline-success ms-2">
+                    <i class="fas fa-leaf me-1"></i>Organisational footprint
+                </a>
                 <div class="mt-2">
                     {% for fac in org.facilities.all %}
                     <a href="{% url 'facility_detail' fac.id %}" class="badge bg-light text-dark text-decoration-none me-1">

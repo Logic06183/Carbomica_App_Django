@@ -18,6 +18,12 @@ class Organisation(models.Model):
         User, related_name='organisations', blank=True,
         help_text='Users who can access all facilities in this organisation.'
     )
+    country = models.CharField(
+        max_length=10,
+        choices=[('ZW', 'Zimbabwe'), ('ZA', 'South Africa'), ('KE', 'Kenya'), ('OTHER', 'Other')],
+        default='OTHER',
+        help_text='Used for the electricity emission factor in organisational reporting.'
+    )
 
     class Meta:
         ordering = ['name']
@@ -361,3 +367,66 @@ class Policy(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class OrganisationEmissionEntry(models.Model):
+    """
+    Organisational (partner-level) emissions for consortium reporting —
+    flights, fleet, office electricity, commuting, procurement. Distinct from
+    facility-level EmissionData: this is the footprint of a partner
+    organisation's own operations, reported independently for M&E and used to
+    quantify offsets purchased through the accredited provider.
+    """
+    CATEGORY_CHOICES = [
+        ('flights', 'Flights — air travel'),
+        ('fleet_fuel', 'Vehicle fleet fuel'),
+        ('grid_electricity', 'Office electricity'),
+        ('commuting', 'Staff commuting'),
+        ('procurement', 'Procurement & services (pre-calculated tCO2e)'),
+        ('other', 'Other (pre-calculated tCO2e)'),
+    ]
+    UNIT_LABELS = {
+        'flights': 'passenger-km',
+        'fleet_fuel': 'litres',
+        'grid_electricity': 'kWh',
+        'commuting': 'km',
+        'procurement': 'tCO2e',
+        'other': 'tCO2e',
+    }
+
+    organisation = models.ForeignKey(
+        Organisation, related_name='emission_entries', on_delete=models.CASCADE
+    )
+    year = models.PositiveIntegerField(
+        help_text='Reporting year the entry belongs to (e.g. 2026).'
+    )
+    category = models.CharField(max_length=32, choices=CATEGORY_CHOICES)
+    quantity = models.DecimalField(
+        max_digits=12, decimal_places=2, validators=[MinValueValidator(0.0)],
+        help_text='Amount in the category unit (passenger-km, litres, kWh, km, or tCO2e).'
+    )
+    description = models.CharField(
+        max_length=255, blank=True, default='',
+        help_text='e.g. "JNB-LHR return x3, consortium annual meeting"'
+    )
+    created_by = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='org_emission_entries'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _('Organisational Emission Entry')
+        verbose_name_plural = _('Organisational Emission Entries')
+        ordering = ['-year', 'category', '-created_at']
+
+    def __str__(self):
+        return f"{self.organisation.name} {self.year} — {self.get_category_display()}"
+
+    @property
+    def unit(self):
+        return self.UNIT_LABELS.get(self.category, 'tCO2e')
+
+    def tco2e(self, country='OTHER'):
+        from .modeling import org_entry_tco2e
+        return org_entry_tco2e(self.category, self.quantity, country)

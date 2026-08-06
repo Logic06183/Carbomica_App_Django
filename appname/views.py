@@ -1674,3 +1674,147 @@ def facility_detail(request, facility_id):
         'emission_fields': EMISSION_FIELDS,
         'category_labels': CATEGORY_LABELS,
     })
+
+
+# ---------------------------------------------------------------------------
+# Consortium: organisational (partner-level) footprint, M&E export, offsets
+# ---------------------------------------------------------------------------
+
+def _get_user_org_or_404(request, org_id):
+    """Org the user owns or belongs to — members can report, not just owners."""
+    org = get_object_or_404(Organisation, id=org_id)
+    if org.created_by != request.user and not org.members.filter(id=request.user.id).exists():
+        from django.http import Http404
+        raise Http404
+    return org
+
+
+def _org_footprint_context(org, year):
+    """Totals by category + offset quantification for one reporting year."""
+    from .models import OrganisationEmissionEntry
+    from .modeling import ORG_EMISSION_FACTORS
+
+    entries = org.emission_entries.filter(year=year)
+    by_category = []
+    total = Decimal('0')
+    for key, label in OrganisationEmissionEntry.CATEGORY_CHOICES:
+        cat_entries = [e for e in entries if e.category == key]
+        if not cat_entries:
+            continue
+        qty = sum(e.quantity for e in cat_entries)
+        tco2e = sum(e.tco2e(org.country) for e in cat_entries)
+        total += tco2e
+        by_category.append({
+            'key': key,
+            'label': label,
+            'unit': OrganisationEmissionEntry.UNIT_LABELS[key],
+            'quantity': qty,
+            'tco2e': tco2e,
+            'n_entries': len(cat_entries),
+        })
+    # Offset volume: round UP to whole credits (1 credit = 1 tCO2e)
+    import math
+    offset_tco2e = math.ceil(total) if total > 0 else 0
+    return {
+        'entries': entries,
+        'by_category': by_category,
+        'total_tco2e': total,
+        'offset_tco2e': offset_tco2e,
+    }
+
+
+@login_required
+def organisation_footprint(request, org_id):
+    """
+    Partner-level emissions reporting for consortium M&E: enter organisational
+    activity (flights first), see tCO2e by category, and quantify the offset
+    volume to purchase through the accredited provider.
+    """
+    from .forms import OrganisationEmissionEntryForm
+    from .models import OrganisationEmissionEntry
+
+    org = _get_user_org_or_404(request, org_id)
+    current_year = date.today().year
+
+    if request.method == 'POST':
+        if request.POST.get('action') == 'delete_entry':
+            entry = get_object_or_404(
+                OrganisationEmissionEntry, id=request.POST.get('entry_id'), organisation=org
+            )
+            entry.delete()
+            messages.success(request, 'Entry deleted.')
+            return redirect('organisation_footprint', org_id=org.id)
+        if request.POST.get('action') == 'set_country':
+            country = request.POST.get('country', 'OTHER')
+            if country in dict(Facility.COUNTRY_CHOICES):
+                org.country = country
+                org.save(update_fields=['country'])
+                messages.success(request, 'Organisation country updated.')
+            return redirect('organisation_footprint', org_id=org.id)
+        form = OrganisationEmissionEntryForm(request.POST)
+        if form.is_valid():
+            entry = form.save(commit=False)
+            entry.organisation = org
+            entry.created_by = request.user
+            entry.save()
+            messages.success(request, 'Emission entry added.')
+            return redirect(f"{request.path}?year={entry.year}")
+    else:
+        form = OrganisationEmissionEntryForm(initial={'year': current_year})
+
+    try:
+        year = int(request.GET.get('year', current_year))
+    except (TypeError, ValueError):
+        year = current_year
+
+    years = list(
+        org.emission_entries.order_by('-year').values_list('year', flat=True).distinct()
+    )
+    if year not in years:
+        years = sorted(set(years + [year]), reverse=True)
+
+    context = {
+        'organisation': org,
+        'form': form,
+        'year': year,
+        'years': years,
+        'country_choices': Facility.COUNTRY_CHOICES,
+        **_org_footprint_context(org, year),
+    }
+    return render(request, 'appname/organisation_footprint.html', context)
+
+
+@login_required
+def organisation_footprint_export(request, org_id, year):
+    """
+    M&E CSV export: one row per category with quantity, factor basis and tCO2e,
+    plus total and offset volume. Designed to drop into partner reports and to
+    hand to the offset provider for purchasing.
+    """
+    from django.http import HttpResponse
+    from .modeling import ORG_EMISSION_FACTORS, ELECTRICITY_EF
+
+    org = _get_user_org_or_404(request, org_id)
+    ctx = _org_footprint_context(org, int(year))
+
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = (
+        f'attachment; filename="{org.name.replace(" ", "_")}_footprint_{year}.csv"'
+    )
+    writer = csv.writer(response)
+    writer.writerow(['CARBOMICA organisational footprint export'])
+    writer.writerow(['Organisation', org.name])
+    writer.writerow(['Reporting year', year])
+    writer.writerow(['Country (electricity factor)', org.get_country_display()])
+    writer.writerow([])
+    writer.writerow(['Category', 'Quantity', 'Unit', 'tCO2e'])
+    for row in ctx['by_category']:
+        writer.writerow([row['label'], row['quantity'], row['unit'], row['tco2e']])
+    writer.writerow([])
+    writer.writerow(['Total (tCO2e)', ctx['total_tco2e']])
+    writer.writerow(['Offset volume to purchase (whole credits, 1 credit = 1 tCO2e)', ctx['offset_tco2e']])
+    writer.writerow([])
+    writer.writerow(['Factors: flights DEFRA 2023 avg passenger flight incl. radiative forcing; '
+                     'fuel GHG Protocol/BEIS 2023; electricity IEA country factors; '
+                     'procurement/other entered as pre-calculated tCO2e.'])
+    return response
