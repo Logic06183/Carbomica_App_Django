@@ -102,7 +102,9 @@
                         <tbody>
                             {% for source in source_breakdown %}
                             <tr>
-                                <td class="fw-semibold">{{ source.name }}</td>
+                                <td class="fw-semibold">{{ source.name }}
+                                    {% if source.scope %}<span class="badge rounded-pill ms-1" style="background:{% if source.scope == 1 %}#c0533e{% elif source.scope == 2 %}#268dcd{% else %}#6c757d{% endif %};font-size:.6rem;">S{{ source.scope }}</span>{% endif %}
+                                </td>
                                 <td>{{ source.amount|floatformat:2 }}</td>
                                 <td>
                                     <div class="d-flex align-items-center gap-2">

@@ -48,3 +48,4 @@ Thumbs.db
 staticfiles/
 .firebase/
 .gstack/
+.venv/

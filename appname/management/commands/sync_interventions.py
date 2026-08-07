@@ -106,6 +106,10 @@ DEFAULT_COSTS = {
     'TREE_PLANTING':        {'impl': 500,   'maint': 0,     'savings': -20},    # 100 trees
     'TRAINING_AWARENESS':   {'impl': 2500,  'maint': 225,   'savings': -908},   # net staff cost
     'EE_LAUNDRY':           {'impl': 1800,  'maint': 54,    'savings': 600},
+
+    # ── 19. Research & office Scope-3 ─────────────────────────────────────────
+    'VIRTUAL_FIRST_TRAVEL': {'impl': 0,     'maint': 0,     'savings': 4500},   # avoided airfares
+    'GREEN_PROCUREMENT':    {'impl': 1500,  'maint': 500,   'savings': 1200},   # supplier consolidation
 }
 
 # Emission reduction percentages per intervention (applied to the target category).
@@ -194,6 +198,10 @@ REDUCTION_PCT = {
     'TREE_PLANTING':        0,    # carbon offset — no direct emission reduction
     'TRAINING_AWARENESS':   6,    # midpoint of 4–8 % evidence range
     'EE_LAUNDRY':           25,   # ENERGY STAR: 25 % less energy
+
+    # ── 19. Research & office Scope-3 ─────────────────────────────────────────
+    'VIRTUAL_FIRST_TRAVEL': 30,   # Tyndall Centre virtual-first policy evidence
+    'GREEN_PROCUREMENT':    15,   # LEAF / My Green Lab typical 10–20 % range
 }
 
 
@@ -221,6 +229,7 @@ class Command(BaseCommand):
                         'energy_savings':             costs.get('savings', 0),
                         'status':                     'Planned',
                         'target_category':            target_cats,
+                        'applicable_sectors':         ','.join(data.get('sectors', [])),
                     },
                 )
                 if created:

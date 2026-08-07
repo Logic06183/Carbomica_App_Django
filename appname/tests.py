@@ -623,3 +623,216 @@ class OptimizationResultsPageTest(TestCase):
         response = fresh.get(f'/optimization-results/{scenario_id}/')
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'rounded-pill')
+
+
+class ReductionDrawdownTest(TestCase):
+    """Regression: multiple interventions targeting the same category must not
+    each claim the full category baseline. Total scenario reduction must never
+    exceed the facility baseline (previously reported 324% of baseline)."""
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command('sync_interventions', stdout=StringIO())
+        cls.facility = Facility.objects.create(
+            code_name='DRAWDOWN_FAC', display_name='Drawdown Facility', country='ZA',
+        )
+
+    def _fi(self, code_name, impl=0, maint=0):
+        return FacilityIntervention.objects.create(
+            facility=self.facility,
+            intervention=Intervention.objects.get(code_name=code_name),
+            implementation_cost=Decimal(str(impl)),
+            maintenance_cost=Decimal(str(maint)),
+        )
+
+    def test_same_category_interventions_share_the_baseline(self):
+        # Two ~99% refrigerant swaps against a 25 tCO2e refrigerant baseline:
+        # naive maths would claim ~49.5 tCO2e; drawdown must keep the sum < 25.
+        fis = [self._fi('REFRIG_R134A_R1234YF'), self._fi('REFRIG_R22_R290')]
+        optimizer = CarbomicaOptimizer(
+            facility_interventions=fis, budget=Decimal('1000'),
+            total_baseline_emissions=Decimal('30'),
+            category_baselines={'refrigeration_gases': Decimal('25')},
+        )
+        for scenario in optimizer.run_all_scenarios().values():
+            total = sum(r['emission_reduction'] for r in scenario['results'])
+            self.assertLess(total, Decimal('25'),
+                            'Summed reductions exceed the category baseline — double-counting is back')
+            self.assertLessEqual(scenario['summary']['pct_of_baseline'], Decimal('100'))
+
+    def test_full_library_never_exceeds_baseline(self):
+        from appname.views import _seed_facility_interventions
+        _seed_facility_interventions(self.facility)
+        fis = FacilityIntervention.objects.filter(facility=self.facility).select_related('intervention')
+        baselines = {
+            'grid_electricity': Decimal('10'), 'refrigeration_gases': Decimal('25'),
+            'waste_management': Decimal('5'), 'anaesthetic_gases': Decimal('2'),
+        }
+        optimizer = CarbomicaOptimizer(
+            facility_interventions=fis, budget=Decimal('1000000'),
+            total_baseline_emissions=Decimal('42'), category_baselines=baselines,
+        )
+        scenarios = optimizer.run_all_scenarios()
+        for name, scenario in scenarios.items():
+            total = sum(r['emission_reduction'] for r in scenario['results'])
+            self.assertLessEqual(total, Decimal('42'),
+                                 f'{name}: reduction {total} exceeds the 42 tCO2e baseline')
+
+
+class SectorCurationTest(TestCase):
+    """Research facilities must not be attached clinical-only interventions
+    (anaesthetics, inhalers, medical waste, incinerators, hospital laundry)."""
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command('sync_interventions', stdout=StringIO())
+
+    def _attached_codes(self, sector):
+        from appname.views import _seed_facility_interventions
+        facility = Facility.objects.create(
+            code_name=f'SECT_{sector.upper()}', display_name=f'{sector} site',
+            country='ZA', sector=sector,
+        )
+        _seed_facility_interventions(facility)
+        return set(
+            FacilityIntervention.objects.filter(facility=facility)
+            .values_list('intervention__code_name', flat=True)
+        )
+
+    def test_research_facility_excludes_clinical_only_interventions(self):
+        codes = self._attached_codes('research')
+        clinical_only = {'ANAES_ISO_SEVO', 'ANAES_NO_AVOID', 'INHALER_DPI', 'INHALER_SMI',
+                         'LOW_GWP_ANAESTHETICS', 'DPI_INHALER_SWITCH', 'WASTE_SEGREGATION',
+                         'INCINERATOR_TAM', 'EE_LAUNDRY'}
+        self.assertFalse(codes & clinical_only,
+                         f'Clinical-only interventions attached to research lab: {codes & clinical_only}')
+        # Research-relevant Scope-3 interventions must be present.
+        self.assertIn('VIRTUAL_FIRST_TRAVEL', codes)
+        self.assertIn('GREEN_PROCUREMENT', codes)
+
+    def test_clinical_facility_gets_full_library(self):
+        codes = self._attached_codes('clinical')
+        self.assertEqual(len(codes), Intervention.objects.count(),
+                         'Clinical facilities should receive every intervention')
+
+
+class ResearchCategoriesTest(TestCase):
+    """flights (passenger-km) and lab_consumables (USD spend) must convert to tCO2e."""
+
+    def test_new_categories_convert(self):
+        from appname.modeling import compute_tco2e
+        facility = Facility.objects.create(
+            code_name='RES_CAT', display_name='Research Cat', country='ZA', sector='research')
+        source = EmissionSource.objects.create(
+            facility=facility, code_name='RES_CAT_SRC', display_name='src')
+        data = EmissionData.objects.create(
+            emission_source=source,
+            flights=Decimal('100000'),        # 100k passenger-km
+            lab_consumables=Decimal('200000'),  # $200k spend
+        )
+        result = compute_tco2e(data, country='ZA')
+        self.assertEqual(result['flights'], Decimal('100000') * Decimal('0.00015'))   # 15 tCO2e
+        self.assertEqual(result['lab_consumables'], Decimal('200000') * Decimal('0.0005'))  # 100 tCO2e
+        self.assertEqual(result['total'], Decimal('115'))
+
+
+class PageRenderRegressionTest(TestCase):
+    """Every data-bearing page must render with a fully-populated research
+    facility — catches template errors that only trigger with real data
+    (the optimization-results 500 was exactly this class of bug)."""
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command('sync_interventions', stdout=StringIO())
+        cls.user = User.objects.create_user('renderer', 'r@example.com', 'pw')
+
+    def test_all_pages_render_with_populated_research_facility(self):
+        self.client.force_login(self.user)
+        self.client.post('/add-facility/', {
+            'display_name': 'Wits Planetary Health Research Division', 'code_name': 'WITS_PHR',
+            'sector': 'research', 'country': 'ZA', 'facility_type': 'university_lab',
+            'grid_electricity': '185000', 'liquid_fuel': '2400', 'vehicle_fuel_owned': '5600',
+            'business_travel': '38000', 'refrigeration_gases': '8', 'waste_management': '4',
+            'contractor_logistics': '9000', 'flights': '420000', 'lab_consumables': '310000',
+        })
+        facility = Facility.objects.get(code_name='WITS_PHR')
+
+        response = self.client.post(f'/optimize/{facility.id}/', {
+            'name': 'Wits FY2026', 'budget': '60000', 'target_reduction': '30',
+        })
+        self.assertEqual(response.status_code, 302)
+        scenario_id = int(response['Location'].rstrip('/').rsplit('/', 1)[-1])
+
+        for path in ['/', '/dashboard/', '/facilities/', f'/facilities/{facility.id}/',
+                     '/interventions/', '/organisation/', f'/optimize/{facility.id}/',
+                     f'/optimization-results/{scenario_id}/', '/upload/emissions/',
+                     '/add-facility/']:
+            response = self.client.get(path)
+            self.assertEqual(response.status_code, 200, f'{path} did not render')
+
+        # Scope labelling visible on the facility profile
+        response = self.client.get(f'/facilities/{facility.id}/')
+        self.assertContains(response, 'Scope 2')
+        self.assertContains(response, 'GHG Protocol totals')
+        # Research-sector funder language present
+        self.assertContains(response, 'Concordat')
+        # Clinical-only interventions absent for a research division
+        self.assertNotContains(response, 'Anaesthetic Switch')
+
+
+class BaselineNotCumulativeTest(TestCase):
+    """Regression: baselines must reflect the latest reporting period, not the
+    sum of all historical records (which double-counted every prior period)."""
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command('sync_interventions', stdout=StringIO())
+        cls.user = User.objects.create_user('cumul', 'c@example.com', 'pw')
+
+    def test_second_optimisation_run_does_not_double_the_baseline(self):
+        self.client.force_login(self.user)
+        emissions = {'grid_electricity': '100000', 'flights': '200000'}
+        self.client.post('/add-facility/', {
+            'display_name': 'Baseline Facility', 'code_name': 'BASE_FAC',
+            'sector': 'research', 'country': 'ZA', 'facility_type': 'university_lab',
+            **emissions,
+        })
+        facility = Facility.objects.get(code_name='BASE_FAC')
+        # ZA electricity 0.000928 * 100000 = 92.8; flights 0.00015 * 200000 = 30 → 122.8
+        expected = Decimal('122.8')
+
+        for run in (1, 2):   # second run re-posts the same figures (form pre-fill)
+            r = self.client.post(f'/optimize/{facility.id}/', {
+                'name': f'Run {run}', 'budget': '10000', 'target_reduction': '20',
+                **emissions,
+            })
+            self.assertEqual(r.status_code, 302)
+            scenario_id = int(r['Location'].rstrip('/').rsplit('/', 1)[-1])
+            r = self.client.get(f'/optimization-results/{scenario_id}/')
+            self.assertEqual(r.status_code, 200)
+
+        from appname.models import OptimizationScenario
+        scenario = OptimizationScenario.objects.get(name='Run 2')
+        results = scenario.results.all()
+        self.assertGreater(len(results), 0)
+        total_reduction = sum(Decimal(str(res.emission_reduction)) for res in results)
+        self.assertLessEqual(total_reduction, expected,
+                             'Reductions exceed the single-period baseline — cumulative double-count is back')
+
+    def test_dashboard_total_uses_latest_record_only(self):
+        self.client.force_login(self.user)
+        self.client.post('/add-facility/', {
+            'display_name': 'Dash Facility', 'code_name': 'DASH_FAC',
+            'sector': 'research', 'country': 'ZA', 'facility_type': 'university_lab',
+            'grid_electricity': '100000',
+        })
+        facility = Facility.objects.get(code_name='DASH_FAC')
+        # Second identical period via optimise re-post: dashboard total must not double.
+        self.client.post(f'/optimize/{facility.id}/', {
+            'name': 'Dash run', 'budget': '1000', 'target_reduction': '10',
+            'grid_electricity': '100000',
+        })
+        r = self.client.get('/dashboard/')
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, '92.8')      # 100000 kWh * 0.928 kg = 92.8 tCO2e
+        self.assertNotContains(r, '185.6')  # the doubled figure

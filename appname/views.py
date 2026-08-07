@@ -53,7 +53,7 @@ EMISSION_FIELDS = [
     'grid_electricity', 'grid_gas', 'bottled_gas', 'liquid_fuel',
     'vehicle_fuel_owned', 'business_travel', 'anaesthetic_gases',
     'refrigeration_gases', 'waste_management', 'medical_inhalers',
-    'contractor_logistics',
+    'contractor_logistics', 'flights', 'lab_consumables',
 ]
 
 CATEGORY_LABELS = {
@@ -62,12 +62,33 @@ CATEGORY_LABELS = {
     'bottled_gas':         'Bottled Gas / LPG',
     'liquid_fuel':         'Liquid Fuel',
     'vehicle_fuel_owned':  'Vehicle Fuel (Owned)',
-    'business_travel':     'Business Travel',
+    'business_travel':     'Business Travel (Road)',
     'anaesthetic_gases':   'Anaesthetic Gases',
     'refrigeration_gases': 'Refrigeration Gases',
     'waste_management':    'Waste Management',
     'medical_inhalers':    'Medical Inhalers',
     'contractor_logistics': 'Contractor Logistics',
+    'flights':             'Flights',
+    'lab_consumables':     'Lab Consumables & Procurement',
+}
+
+# GHG Protocol Corporate Standard scope per emission category.
+# Scope 1 — direct combustion/fugitive; Scope 2 — purchased electricity;
+# Scope 3 — value-chain (travel, procurement, contracted services).
+CATEGORY_SCOPES = {
+    'grid_electricity':    2,
+    'grid_gas':            1,
+    'bottled_gas':         1,
+    'liquid_fuel':         1,
+    'vehicle_fuel_owned':  1,
+    'business_travel':     3,
+    'anaesthetic_gases':   1,
+    'refrigeration_gases': 1,
+    'waste_management':    3,
+    'medical_inhalers':    3,
+    'contractor_logistics': 3,
+    'flights':             3,
+    'lab_consumables':     3,
 }
 
 # Default intervention cost guidance (USD) — shown in the upload form to help users
@@ -117,17 +138,37 @@ def _aggregate_tco2e_all(user):
     monthly_tco2e_map = defaultdict(Decimal)   # date → tCO₂e
     total_tco2e = Decimal('0')
 
+    # Latest record per facility drives the current-footprint totals; the full
+    # history only feeds the trend chart. Summing every historical record would
+    # double-count each prior reporting period into "total emissions".
+    latest_per_facility = {}
     for ed in all_records:
+        fid = ed.emission_source.facility_id
+        current = latest_per_facility.get(fid)
+        if current is None or (ed.date or date.min, ed.id) > (current.date or date.min, current.id):
+            latest_per_facility[fid] = ed
+
+    for ed in latest_per_facility.values():
         country = ed.emission_source.facility.country
         tco2e = compute_tco2e(ed, country)
         for field in EMISSION_FIELDS:
             category_tco2e[field] += tco2e.get(field, Decimal('0'))
         facility_tco2e[ed.emission_source.facility_id] += tco2e['total']
         total_tco2e += tco2e['total']
-        if ed.date:
-            # Group by year-month for the trend chart
-            month_key = date(ed.date.year, ed.date.month, 1)
-            monthly_tco2e_map[month_key] += tco2e['total']
+
+    # Trend chart: latest record per facility per month, so re-running the
+    # optimiser (which snapshots the baseline) doesn't inflate that month.
+    latest_per_fac_month = {}
+    for ed in all_records:
+        if not ed.date:
+            continue
+        key = (ed.emission_source.facility_id, date(ed.date.year, ed.date.month, 1))
+        current = latest_per_fac_month.get(key)
+        if current is None or (ed.date, ed.id) > (current.date, current.id):
+            latest_per_fac_month[key] = ed
+    for (fid, month_key), ed in latest_per_fac_month.items():
+        tco2e = compute_tco2e(ed, ed.emission_source.facility.country)
+        monthly_tco2e_map[month_key] += tco2e['total']
 
     monthly_tco2e = sorted(monthly_tco2e_map.items())  # [(date, Decimal), ...]
     return category_tco2e, dict(facility_tco2e), monthly_tco2e, total_tco2e
@@ -237,6 +278,7 @@ def dashboard(request):
                 'name': CATEGORY_LABELS.get(field, field),
                 'amount': amount,
                 'percentage': (amount / total_tco2e * 100) if total_tco2e > 0 else Decimal('0'),
+                'scope': CATEGORY_SCOPES.get(field),
             }
             for field, amount in category_tco2e.items()
             if amount > 0
@@ -331,10 +373,19 @@ def _seed_facility_interventions(facility):
     Returns (created_count, skipped_count). Idempotent: rows with an
     existing (facility, intervention) pair are skipped because of the
     unique constraint added in migration 0011.
+
+    Only interventions applicable to the facility's sector are attached
+    (Intervention.applicable_sectors, empty = universal) — a research lab
+    doesn't get anaesthetic switches or medical-waste incinerators.
     """
+    from django.db.models import Q
+
     before = FacilityIntervention.objects.filter(facility=facility).count()
     rows = []
-    for intervention in Intervention.objects.all():
+    applicable = Intervention.objects.filter(
+        Q(applicable_sectors='') | Q(applicable_sectors__contains=facility.sector)
+    )
+    for intervention in applicable:
         costs = DEFAULT_COSTS.get(intervention.code_name)
         if costs:
             source = 'DEFAULT'
@@ -512,24 +563,25 @@ def optimize_interventions(request, facility_id):
             scenario.facility = facility
             scenario.save()
 
-            # Record updated emission data snapshot
+            # Record an updated emission snapshot only when the user actually
+            # entered figures — all-zero submissions mean "keep the saved baseline"
+            # (writing zeros would wipe the baseline for this run).
             emission_source = facility.emission_sources.first()
-            if emission_source:
+            if emission_source and emission_form.has_any_value():
                 EmissionData.objects.create(
                     emission_source=emission_source,
                     **emission_form.cleaned_data,
                 )
 
-            # Baseline in tCO₂e — convert raw usage using country-specific factors
+            # Baseline in tCO₂e = the LATEST emission record only. Summing all
+            # historical records would double-count every prior reporting period.
             emission_records = EmissionData.objects.filter(emission_source__facility=facility)
-            baseline = sum_tco2e(emission_records, facility.country)
-
-            # Per-category baseline for accurate intervention reduction calculation
-            latest_ed = emission_records.order_by('-date').first()
+            latest_ed = emission_records.order_by('-date', '-id').first()
             category_baselines = {}
+            baseline = Decimal('0')
             if latest_ed:
                 cat = compute_tco2e(latest_ed, facility.country)
-                cat.pop('total', None)
+                baseline = cat.pop('total', Decimal('0'))
                 category_baselines = cat
 
             # Fetch facility-specific intervention records (with actual costs)
@@ -679,6 +731,10 @@ EMISSION_CSV_COLUMNS = {
     'medical_inhalers':    ['medical inhalers', 'medical_inhalers', 'inhalers', 'mdis'],
     'contractor_logistics': ['contractor logistics', 'contractor_logistics', 'contracted transport',
                              'supply chain transport', 'logistics'],
+    'flights':             ['flights', 'air travel', 'flight km', 'passenger km', 'passenger-km',
+                            'air travel (pkm)'],
+    'lab_consumables':     ['lab consumables', 'lab_consumables', 'consumables', 'procurement',
+                            'procurement spend', 'consumables spend (usd)'],
 }
 
 
@@ -1055,6 +1111,19 @@ def facility_detail(request, facility_id):
     latest_breakdown = records_with_tco2e[0] if records_with_tco2e else None
 
     # Per-category chart data (latest record)
+    # Table rows with GHG Protocol scope labels + per-scope subtotals
+    category_rows, scope_totals = [], {1: Decimal('0'), 2: Decimal('0'), 3: Decimal('0')}
+    if latest_breakdown:
+        for f in EMISSION_FIELDS:
+            val = latest_breakdown['breakdown'][CATEGORY_LABELS[f]]
+            scope = CATEGORY_SCOPES.get(f)
+            if scope:
+                scope_totals[scope] += val
+            category_rows.append({
+                'label': CATEGORY_LABELS[f], 'value': val, 'scope': scope,
+            })
+        category_rows.sort(key=lambda r: r['value'], reverse=True)
+
     if latest_breakdown:
         cat_items = sorted(
             [(name, val) for name, val in latest_breakdown['breakdown'].items() if val > 0],
@@ -1115,4 +1184,6 @@ def facility_detail(request, facility_id):
         'bar_chart_data': bar_chart_data,
         'emission_fields': EMISSION_FIELDS,
         'category_labels': CATEGORY_LABELS,
+        'category_rows': category_rows,
+        'scope_totals': scope_totals,
     })

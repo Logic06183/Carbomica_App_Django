@@ -142,15 +142,18 @@
                         <thead class="table-light">
                             <tr>
                                 <th>Category</th>
+                                <th>Scope</th>
                                 <th>tCO₂e</th>
-                                <th style="width:35%;">Share</th>
+                                <th style="width:32%;">Share</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {% for name, val in latest_breakdown.breakdown.items %}
+                            {% for row in category_rows %}
+                            {% with name=row.label val=row.value %}
                             {% if val > 0 %}
                             <tr>
                                 <td class="fw-semibold">{{ name }}</td>
+                                <td><span class="badge rounded-pill" style="background:{% if row.scope == 1 %}#c0533e{% elif row.scope == 2 %}#268dcd{% else %}#6c757d{% endif %};font-size:.65rem;">Scope {{ row.scope }}</span></td>
                                 <td>{{ val|floatformat:2 }}</td>
                                 <td>
                                     {% if baseline_tco2e > 0 %}
@@ -165,10 +168,20 @@
                                 </td>
                             </tr>
                             {% endif %}
+                            {% endwith %}
                             {% endfor %}
                         </tbody>
                     </table>
                 </div>
+                {% if baseline_tco2e > 0 %}
+                <div class="px-3 py-2 border-top d-flex flex-wrap gap-3 small text-muted"
+                     style="background:#fafbfc;">
+                    <span class="fw-semibold">GHG Protocol totals:</span>
+                    <span><span class="badge rounded-pill me-1" style="background:#c0533e;font-size:.65rem;">Scope 1</span>{{ scope_totals.1|floatformat:2 }} tCO₂e</span>
+                    <span><span class="badge rounded-pill me-1" style="background:#268dcd;font-size:.65rem;">Scope 2</span>{{ scope_totals.2|floatformat:2 }} tCO₂e</span>
+                    <span><span class="badge rounded-pill me-1" style="background:#6c757d;font-size:.65rem;">Scope 3</span>{{ scope_totals.3|floatformat:2 }} tCO₂e</span>
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -300,9 +313,21 @@
             Raw usage data (kWh, m³, kg, litres, km, units) is converted to tCO₂e using
             country-specific grid emission factors (IEA 2022) and GHG Protocol / DEFRA 2023 combustion factors.
         </p>
-        <p class="text-muted small mb-0">
+        <p class="text-muted small mb-1">
             <strong>Electricity factors:</strong> Zimbabwe 0.556 kg CO₂e/kWh (coal grid) · South Africa 0.928 kg CO₂e/kWh (Eskom) · Kenya 0.032 kg CO₂e/kWh (renewables-heavy).
             Anaesthetic gases use a weighted average GWP of 802 (50% isoflurane GWP 510, 30% sevoflurane GWP 130, 20% desflurane GWP 2540 — IPCC AR6).
+        </p>
+        <p class="text-muted small mb-0">
+            <strong>Scope 3 categories:</strong> flights use DEFRA 2023 long-haul economy factors
+            including radiative forcing; consumables &amp; procurement use spend-based EEIO factors
+            (HESCET v2, ~0.5 kg CO₂e per USD). Categories are labelled with GHG Protocol
+            Corporate Standard scopes throughout.
+            {% if facility.sector == 'research' %}
+            This baseline structure is consistent with the reporting expectations of the
+            <em>Concordat for the Environmental Sustainability of Research</em> (signed by Wellcome,
+            UKRI and major UK funders) and complements LEAF (Laboratory Efficiency Assessment
+            Framework) lab-level actions.
+            {% endif %}
         </p>
     </div>
 </div>

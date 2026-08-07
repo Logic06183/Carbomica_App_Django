@@ -150,6 +150,15 @@ class EmissionData(models.Model):
         default=0.0, max_digits=10, decimal_places=2, validators=[MinValueValidator(0.0)],
         help_text='Scope 3 — km travelled by contracted vehicles (supply deliveries, waste collection, etc.)'
     )
+    flights = models.DecimalField(
+        default=0.0, max_digits=12, decimal_places=2, validators=[MinValueValidator(0.0)],
+        help_text='Scope 3 — passenger-km flown for work travel (conferences, fieldwork, meetings).'
+    )
+    lab_consumables = models.DecimalField(
+        default=0.0, max_digits=12, decimal_places=2, validators=[MinValueValidator(0.0)],
+        help_text='Scope 3 — annual spend (USD) on lab consumables, reagents and equipment '
+                  'procurement. Converted with spend-based EEIO factors.'
+    )
 
     class Meta:
         verbose_name = _('Emission Data')
@@ -165,7 +174,8 @@ class EmissionData(models.Model):
             self.grid_electricity + self.grid_gas + self.bottled_gas +
             self.liquid_fuel + self.vehicle_fuel_owned + self.business_travel +
             self.anaesthetic_gases + self.refrigeration_gases +
-            self.waste_management + self.medical_inhalers + self.contractor_logistics
+            self.waste_management + self.medical_inhalers + self.contractor_logistics +
+            self.flights + self.lab_consumables
         )
 
 class Intervention(models.Model):
@@ -213,6 +223,16 @@ class Intervention(models.Model):
                   "(e.g. 'grid_electricity' or 'grid_electricity,vehicle_fuel_owned'). "
                   "Used by the optimizer to apply reductions to the correct emission category."
     )
+    applicable_sectors = models.CharField(
+        max_length=100, blank=True, default='',
+        help_text="Comma-separated Facility sector keys this intervention applies to "
+                  "(e.g. 'clinical'). Empty = applies to every sector."
+    )
+
+    def applies_to_sector(self, sector):
+        if not self.applicable_sectors:
+            return True
+        return sector in [s.strip() for s in self.applicable_sectors.split(',')]
 
     class Meta:
         verbose_name = _('Intervention')

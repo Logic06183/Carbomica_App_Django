@@ -90,6 +90,11 @@ EMISSION_FACTORS = {
     'waste_management':    Decimal('0.467'),      # per tonne clinical waste
     'medical_inhalers':    Decimal('0.0189'),     # per pMDI unit dispensed
     'contractor_logistics': Decimal('0.000267'), # per km contracted vehicle travel
+    'flights':             Decimal('0.00015'),   # per passenger-km flown (DEFRA 2023
+                                                 # long-haul economy incl. radiative forcing)
+    'lab_consumables':     Decimal('0.0005'),    # per USD spend on lab consumables &
+                                                 # equipment (EEIO spend-based factor,
+                                                 # HESCET v2 / DEFRA 2023 ~0.5 kgCO₂e/USD)
 }
 
 
@@ -141,6 +146,7 @@ INTERVENTION_LIBRARY = {
         'display_name': 'Low-GWP Anaesthetic Gases',
         'reduces': {'anaesthetic_gases': Decimal('0.85')},
         'sdg_goals': [3, 13],
+        'sectors': ['clinical'],
         'notes': (
             'Replace desflurane and sevoflurane with TIVA or low-GWP alternatives. '
             'See ANAES_ISO_SEVO and ANAES_NO_AVOID for specific switch entries.'
@@ -159,6 +165,7 @@ INTERVENTION_LIBRARY = {
         'display_name': 'Medical Waste Segregation & Management',
         'reduces': {'waste_management': Decimal('0.60')},
         'sdg_goals': [3, 12],
+        'sectors': ['clinical'],
         'notes': (
             'Separate hazardous from non-hazardous waste streams to reduce '
             'incineration volume and associated dioxin emissions. '
@@ -184,6 +191,7 @@ INTERVENTION_LIBRARY = {
         'display_name': 'Switch to Dry-Powder Inhalers (DPI)',
         'reduces': {'medical_inhalers': Decimal('0.70')},
         'sdg_goals': [3, 13],
+        'sectors': ['clinical'],
         'notes': (
             'Pressurised MDIs contain HFC propellants with very high GWP. '
             'Switch to DPIs where clinically appropriate — WHO-endorsed.'
@@ -426,6 +434,7 @@ INTERVENTION_LIBRARY = {
         'display_name': 'Anaesthetic Switch — Isoflurane to Sevoflurane',
         'reduces': {'anaesthetic_gases': Decimal('0.75')},
         'sdg_goals': [3, 13],
+        'sectors': ['clinical'],
         'notes': (
             'Sevoflurane GWP 130 vs isoflurane GWP 510. '
             'Saves 380 kgCO₂e per kg agent switched. '
@@ -439,6 +448,7 @@ INTERVENTION_LIBRARY = {
         'display_name': 'Avoid Nitrous Oxide (N₂O)',
         'reduces': {'anaesthetic_gases': Decimal('1.00')},
         'sdg_goals': [3, 13],
+        'sectors': ['clinical'],
         'notes': (
             'N₂O GWP 265; eliminating use saves 298 kgCO₂e per kg avoided. '
             'Per 20-unit batch — cost saving US$200. '
@@ -451,6 +461,7 @@ INTERVENTION_LIBRARY = {
         'display_name': 'Inhaler Switch — Salbutamol MDI to DPI',
         'reduces': {'medical_inhalers': Decimal('1.00')},
         'sdg_goals': [3, 13],
+        'sectors': ['clinical'],
         'notes': (
             'Salbutamol MDI emits ~19 kgCO₂e per 200-dose device; DPI ≈ 0. '
             'Saves 19 kgCO₂e per device. '
@@ -461,6 +472,7 @@ INTERVENTION_LIBRARY = {
         'display_name': 'Inhaler Switch — Salbutamol MDI to Soft Mist Inhaler (SMI)',
         'reduces': {'medical_inhalers': Decimal('1.00')},
         'sdg_goals': [3, 13],
+        'sectors': ['clinical'],
         'notes': (
             'Salbutamol MDI emits ~19 kgCO₂e per device; SMI ≈ 0. '
             'Saves 19 kgCO₂e per device. '
@@ -666,6 +678,7 @@ INTERVENTION_LIBRARY = {
         'display_name': 'Biomedical TAM-ENERGY Incinerator',
         'reduces': {'waste_management': Decimal('0.67')},
         'sdg_goals': [3, 12, 13],
+        'sectors': ['clinical'],
         'notes': (
             'High-efficiency medical waste incinerator; runs 8,000 hrs/year. '
             'Fuel use 600 L/year vs conventional 1,800 L/year. '
@@ -775,9 +788,34 @@ INTERVENTION_LIBRARY = {
         'display_name': 'Energy-Efficient Laundry Machines (ENERGY STAR)',
         'reduces': {'grid_electricity': Decimal('0.25')},
         'sdg_goals': [7, 13],
+        'sectors': ['clinical'],
         'notes': (
             'ENERGY STAR certified washers use 25 % less energy and 33 % less water '
             'than standard models. Source: Natural Resources Canada / HIGH Horizons D3.7.'
+        ),
+    },
+
+    # ── 19. Research & office Scope-3 interventions ───────────────────────────
+    'VIRTUAL_FIRST_TRAVEL': {
+        'display_name': 'Virtual-First Travel Policy',
+        'reduces': {'flights': Decimal('0.30')},
+        'sdg_goals': [13],
+        'notes': (
+            'Institutional policy: default to virtual attendance, combine trips, '
+            'require economy class and train-over-plane where practical. Typical '
+            '30 % reduction in flight passenger-km (Tyndall Centre travel strategy; '
+            'Concordat for the Environmental Sustainability of Research good practice).'
+        ),
+    },
+    'GREEN_PROCUREMENT': {
+        'display_name': 'Sustainable Procurement & Consumables Policy',
+        'reduces': {'lab_consumables': Decimal('0.15')},
+        'sdg_goals': [12, 13],
+        'notes': (
+            'Supplier consolidation, packaging take-back, glass-over-plastic '
+            'substitution and LEAF-aligned lab practices (e.g. My Green Lab / ACT '
+            'label purchasing). Typical 10–20 % reduction in supply-chain '
+            'emissions from consumables spend.'
         ),
     },
 }
@@ -844,9 +882,43 @@ class CarbomicaOptimizer:
             return Decimal('1e12') + reduction
         return reduction / cost
 
-    def _build_result(self, fi, priority):
+    # ------------------------------------------------------------------
+    # Baseline drawdown — prevents double-counting across interventions
+    # that target the same emission category. Each selected intervention
+    # draws its % reduction from what REMAINS of the category baseline,
+    # so summed scenario reductions can never exceed the baseline itself.
+    # ------------------------------------------------------------------
+
+    def _fresh_remaining(self):
+        remaining = {k: Decimal(str(v)) for k, v in self.category_baselines.items()}
+        remaining['__untargeted__'] = self.baseline
+        return remaining
+
+    def _drawdown_reduction(self, fi, remaining, commit=True):
+        pct = fi.intervention.emission_reduction_percentage or Decimal('0')
+        target_cats = [
+            c.strip() for c in (fi.intervention.target_category or '').split(',') if c.strip()
+        ]
+        if target_cats and self.category_baselines:
+            total = Decimal('0')
+            for cat in target_cats:
+                available = remaining.get(cat, Decimal('0'))
+                red = (pct / 100) * available
+                if commit:
+                    remaining[cat] = available - red
+                total += red
+            return total
+        # No category info: draw from the shared untargeted pool.
+        available = remaining.get('__untargeted__', self.baseline)
+        red = (pct / 100) * available
+        if commit:
+            remaining['__untargeted__'] = available - red
+        return red
+
+    def _build_result(self, fi, priority, reduction=None):
         cost = self._total_cost(fi)
-        reduction = self._emission_reduction(fi)
+        if reduction is None:
+            reduction = self._emission_reduction(fi)
         annual_savings = fi.annual_savings or Decimal('0')
         payback_years = (cost / annual_savings) if annual_savings > 0 else None
         roi = ((annual_savings * 10 - cost) / cost * 100) if cost > 0 else Decimal('0')
@@ -883,29 +955,63 @@ class CarbomicaOptimizer:
     # ------------------------------------------------------------------
 
     def full_coverage(self):
-        """Scenario 1: apply all interventions, ignoring budget constraint."""
-        return [self._build_result(fi, i + 1) for i, fi in enumerate(self.interventions)]
+        """Scenario 1: apply all interventions, ignoring budget constraint.
+
+        Interventions are applied most-cost-effective first so the highest
+        bang-for-buck actions claim baseline emissions before diminishing
+        returns kick in for later same-category interventions.
+        """
+        ordered = sorted(self.interventions, key=self._cost_effectiveness, reverse=True)
+        remaining = self._fresh_remaining()
+        return [
+            self._build_result(fi, i + 1, reduction=self._drawdown_reduction(fi, remaining))
+            for i, fi in enumerate(ordered)
+        ]
 
     def fixed_budget(self):
         """Scenario 2: lowest-cost interventions first until budget exhausted."""
         ordered = sorted(self.interventions, key=self._total_cost)
-        results, remaining = [], self.budget
+        results, budget_left = [], self.budget
+        remaining = self._fresh_remaining()
         for fi in ordered:
             cost = self._total_cost(fi)
-            if cost <= remaining:
-                results.append(self._build_result(fi, len(results) + 1))
-                remaining -= cost
+            if cost <= budget_left:
+                reduction = self._drawdown_reduction(fi, remaining)
+                results.append(self._build_result(fi, len(results) + 1, reduction=reduction))
+                budget_left -= cost
         return results
 
     def optimised(self):
-        """Scenario 3: greedy knapsack — maximise tCO2e reduction per USD spent."""
-        ordered = sorted(self.interventions, key=self._cost_effectiveness, reverse=True)
-        results, remaining = [], self.budget
-        for fi in ordered:
-            cost = self._total_cost(fi)
-            if cost <= remaining:
-                results.append(self._build_result(fi, len(results) + 1))
-                remaining -= cost
+        """Scenario 3: greedy knapsack — maximise tCO2e reduction per USD spent.
+
+        True greedy with diminishing returns: after each pick the relevant
+        category baseline is drawn down, and every remaining candidate is
+        re-scored against what is actually left to abate. A second refrigerant
+        swap therefore competes on the residual refrigerant emissions, not the
+        original baseline.
+        """
+        candidates = list(self.interventions)
+        results, budget_left = [], self.budget
+        remaining = self._fresh_remaining()
+        while candidates:
+            best, best_score, best_reduction = None, None, None
+            for fi in candidates:
+                cost = self._total_cost(fi)
+                if cost > budget_left:
+                    continue
+                reduction = self._drawdown_reduction(fi, remaining, commit=False)
+                if cost <= 0:
+                    score = Decimal('1e12') + reduction
+                else:
+                    score = reduction / cost
+                if best_score is None or score > best_score:
+                    best, best_score, best_reduction = fi, score, reduction
+            if best is None:
+                break
+            self._drawdown_reduction(best, remaining)  # commit the drawdown
+            results.append(self._build_result(best, len(results) + 1, reduction=best_reduction))
+            budget_left -= self._total_cost(best)
+            candidates.remove(best)
         return results
 
     def run_all_scenarios(self):

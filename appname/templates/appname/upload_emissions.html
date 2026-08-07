@@ -163,9 +163,11 @@ document.getElementById('downloadTemplate').addEventListener('click', function(e
         'waste_management',      // tonnes/yr
         'medical_inhalers',      // units/yr (pMDI)
         'contractor_logistics',  // km/yr (Scope 3 contracted transport)
+        'flights',               // passenger-km/yr (Scope 3 air travel)
+        'lab_consumables',       // USD spend/yr (Scope 3 procurement, EEIO)
     ];
-    const example = ['2024-12-31', '185000', '0', '1200', '48700', '18200', '5100', '142', '22', '31', '840', '12000'];
-    const notes   = ['# YYYY-MM-DD', '# kWh', '# m³', '# kg', '# litres', '# litres', '# km', '# kg', '# kg', '# tonnes', '# pMDI units', '# km'];
+    const example = ['2024-12-31', '185000', '0', '1200', '48700', '18200', '5100', '142', '22', '31', '840', '12000', '250000', '180000'];
+    const notes   = ['# YYYY-MM-DD', '# kWh', '# m³', '# kg', '# litres', '# litres', '# km', '# kg', '# kg', '# tonnes', '# pMDI units', '# km', '# passenger-km', '# USD spend'];
     const csv = [notes.join(','), headers.join(','), example.join(',')].join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
