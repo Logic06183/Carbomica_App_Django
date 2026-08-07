@@ -577,3 +577,49 @@ class FreshFacilityOptimiserTest(TestCase):
                 len(scenarios[name]['results']), 0,
                 f'Scenario "{name}" returned empty results — Bug 2 is back'
             )
+
+
+class OptimizationResultsPageTest(TestCase):
+    """Regression: the results page must render on both the session path (fresh
+    optimise POST) and the DB-fallback path (session expired). It previously
+    500'd on a TemplateSyntaxError in _results_table.html (sdg_goals.split)."""
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command('sync_interventions', stdout=StringIO())
+        cls.user = User.objects.create_user('opter', 'opter@example.com', 'pw')
+
+    def test_results_page_renders_on_both_paths(self):
+        self.client.force_login(self.user)
+        self.client.post('/add-facility/', {
+            'display_name': 'Results Test Facility', 'code_name': 'RES_FAC',
+            'sector': 'research', 'country': 'ZW', 'facility_type': 'university_lab',
+            'grid_electricity': '320', 'grid_gas': '45', 'bottled_gas': '6',
+            'liquid_fuel': '28', 'vehicle_fuel_owned': '22', 'business_travel': '85',
+            'anaesthetic_gases': '0', 'refrigeration_gases': '14',
+            'waste_management': '12', 'medical_inhalers': '0', 'contractor_logistics': '18',
+        })
+        facility = Facility.objects.get(code_name='RES_FAC')
+
+        response = self.client.post(f'/optimize/{facility.id}/', {
+            'name': 'Regression scenario', 'budget': '50000', 'target_reduction': '30',
+            'grid_electricity': '320', 'grid_gas': '45', 'bottled_gas': '6',
+            'liquid_fuel': '28', 'vehicle_fuel_owned': '22', 'business_travel': '85',
+            'anaesthetic_gases': '0', 'refrigeration_gases': '14',
+            'waste_management': '12', 'medical_inhalers': '0', 'contractor_logistics': '18',
+        })
+        self.assertEqual(response.status_code, 302)
+        scenario_id = int(response['Location'].rstrip('/').rsplit('/', 1)[-1])
+
+        # Session path: same client that ran the optimisation.
+        response = self.client.get(f'/optimization-results/{scenario_id}/')
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'rounded-pill')  # SDG badges rendered
+
+        # DB-fallback path: fresh session, no cached scenarios.
+        from django.test import Client
+        fresh = Client()
+        fresh.force_login(self.user)
+        response = fresh.get(f'/optimization-results/{scenario_id}/')
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'rounded-pill')

@@ -859,7 +859,7 @@ class CarbomicaOptimizer:
             'annual_savings': annual_savings,
             'roi': roi,
             'payback_years': payback_years,
-            'sdg_goals': fi.intervention.sdg_goals or '',
+            'sdg_goals': [s.strip() for s in (fi.intervention.sdg_goals or '').split(',') if s.strip()],
         }
 
     def _summarise(self, results):

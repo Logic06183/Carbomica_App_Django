@@ -632,7 +632,7 @@ def optimization_results(request, scenario_id):
                 'annual_savings': float(r.annual_savings),
                 'roi': float(r.expected_roi),
                 'payback_years': r.payback_months / 12 if r.payback_months else None,
-                'sdg_goals': r.intervention.sdg_goals,
+                'sdg_goals': [s.strip() for s in (r.intervention.sdg_goals or '').split(',') if s.strip()],
             }
             for r in results
         ]
