@@ -836,3 +836,84 @@ class BaselineNotCumulativeTest(TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertContains(r, '92.8')      # 100000 kWh * 0.928 kg = 92.8 tCO2e
         self.assertNotContains(r, '185.6')  # the doubled figure
+
+
+class ScienceValidationTest(TestCase):
+    """Emission factors must match their cited published sources, and end-use
+    caps must stop device-level interventions claiming a whole category."""
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command('sync_interventions', stdout=StringIO())
+        cls.facility = Facility.objects.create(
+            code_name='SCI_FAC', display_name='Science Facility', country='ZA')
+
+    def test_factors_match_published_sources(self):
+        from appname.modeling import EMISSION_FACTORS, WASTE_EF
+        self.assertEqual(EMISSION_FACTORS['bottled_gas'], Decimal('0.00294'))   # DEFRA 2023 LPG/kg
+        self.assertEqual(EMISSION_FACTORS['grid_gas'], Decimal('0.00202'))      # DEFRA 2023 gas/m3
+        self.assertEqual(EMISSION_FACTORS['liquid_fuel'], Decimal('0.00268'))   # DEFRA mineral diesel/L
+        self.assertEqual(WASTE_EF['clinical'], Decimal('1.074'))                # Rizan 2021 HT incineration
+        self.assertEqual(WASTE_EF['default'], Decimal('0.497'))                 # DEFRA municipal landfill
+
+    def test_waste_factor_is_sector_aware(self):
+        from appname.modeling import compute_tco2e
+        source = EmissionSource.objects.create(
+            facility=self.facility, code_name='SCI_SRC', display_name='src')
+        data = EmissionData.objects.create(
+            emission_source=source, waste_management=Decimal('10'))
+        clinical = compute_tco2e(data, 'ZA', 'clinical')['waste_management']
+        general = compute_tco2e(data, 'ZA', 'research')['waste_management']
+        self.assertEqual(clinical, Decimal('10.74'))
+        self.assertEqual(general, Decimal('4.97'))
+        self.assertGreater(clinical, general)
+
+    def test_lighting_interventions_capped_at_end_use_share(self):
+        # Three aggressive LED entries against 100 tCO2e of electricity:
+        # without caps they'd claim ~95 tCO2e; the lighting pool caps the
+        # combined claim at 25 tCO2e (25% end-use share).
+        fis = []
+        for code in ('LED_WATT_95', 'LED_WATT_50', 'LED_WATT_20'):
+            fis.append(FacilityIntervention.objects.create(
+                facility=self.facility,
+                intervention=Intervention.objects.get(code_name=code),
+                implementation_cost=Decimal('100'), maintenance_cost=Decimal('0'),
+            ))
+        optimizer = CarbomicaOptimizer(
+            facility_interventions=fis, budget=Decimal('10000'),
+            total_baseline_emissions=Decimal('100'),
+            category_baselines={'grid_electricity': Decimal('100')},
+        )
+        for name, scenario in optimizer.run_all_scenarios().items():
+            total = sum(r['emission_reduction'] for r in scenario['results'])
+            self.assertLessEqual(total, Decimal('25'),
+                                 f'{name}: lighting claimed {total} of a 25 tCO2e lighting pool')
+
+    def test_solar_is_not_capped(self):
+        fi = FacilityIntervention.objects.create(
+            facility=self.facility,
+            intervention=Intervention.objects.get(code_name='SOLAR_600KWP'),
+            implementation_cost=Decimal('612000'), maintenance_cost=Decimal('0'),
+        )
+        optimizer = CarbomicaOptimizer(
+            facility_interventions=[fi], budget=Decimal('1000000'),
+            total_baseline_emissions=Decimal('100'),
+            category_baselines={'grid_electricity': Decimal('100')},
+        )
+        result = optimizer.full_coverage()
+        self.assertGreater(result[0]['emission_reduction'], Decimal('90'))  # 99% of 100
+
+
+class MethodologyPageTest(TestCase):
+    """The public methodology page must render from the modelling constants."""
+
+    def test_methodology_page_renders_and_matches_code(self):
+        response = self.client.get('/methodology/')
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'DEFRA 2023')
+        self.assertContains(response, '2.93921')          # corrected LPG factor
+        self.assertContains(response, 'Rizan et al. 2021') # clinical waste source
+        self.assertContains(response, 'End-use share caps')
+        self.assertContains(response, 'Known limitations')
+        self.assertContains(response, 'Community validation')
+        self.assertContains(response, '10.5281/zenodo.12730527')

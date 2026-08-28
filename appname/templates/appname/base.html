@@ -303,7 +303,7 @@
         <div style="color:#7a5a14;">
             <i class="fas fa-flask me-1" style="color:#c89220;"></i>
             <strong>Preview mode.</strong>
-            All data is shared across visitors and may reset at any time. Sign-in is bypassed for evaluation. Production version uses your own private organisation account.
+            All data is shared across visitors and may reset at any time. Sign-in is bypassed for evaluation.
         </div>
         <span style="color:#7a5a14;font-weight:600;font-size:.78rem;">
             Production version uses your own private organisation account.
@@ -339,16 +339,17 @@
                     <strong>VERDEX</strong> — Grant-ready emissions reporting for any organisation
                 </p>
                 <p class="mb-0 small text-muted">
-                    GHG Protocol Corporate Standard · IPCC AR6 emission factors ·
-                    GLEC transport · DEFRA conversion factors.
-                    Audit-grade methodology trace on every report.
+                    GHG Protocol Corporate Standard · IPCC GWP₁₀₀ · IEA 2023 grid factors ·
+                    DEFRA 2023 conversion factors.
+                    <a href="{% url 'methodology' %}" class="fw-semibold" style="color:var(--hh-blue);">
+                        Full methodology, factors &amp; assumptions →</a>
                 </p>
             </div>
             <div class="col-md-3 text-md-end mt-3 mt-md-0">
-                <span class="small text-muted" style="font-size:.75rem;">
+                <a href="{% url 'methodology' %}" class="small text-muted text-decoration-none" style="font-size:.75rem;">
                     <i class="fas fa-shield-alt me-1" style="color:var(--hh-success);"></i>
-                    GHG Protocol · IPCC AR6
-                </span>
+                    Methodology &amp; assumptions
+                </a>
             </div>
         </div>
     </div>

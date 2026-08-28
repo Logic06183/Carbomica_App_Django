@@ -80,48 +80,72 @@ ELECTRICITY_EF = {          # tCO₂e per kWh of grid electricity consumed
 EMISSION_FACTORS = {
     # field_name: tCO₂e per unit (unit shown in parentheses)
     'grid_electricity':    None,                  # country-specific — see ELECTRICITY_EF
-    'grid_gas':            Decimal('0.00202'),    # per m³ natural gas (piped)
-    'bottled_gas':         Decimal('0.00214'),    # per kg LPG
-    'liquid_fuel':         Decimal('0.00268'),    # per litre diesel/petrol
-    'vehicle_fuel_owned':  Decimal('0.00268'),    # per litre (owned fleet diesel)
-    'business_travel':     Decimal('0.000171'),   # per km (average medium car)
-    'anaesthetic_gases':   Decimal('0.802'),      # per kg anaesthetic agent consumed
-    'refrigeration_gases': Decimal('1.800'),      # per kg refrigerant lost/recharged
-    'waste_management':    Decimal('0.467'),      # per tonne clinical waste
-    'medical_inhalers':    Decimal('0.0189'),     # per pMDI unit dispensed
-    'contractor_logistics': Decimal('0.000267'), # per km contracted vehicle travel
-    'flights':             Decimal('0.00015'),   # per passenger-km flown (DEFRA 2023
-                                                 # long-haul economy incl. radiative forcing)
-    'lab_consumables':     Decimal('0.0005'),    # per USD spend on lab consumables &
-                                                 # equipment (EEIO spend-based factor,
-                                                 # HESCET v2 / DEFRA 2023 ~0.5 kgCO₂e/USD)
+    'grid_gas':            Decimal('0.00202'),    # per m³ natural gas (DEFRA 2023: 2.02633 kg/m³)
+    'bottled_gas':         Decimal('0.00294'),    # per kg LPG (DEFRA 2023: 2.93921 kg/kg)
+    'liquid_fuel':         Decimal('0.00268'),    # per litre mineral diesel (DEFRA 2023: 2.68779 kg/L
+                                                 # — mineral, not B7 blend; LMIC pump diesel)
+    'vehicle_fuel_owned':  Decimal('0.00268'),    # per litre (owned fleet, mineral diesel)
+    'business_travel':     Decimal('0.000171'),   # per km (DEFRA 2023 average car, unknown fuel)
+    'anaesthetic_gases':   Decimal('0.802'),      # per kg agent (GWP₁₀₀ mix: 50% isoflurane 510,
+                                                 # 30% sevoflurane 130, 20% desflurane 2540 —
+                                                 # Sulbaek Andersen et al. 2010 / IPCC)
+    'refrigeration_gases': Decimal('1.800'),      # per kg refrigerant lost (average HFC blend:
+                                                 # R-410A 2088, R-134a 1430, R-22 1810)
+    'waste_management':    None,                  # sector-specific — see WASTE_EF
+    'medical_inhalers':    Decimal('0.0189'),     # per pMDI unit (NHS England ~10–37 kg/unit,
+                                                 # salbutamol-weighted average)
+    'contractor_logistics': Decimal('0.000267'), # per km contracted vehicle (DEFRA 2023 avg van)
+    'flights':             Decimal('0.00015'),   # per passenger-km (DEFRA 2023 long-haul
+                                                 # economy incl. radiative forcing: 0.14993 kg/pkm)
+    'lab_consumables':     Decimal('0.0005'),    # per USD spend (EEIO spend-based, HESCET v2
+                                                 # / DEFRA 2023 ~0.5 kgCO₂e per USD)
+}
+
+# Waste treatment factor depends on the disposal route, which follows sector:
+# clinical waste goes to high-temperature incineration (the compliant route for
+# infectious/anatomical waste, and the dominant route in LMIC facilities);
+# general organisational waste goes to mixed municipal landfill.
+# Sources: Rizan et al. 2021, J. Cleaner Production (high-temp incineration
+# 1,074 kg CO₂e/t; range 21–1,074 across routes); DEFRA 2023 municipal
+# residual waste to landfill 497 kg CO₂e/t.
+WASTE_EF = {
+    'clinical': Decimal('1.074'),   # tCO₂e per tonne — high-temp incineration
+    'default':  Decimal('0.497'),   # tCO₂e per tonne — municipal landfill
 }
 
 
-def compute_tco2e(emission_data, country='OTHER'):
+def compute_tco2e(emission_data, country='OTHER', sector=None):
     """
     Convert raw usage quantities stored in an EmissionData record to tCO₂e.
 
     Args:
         emission_data: EmissionData instance (raw physical units per field).
         country:       ISO-2 country code of the facility (for electricity EF).
+        sector:        Facility sector key (for the waste treatment route:
+                       clinical → high-temp incineration, else landfill).
 
     Returns:
         dict with one key per emission field (tCO₂e value) plus 'total'.
     """
     electricity_ef = ELECTRICITY_EF.get(country, ELECTRICITY_EF['OTHER'])
+    waste_ef = WASTE_EF['clinical'] if sector == 'clinical' else WASTE_EF['default']
     results = {}
     for field, factor in EMISSION_FACTORS.items():
         raw = getattr(emission_data, field, None) or Decimal('0')
-        ef = electricity_ef if field == 'grid_electricity' else (factor or Decimal('0'))
+        if field == 'grid_electricity':
+            ef = electricity_ef
+        elif field == 'waste_management':
+            ef = waste_ef
+        else:
+            ef = factor or Decimal('0')
         results[field] = Decimal(str(raw)) * ef
     results['total'] = sum(results.values())
     return results
 
 
-def sum_tco2e(emission_data_qs, country='OTHER'):
+def sum_tco2e(emission_data_qs, country='OTHER', sector=None):
     """Sum tCO₂e across a queryset of EmissionData records for one facility."""
-    return sum(compute_tco2e(ed, country)['total'] for ed in emission_data_qs) or Decimal('0')
+    return sum(compute_tco2e(ed, country, sector)['total'] for ed in emission_data_qs) or Decimal('0')
 
 
 # ---------------------------------------------------------------------------
@@ -822,6 +846,38 @@ INTERVENTION_LIBRARY = {
 
 
 # ---------------------------------------------------------------------------
+# End-use share caps — bound appliance-level interventions to the plausible
+# share of a category their end-use represents. A lighting retrofit cannot
+# abate more electricity than lighting consumes; without this, a single
+# "per lamp" entry claims the whole electricity baseline.
+#
+# Shares approximate commercial-building end-use splits (US EIA CBECS 2018;
+# CIBSE Guide F), with cooling raised for hot-climate LMIC settings. These are
+# documented modelling assumptions, overridable per site via
+# FacilityIntervention.emission_reduction_achieved.
+# ---------------------------------------------------------------------------
+END_USE_GROUPS = {
+    # code_name prefix → (end-use pool name, max share of the target category)
+    'LED_':           ('lighting',      Decimal('0.25')),
+    'LED_LIGHTING':   ('lighting',      Decimal('0.25')),
+    'LAMP_':          ('lighting',      Decimal('0.25')),
+    'AC_':            ('cooling',       Decimal('0.30')),
+    'FREEZER_':       ('refrigeration', Decimal('0.15')),
+    'HEATER_':        ('heating',       Decimal('0.20')),
+    'EE_LAUNDRY':     ('laundry',       Decimal('0.10')),
+    'WHITE_ROOF':     ('cooling',       Decimal('0.30')),
+}
+
+
+def end_use_group(code_name):
+    """Return (pool_name, share_cap) for a device-level intervention, or None."""
+    for prefix, group in END_USE_GROUPS.items():
+        if code_name.startswith(prefix):
+            return group
+    return None
+
+
+# ---------------------------------------------------------------------------
 # CarbomicaOptimizer — three-scenario resource allocation
 # ---------------------------------------------------------------------------
 
@@ -892,6 +948,26 @@ class CarbomicaOptimizer:
     def _fresh_remaining(self):
         remaining = {k: Decimal(str(v)) for k, v in self.category_baselines.items()}
         remaining['__untargeted__'] = self.baseline
+        # End-use pools: each device class may only abate its share of the
+        # category (lighting ≤ 25% of electricity, etc.). Pools are sized from
+        # the ORIGINAL baselines and drawn down alongside the category itself.
+        pools = {}
+        for fi in self.interventions:
+            group = end_use_group(fi.intervention.code_name)
+            if not group:
+                continue
+            pool_name, share = group
+            if pool_name in pools:
+                continue
+            target_cats = [
+                c.strip() for c in (fi.intervention.target_category or '').split(',') if c.strip()
+            ]
+            pool_base = sum(
+                (Decimal(str(self.category_baselines.get(cat, Decimal('0')))) for cat in target_cats),
+                Decimal('0'),
+            ) if target_cats else self.baseline
+            pools[pool_name] = share * pool_base
+        remaining['__pools__'] = pools
         return remaining
 
     def _drawdown_reduction(self, fi, remaining, commit=True):
@@ -899,14 +975,25 @@ class CarbomicaOptimizer:
         target_cats = [
             c.strip() for c in (fi.intervention.target_category or '').split(',') if c.strip()
         ]
+        group = end_use_group(fi.intervention.code_name)
+        pools = remaining.get('__pools__', {})
+        pool_name = group[0] if group else None
+        pool_left = pools.get(pool_name) if pool_name is not None else None
+
         if target_cats and self.category_baselines:
             total = Decimal('0')
             for cat in target_cats:
                 available = remaining.get(cat, Decimal('0'))
+                if pool_left is not None:
+                    available = min(available, pool_left)
                 red = (pct / 100) * available
                 if commit:
-                    remaining[cat] = available - red
+                    remaining[cat] = remaining.get(cat, Decimal('0')) - red
+                if pool_left is not None:
+                    pool_left -= red
                 total += red
+            if commit and pool_name is not None:
+                pools[pool_name] = pool_left
             return total
         # No category info: draw from the shared untargeted pool.
         available = remaining.get('__untargeted__', self.baseline)

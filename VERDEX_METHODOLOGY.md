@@ -10,6 +10,39 @@ described in section "Current methodology". The improvements listed under
 
 ---
 
+## Validation audit — August 2026
+
+Every conversion factor was checked against its published source. Results:
+
+| Factor | Was | Now | Source |
+|---|---|---|---|
+| LPG (per kg) | 2.14 kg CO₂e ❌ | **2.939 kg CO₂e** | DEFRA 2023 (2.93921) |
+| Clinical waste (per t) | 467 kg CO₂e (unsourced) ❌ | **1,074 kg CO₂e** clinical / **497** general, sector-routed | Rizan et al. 2021, J. Cleaner Production; DEFRA 2023 landfill |
+| Natural gas (per m³) | 2.02 kg CO₂e | unchanged ✓ | DEFRA 2023 (2.02633) |
+| Diesel (per litre) | 2.68 kg CO₂e | unchanged ✓ (mineral diesel — LMIC pump fuel) | DEFRA 2023 (2.68779) |
+| Car travel (per km) | 0.171 kg CO₂e | unchanged ✓ | DEFRA 2023 average car |
+| Long-haul flight (per pkm) | 0.150 kg CO₂e | unchanged ✓ (conservative vs newer factors) | DEFRA 2023 incl. RF (0.14993) |
+| Anaesthetic mix GWP | 802 | unchanged ✓ (arithmetic verified) | Sulbaek Andersen et al. 2010 |
+| pMDI inhaler (per unit) | 18.9 kg CO₂e | unchanged ✓ (range 10–37) | NHS England / BEIS |
+
+Structural modelling corrections in the same audit:
+
+1. **Category-baseline drawdown** — scenario reductions can no longer exceed
+   the baseline (same-category interventions previously each claimed the full
+   category; results reported up to 325% of baseline).
+2. **End-use share caps** — device-level interventions (LED, AC, freezers,
+   heaters, laundry) are bounded by their end-use's plausible share of the
+   category (US EIA CBECS 2018 / CIBSE Guide F splits).
+3. **Single-period baselines** — the baseline is the latest reporting period,
+   not the cumulative sum of all historical records.
+4. **Sector-aware waste routing** — clinical facilities use the high-temperature
+   incineration factor; other sectors use municipal landfill.
+
+The full factor table, assumptions, limitations and the community-validation
+roadmap are published in-app at `/methodology/`.
+
+---
+
 ## Current methodology (live in the preview deployment)
 
 ### Framework alignment

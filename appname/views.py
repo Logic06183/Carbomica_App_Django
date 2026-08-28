@@ -150,7 +150,7 @@ def _aggregate_tco2e_all(user):
 
     for ed in latest_per_facility.values():
         country = ed.emission_source.facility.country
-        tco2e = compute_tco2e(ed, country)
+        tco2e = compute_tco2e(ed, country, ed.emission_source.facility.sector)
         for field in EMISSION_FIELDS:
             category_tco2e[field] += tco2e.get(field, Decimal('0'))
         facility_tco2e[ed.emission_source.facility_id] += tco2e['total']
@@ -167,7 +167,8 @@ def _aggregate_tco2e_all(user):
         if current is None or (ed.date, ed.id) > (current.date, current.id):
             latest_per_fac_month[key] = ed
     for (fid, month_key), ed in latest_per_fac_month.items():
-        tco2e = compute_tco2e(ed, ed.emission_source.facility.country)
+        tco2e = compute_tco2e(ed, ed.emission_source.facility.country,
+                              ed.emission_source.facility.sector)
         monthly_tco2e_map[month_key] += tco2e['total']
 
     monthly_tco2e = sorted(monthly_tco2e_map.items())  # [(date, Decimal), ...]
@@ -183,7 +184,7 @@ def home(request):
     facility_count = Facility.objects.count()
     all_eds = EmissionData.objects.select_related('emission_source__facility').all()
     total_emissions = sum(
-        compute_tco2e(ed, country=ed.emission_source.facility.country if ed.emission_source and ed.emission_source.facility else 'OTHER')['total']
+        compute_tco2e(ed, country=ed.emission_source.facility.country if ed.emission_source and ed.emission_source.facility else 'OTHER', sector=ed.emission_source.facility.sector if ed.emission_source and ed.emission_source.facility else None)['total']
         for ed in all_eds
     ) or Decimal('0')
     active_interventions = FacilityIntervention.objects.filter(
@@ -236,6 +237,81 @@ def home(request):
         'call_to_actions': call_to_actions,
     }
     return render(request, 'appname/home.html', context)
+
+
+# ---------------------------------------------------------------------------
+# Methodology & assumptions — public, rendered from the modelling constants so
+# the page can never drift from what the app actually computes.
+# ---------------------------------------------------------------------------
+
+CATEGORY_UNITS = {
+    'grid_electricity':    'kWh', 'grid_gas': 'm³', 'bottled_gas': 'kg',
+    'liquid_fuel': 'litre', 'vehicle_fuel_owned': 'litre',
+    'business_travel': 'km', 'anaesthetic_gases': 'kg',
+    'refrigeration_gases': 'kg', 'waste_management': 'tonne',
+    'medical_inhalers': 'pMDI unit', 'contractor_logistics': 'km',
+    'flights': 'passenger-km', 'lab_consumables': 'USD spend',
+}
+
+CATEGORY_SOURCES = {
+    'grid_electricity':    'IEA 2023 country grid factors (ZW 0.556, ZA 0.928, KE 0.032 kg/kWh …)',
+    'grid_gas':            'DEFRA 2023 — natural gas, 2.02633 kg CO₂e/m³',
+    'bottled_gas':         'DEFRA 2023 — LPG, 2.93921 kg CO₂e/kg',
+    'liquid_fuel':         'DEFRA 2023 — mineral diesel, 2.68779 kg CO₂e/L (LMIC pump fuel, not B7 blend)',
+    'vehicle_fuel_owned':  'DEFRA 2023 — mineral diesel, 2.68779 kg CO₂e/L',
+    'business_travel':     'DEFRA 2023 — average car, unknown fuel, 0.171 kg CO₂e/km',
+    'anaesthetic_gases':   'GWP₁₀₀ case-mix: 50% isoflurane (510) · 30% sevoflurane (130) · 20% desflurane (2,540) — Sulbaek Andersen et al. 2010 / IPCC',
+    'refrigeration_gases': 'Average in-service HFC blend (R-410A 2,088 · R-134a 1,430 · R-22 1,810) per kg lost or recharged',
+    'waste_management':    'Sector-routed: clinical → high-temp incineration 1,074 kg CO₂e/t (Rizan et al. 2021, J. Cleaner Production); other sectors → municipal landfill 497 kg CO₂e/t (DEFRA 2023)',
+    'medical_inhalers':    'NHS England / BEIS — pMDI HFC-134a propellant, 18.9 kg CO₂e per salbutamol-weighted unit (range 10–37)',
+    'contractor_logistics': 'DEFRA 2023 — average diesel van, 0.267 kg CO₂e/km',
+    'flights':             'DEFRA 2023 — long-haul economy incl. radiative forcing, 0.14993 kg CO₂e/passenger-km',
+    'lab_consumables':     'Spend-based EEIO factor ~0.5 kg CO₂e/USD — HESCET v2 (Higher Education Supply Chain Emission Tool) / DEFRA 2023 EEIO tables',
+}
+
+
+def methodology(request):
+    """Public methodology & assumptions page — the audit trail for every number."""
+    from .modeling import (
+        EMISSION_FACTORS, ELECTRICITY_EF, WASTE_EF, END_USE_GROUPS,
+        DISCOUNT_RATE, CARBON_CREDIT_PRICE_USD,
+    )
+    factor_rows = []
+    for field in EMISSION_FIELDS:
+        factor = EMISSION_FACTORS.get(field)
+        if field == 'grid_electricity':
+            display = 'country-specific (see grid table)'
+        elif field == 'waste_management':
+            display = f"{WASTE_EF['clinical'] * 1000:.0f} / {WASTE_EF['default'] * 1000:.0f} kg CO₂e per tonne (clinical / general)"
+        else:
+            display = f"{factor * 1000:.5g} kg CO₂e per {CATEGORY_UNITS[field]}"
+        factor_rows.append({
+            'label': CATEGORY_LABELS[field],
+            'unit': CATEGORY_UNITS[field],
+            'scope': CATEGORY_SCOPES[field],
+            'factor': display,
+            'source': CATEGORY_SOURCES[field],
+        })
+
+    grid_rows = sorted(
+        ({'code': code, 'value': f'{ef * 1000:.3f}'} for code, ef in ELECTRICITY_EF.items()),
+        key=lambda r: r['code'],
+    )
+    # Unique end-use pools with their caps
+    seen, pool_rows = set(), []
+    for prefix, (pool, share) in END_USE_GROUPS.items():
+        if pool in seen:
+            continue
+        seen.add(pool)
+        pool_rows.append({'pool': pool.title(), 'share': f'{share * 100:.0f}%'})
+
+    return render(request, 'appname/methodology.html', {
+        'factor_rows': factor_rows,
+        'grid_rows': grid_rows,
+        'pool_rows': pool_rows,
+        'discount_rate': DISCOUNT_RATE * 100,
+        'carbon_price': CARBON_CREDIT_PRICE_USD,
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -356,7 +432,7 @@ def facilities(request):
         if source:
             latest = source.emission_data.order_by('-date').first()
         facility.latest_tco2e = (
-            compute_tco2e(latest, facility.country)['total'] if latest else None
+            compute_tco2e(latest, facility.country, facility.sector)['total'] if latest else None
         )
         facility.latest_date = latest.date if latest else None
         facility.has_emission_data = latest is not None
@@ -580,7 +656,7 @@ def optimize_interventions(request, facility_id):
             category_baselines = {}
             baseline = Decimal('0')
             if latest_ed:
-                cat = compute_tco2e(latest_ed, facility.country)
+                cat = compute_tco2e(latest_ed, facility.country, facility.sector)
                 baseline = cat.pop('total', Decimal('0'))
                 category_baselines = cat
 
@@ -1100,7 +1176,7 @@ def facility_detail(request, facility_id):
     # tCO₂e per record (for history table) and per category (for latest)
     records_with_tco2e = []
     for ed in emission_records:
-        breakdown = compute_tco2e(ed, facility.country)
+        breakdown = compute_tco2e(ed, facility.country, facility.sector)
         records_with_tco2e.append({
             'date': ed.date,
             'total_tco2e': breakdown['total'],

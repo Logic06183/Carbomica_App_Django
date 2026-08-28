@@ -16,7 +16,8 @@
         </thead>
         <tbody>
             {% for r in results %}
-            <tr {% if highlight %}style="background:rgba(46,139,87,.03);"{% endif %}>
+            {# Fade rows whose marginal reduction is ~zero (baseline already abated by earlier picks) so the impactful rows carry the eye. #}
+            <tr {% if r.emission_reduction < 0.05 %}style="opacity:.45;"{% elif highlight %}style="background:rgba(46,139,87,.03);"{% endif %}>
                 <td>
                     <span class="badge rounded-pill {% if highlight %}bg-success{% else %}bg-primary{% endif %}">
                         {{ r.priority }}

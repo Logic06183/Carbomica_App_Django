@@ -1,0 +1,179 @@
+{% extends 'appname/base.html' %}
+
+{% block content %}
+<div class="row mb-4 align-items-center">
+    <div class="col">
+        <p class="section-label mb-1">{{ BRAND_NAME }} · Transparency</p>
+        <h2 class="fw-bold mb-0">Methodology &amp; assumptions</h2>
+        <p class="text-muted mt-1 mb-0">
+            Every number {{ BRAND_NAME }} shows traces back to a published factor, a stated
+            assumption, or your own data. This page is the audit trail.
+        </p>
+    </div>
+    <div class="col-auto no-print">
+        <button onclick="window.print()" class="btn btn-outline-secondary btn-sm">
+            <i class="fas fa-print me-1"></i>Print / PDF
+        </button>
+    </div>
+</div>
+
+<!-- ── Standards ── -->
+<div class="card mb-4">
+    <div class="card-header"><i class="fas fa-certificate me-2" style="color:var(--hh-blue);"></i>Framework alignment</div>
+    <div class="card-body small">
+        <div class="row g-3">
+            <div class="col-md-3">
+                <strong class="d-block mb-1">GHG Protocol Corporate Standard</strong>
+                <span class="text-muted">Category structure and Scope 1 / 2 / 3 boundaries for all 13 emission categories.</span>
+            </div>
+            <div class="col-md-3">
+                <strong class="d-block mb-1">DEFRA 2023 conversion factors</strong>
+                <span class="text-muted">Fuel combustion, transport, flights (incl. radiative forcing) and waste treatment.</span>
+            </div>
+            <div class="col-md-3">
+                <strong class="d-block mb-1">IEA 2023 grid factors</strong>
+                <span class="text-muted">Country-specific electricity intensity for 13 grids, Sub-Saharan Africa first.</span>
+            </div>
+            <div class="col-md-3">
+                <strong class="d-block mb-1">IPCC GWP₁₀₀ values</strong>
+                <span class="text-muted">Halogenated gases (anaesthetics, refrigerants, inhaler propellants).</span>
+            </div>
+        </div>
+        <hr>
+        <p class="text-muted mb-0">
+            Intervention costs, savings and reduction percentages derive from the
+            <strong>HIGH Horizons D3.7 intervention catalogue</strong> (Luchters et al., 2024 —
+            DOI: <a href="https://doi.org/10.5281/zenodo.12730527" target="_blank" rel="noopener">10.5281/zenodo.12730527</a>),
+            built from Mt Darwin Hospital (Zimbabwe) and AKHS Mombasa (Kenya) case studies.
+            For research organisations the baseline structure follows the
+            <em>Concordat for the Environmental Sustainability of Research</em> and complements
+            LEAF (Laboratory Efficiency Assessment Framework).
+        </p>
+    </div>
+</div>
+
+<!-- ── Factor table ── -->
+<div class="card mb-4">
+    <div class="card-header"><i class="fas fa-table me-2" style="color:var(--hh-blue);"></i>Emission conversion factors</div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0 small">
+                <thead class="table-light">
+                    <tr><th>Category</th><th>Input unit</th><th>Scope</th><th>Factor</th><th>Source</th></tr>
+                </thead>
+                <tbody>
+                    {% for row in factor_rows %}
+                    <tr>
+                        <td class="fw-semibold">{{ row.label }}</td>
+                        <td class="text-muted">{{ row.unit }}/yr</td>
+                        <td><span class="badge rounded-pill" style="background:{% if row.scope == 1 %}#c0533e{% elif row.scope == 2 %}#268dcd{% else %}#6c757d{% endif %};font-size:.65rem;">Scope {{ row.scope }}</span></td>
+                        <td>{{ row.factor }}</td>
+                        <td class="text-muted" style="max-width:26rem;">{{ row.source }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
+    <!-- ── Grid factors ── -->
+    <div class="col-lg-5">
+        <div class="card h-100">
+            <div class="card-header"><i class="fas fa-bolt me-2" style="color:var(--hh-blue);"></i>Grid electricity intensity (kg CO₂e/kWh)</div>
+            <div class="card-body p-0">
+                <table class="table table-sm align-middle mb-0 small">
+                    <tbody>
+                        {% for row in grid_rows %}
+                        <tr><td class="fw-semibold" style="width:5rem;">{{ row.code }}</td><td>{{ row.value }}</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Optimiser + caps ── -->
+    <div class="col-lg-7">
+        <div class="card mb-4">
+            <div class="card-header"><i class="fas fa-bolt me-2" style="color:var(--hh-success);"></i>How the optimiser works</div>
+            <div class="card-body small text-muted">
+                <p class="mb-2">
+                    Three comparative scenarios: <strong>Full coverage</strong> (every applicable
+                    intervention), <strong>Fixed budget</strong> (cheapest first) and
+                    <strong>Optimised</strong> — a greedy knapsack that repeatedly selects the
+                    intervention with the highest tCO₂e reduced per USD <em>given what remains to abate</em>.
+                </p>
+                <p class="mb-2">
+                    <strong>No double-counting:</strong> each selected intervention draws down the
+                    remaining baseline of its emission category, so a second refrigerant swap competes
+                    on residual refrigerant emissions, not the original total. Summed reductions can
+                    never exceed the baseline.
+                </p>
+                <p class="mb-0">
+                    <strong>End-use share caps:</strong> device-level interventions are bounded by the
+                    plausible share of a category their end-use represents (US EIA CBECS 2018 / CIBSE
+                    Guide F splits, cooling raised for hot climates):
+                </p>
+                <ul class="mb-0 mt-1">
+                    {% for row in pool_rows %}
+                    <li>{{ row.pool }} — max {{ row.share }} of the target category</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-header"><i class="fas fa-coins me-2" style="color:var(--hh-success);"></i>Financial assumptions</div>
+            <div class="card-body small text-muted">
+                NPV uses a {{ discount_rate|floatformat:0 }}% discount rate (typical LMIC public-sector
+                borrowing) over a 10-year horizon. Carbon credit reference price:
+                ${{ carbon_price|floatformat:0 }}/tCO₂e (indicative only — no credit income is assumed
+                in ROI). Default intervention costs come from the HIGH Horizons D3.7 cost calculator and
+                are <strong>overridable per site</strong> via Upload data → Facility interventions.
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── Limitations & roadmap ── -->
+<div class="card mb-4" style="border-left:4px solid var(--hh-red);">
+    <div class="card-header"><i class="fas fa-exclamation-triangle me-2" style="color:var(--hh-red);"></i>Known limitations — read before citing results</div>
+    <div class="card-body small text-muted">
+        <ol class="mb-0" style="line-height:1.8;">
+            <li><strong>Factor-based accounting carries ±15–30% uncertainty.</strong> Verdex uses published
+                average factors, not metered measurements. Treat results as decision-support estimates,
+                not compliance-grade inventories.</li>
+            <li><strong>Intervention reduction percentages are catalogue defaults</strong> drawn from two
+                LMIC hospital case studies (HIGH Horizons D3.7). Your site will differ — enter
+                site-specific values wherever you have them; site data always overrides defaults.</li>
+            <li><strong>End-use share caps are assumptions</strong>, approximated from commercial-building
+                end-use surveys. They bound over-claiming but are not measured for your building.</li>
+            <li><strong>Spend-based procurement factors are coarse.</strong> The ~0.5 kg CO₂e/USD EEIO factor
+                averages across supply chains; supplier-specific data is always better where available.</li>
+            <li><strong>Costs are in USD</strong> using catalogue-era prices; local procurement will differ.</li>
+        </ol>
+    </div>
+</div>
+
+<div class="card mb-4" style="border-left:4px solid var(--hh-success);">
+    <div class="card-header"><i class="fas fa-users me-2" style="color:var(--hh-success);"></i>Community validation — status and roadmap</div>
+    <div class="card-body small text-muted">
+        <p class="mb-2">
+            The intervention catalogue was built from facility case studies and published factors —
+            <strong>it has not yet been validated by a broad community of facility managers and local
+            engineers</strong>, and we say so openly. What exists today, and what is planned:
+        </p>
+        <ul class="mb-0" style="line-height:1.8;">
+            <li><strong>Today:</strong> every default (cost, savings, reduction %) is overridable per site,
+                so local knowledge always wins over the catalogue.</li>
+            <li><strong>Today:</strong> this page publishes every factor and assumption for critique —
+                if a number looks wrong for your context, it can be challenged and corrected.</li>
+            <li><strong>Planned:</strong> a structured expert-review round (Delphi-style) of the intervention
+                library with facility engineers and sustainability officers across partner countries.</li>
+            <li><strong>Planned:</strong> feed anonymised, site-reported actuals (measured savings and costs)
+                back into the catalogue so defaults converge on real-world performance.</li>
+        </ul>
+    </div>
+</div>
+{% endblock %}

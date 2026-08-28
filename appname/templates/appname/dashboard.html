@@ -45,8 +45,9 @@
     </div>
     <div class="col-6 col-md-3">
         <div class="card text-center py-3">
-            <div class="text-muted small mb-1">Total investment</div>
+            <div class="text-muted small mb-1">Full-coverage CapEx</div>
             <div class="fw-bold" style="font-size:1.8rem;color:var(--hh-dark);">${{ total_investment|floatformat:0|intcomma }}</div>
+            <div class="text-muted" style="font-size:.7rem;">if every catalogued intervention were implemented</div>
         </div>
     </div>
 </div>
@@ -204,10 +205,13 @@ document.addEventListener('DOMContentLoaded', function () {
             type: 'pie', hole: 0.55,
             labels: sourceData.labels,
             values: sourceData.values,
-            textinfo: 'label+percent',
+            textinfo: 'percent',
+            textposition: 'inside',
             marker: { colors: ['#268dcd','#d33421','#2e8b57','#f0a030','#6c757d','#17a2b8','#e83e8c','#fd7e14','#20c997','#6610f2'] },
             hovertemplate: '%{label}: %{value:.2f} tCO₂e<extra></extra>'
-        }], { ...plotLayout, showlegend: false, margin: { t: 10, b: 10, l: 10, r: 10 } }, plotCfg);
+        }], { ...plotLayout, showlegend: true,
+             legend: { orientation: 'h', y: -0.1, font: { size: 11 } },
+             margin: { t: 10, b: 10, l: 10, r: 10 } }, plotCfg);
     } else {
         srcEl.innerHTML = emptyHtml;
     }
