@@ -6,17 +6,48 @@ from django.contrib.auth.models import User
 
 class Organisation(models.Model):
     """
-    A team of users who share access to the same set of facilities.
-    E.g. 'Mt Darwin District Team' or 'AKHS Kenya Programme'.
-    All members can view and edit all facilities belonging to the organisation.
+    A node in an organisational tree whose members share access to facilities.
+
+    Organisations nest, because research groups do. Wits Health Consortium is an
+    umbrella over 100+ research entities (Perinatal HIV Research Unit, VIDA,
+    Wits RHI, Agincourt, Wits Planetary Health ...), grouped into divisions, and
+    the larger entities run their own programmes. A self-referential parent
+    models that to any depth rather than hard-coding a fixed consortium →
+    entity → site scheme.
+
+    Membership grants access downward: a consortium sustainability lead sees
+    every entity beneath them, while an entity's own members see only their
+    own subtree.
     """
+
+    ORG_TYPE_CHOICES = [
+        ('consortium', 'Consortium / umbrella body'),
+        ('division', 'Division / grouping'),
+        ('entity', 'Research entity / institute / unit'),
+        ('programme', 'Programme / team'),
+    ]
+
     name = models.CharField(max_length=200)
+    short_name = models.CharField(
+        max_length=40, blank=True,
+        help_text='Acronym shown in compact views, e.g. "PHRU", "VIDA".'
+    )
+    parent = models.ForeignKey(
+        'self', null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='children',
+        help_text='The organisation this one sits under. Blank for a top-level body.'
+    )
+    org_type = models.CharField(
+        max_length=20, choices=ORG_TYPE_CHOICES, default='entity',
+        help_text='Where this sits in the hierarchy. Affects roll-up reporting only.'
+    )
     created_by = models.ForeignKey(
         User, on_delete=models.CASCADE, related_name='owned_organisations'
     )
     members = models.ManyToManyField(
         User, related_name='organisations', blank=True,
-        help_text='Users who can access all facilities in this organisation.'
+        help_text='Users who can access all facilities in this organisation '
+                  'and every organisation beneath it.'
     )
 
     class Meta:
@@ -24,6 +55,61 @@ class Organisation(models.Model):
 
     def __str__(self):
         return self.name
+
+    # ------------------------------------------------------------------
+    # Tree helpers
+    #
+    # Walked iteratively in Python rather than with a recursive CTE: the
+    # trees are small (hundreds of nodes at most), it stays portable across
+    # SQLite and Postgres, and every walk is guarded against cycles, which a
+    # self-FK makes possible if a parent is ever set to a descendant.
+    # ------------------------------------------------------------------
+
+    def ancestors(self):
+        """Parent chain, nearest first. Excludes self."""
+        chain, node, seen = [], self.parent, {self.pk}
+        while node is not None and node.pk not in seen:
+            chain.append(node)
+            seen.add(node.pk)
+            node = node.parent
+        return chain
+
+    def descendant_ids(self, include_self=True):
+        """PKs of this organisation and everything beneath it."""
+        collected = {self.pk} if include_self else set()
+        frontier, seen = [self.pk], {self.pk}
+        while frontier:
+            child_ids = list(
+                Organisation.objects
+                .filter(parent_id__in=frontier)
+                .exclude(pk__in=seen)
+                .values_list('pk', flat=True)
+            )
+            if not child_ids:
+                break
+            collected.update(child_ids)
+            seen.update(child_ids)
+            frontier = child_ids
+        return collected
+
+    def descendants(self, include_self=False):
+        ids = self.descendant_ids(include_self=include_self)
+        return Organisation.objects.filter(pk__in=ids)
+
+    @property
+    def depth(self):
+        return len(self.ancestors())
+
+    @property
+    def display_label(self):
+        return f'{self.name} ({self.short_name})' if self.short_name else self.name
+
+    def all_facilities(self):
+        """Facilities belonging to this organisation or any beneath it."""
+        return Facility.objects.filter(organisation_id__in=self.descendant_ids())
+
+    def is_ancestor_of(self, other):
+        return other is not None and other.pk in self.descendant_ids(include_self=False)
 
 
 class Facility(models.Model):

@@ -4,6 +4,7 @@ import json
 from collections import defaultdict
 
 from django.shortcuts import render, redirect, get_object_or_404
+from django.http import Http404
 from django.db import transaction
 from django.db.models import Sum, F, Avg, Count
 from django.db.models.functions import TruncMonth
@@ -108,15 +109,143 @@ INTERVENTION_COST_DEFAULTS = {
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+def _visible_org_ids(user):
+    """
+    PKs of every organisation this user can see: the ones they belong to, plus
+    everything beneath them.
+
+    Membership is inherited downward so a consortium-level sustainability lead
+    sees all member entities without being added to each one individually,
+    while an entity's own members stay scoped to their own subtree.
+    """
+    org_ids = set()
+    for org in Organisation.objects.filter(members=user):
+        if org.pk in org_ids:
+            continue            # already covered by an ancestor's subtree
+        org_ids |= org.descendant_ids()
+    return org_ids
+
+
 def _user_facilities(user):
     """
     Return all Facility objects this user can access:
       - facilities they created directly, OR
-      - facilities belonging to an organisation they are a member of.
+      - facilities belonging to an organisation they are a member of, OR
+      - facilities of any organisation beneath one they are a member of.
     """
     return Facility.objects.filter(
-        Q(created_by=user) | Q(organisation__members=user)
+        Q(created_by=user) | Q(organisation_id__in=_visible_org_ids(user))
     ).distinct()
+
+
+def _manageable_org_ids(user):
+    """
+    PKs of organisations this user may administer.
+
+    Ownership also inherits downward: whoever owns the consortium node can add
+    entities beneath it and manage them, without being named owner of each.
+    Otherwise nobody could set up a 100-entity consortium.
+    """
+    org_ids = set()
+    for org in Organisation.objects.filter(created_by=user):
+        if org.pk in org_ids:
+            continue
+        org_ids |= org.descendant_ids()
+    return org_ids
+
+
+def _require_manageable_org(user, org_id):
+    """
+    Fetch an organisation the user may administer, or 404.
+
+    Replaces a plain `created_by=user` lookup: ownership inherits down the tree,
+    so the consortium owner administers every entity beneath them.
+    """
+    if org_id is None or int(org_id) not in _manageable_org_ids(user):
+        raise Http404('No such organisation, or you do not manage it.')
+    return get_object_or_404(Organisation, id=org_id)
+
+
+def _facility_latest_tco2e(facilities):
+    """
+    {facility_id: Decimal} using each facility's most recent emission record.
+
+    Uses the latest period rather than the sum of all records — summing history
+    double-counts every prior reporting period.
+    """
+    latest = {}
+    records = (
+        EmissionData.objects
+        .filter(emission_source__facility__in=facilities)
+        .select_related('emission_source__facility')
+        .order_by('-date', '-id')
+    )
+    for ed in records:
+        facility = ed.emission_source.facility
+        if facility.id in latest:
+            continue        # ordering guarantees the first seen is the latest
+        latest[facility.id] = compute_tco2e(ed, facility.country, facility.sector)['total']
+    return latest
+
+
+def _org_tree_rows(user):
+    """
+    Flatten every organisation the user can see into depth-ordered rows with
+    roll-up totals, ready for the template to render as an indented tree.
+
+    Emissions and facility counts are cumulative over each node's whole subtree,
+    so a consortium row shows the total across all its entities.
+    """
+    visible = (
+        Organisation.objects
+        .filter(pk__in=_visible_org_ids(user))
+        .select_related('parent')
+        .prefetch_related('members')
+    )
+    by_id = {o.pk: o for o in visible}
+    manageable = _manageable_org_ids(user)
+
+    facilities = list(Facility.objects.filter(organisation_id__in=by_id))
+    tco2e_by_facility = _facility_latest_tco2e(facilities)
+
+    own_facilities = defaultdict(list)
+    for f in facilities:
+        own_facilities[f.organisation_id].append(f)
+
+    children = defaultdict(list)
+    roots = []
+    for org in sorted(visible, key=lambda o: (o.name or '')):
+        # Treat a node whose parent is not visible to this user as a root, so an
+        # entity member sees their own entity at the top rather than nothing.
+        if org.parent_id and org.parent_id in by_id:
+            children[org.parent_id].append(org)
+        else:
+            roots.append(org)
+
+    rows = []
+
+    def walk(org, depth):
+        subtree_ids = org.descendant_ids()
+        subtree_facilities = [f for f in facilities if f.organisation_id in subtree_ids]
+        rows.append({
+            'org': org,
+            'depth': depth,
+            'own_facilities': own_facilities.get(org.pk, []),
+            'facility_count': len(subtree_facilities),
+            'tco2e': sum(
+                (tco2e_by_facility.get(f.id, Decimal('0')) for f in subtree_facilities),
+                Decimal('0'),
+            ),
+            'member_count': org.members.count(),
+            'can_manage': org.pk in manageable,
+            'is_leaf': not children.get(org.pk),
+        })
+        for child in children.get(org.pk, []):
+            walk(child, depth + 1)
+
+    for root in roots:
+        walk(root, 0)
+    return rows
 
 
 def _aggregate_tco2e_all(user):
@@ -516,7 +645,7 @@ def _seed_facility_interventions(facility):
 @login_required
 def add_facility(request):
     if request.method == 'POST':
-        facility_form = FacilityForm(request.POST)
+        facility_form = FacilityForm(request.POST, user=request.user)
         emission_data_form = EmissionDataForm(request.POST)
 
         if facility_form.is_valid() and emission_data_form.is_valid():
@@ -543,7 +672,7 @@ def add_facility(request):
             )
             return redirect('facilities')
     else:
-        facility_form = FacilityForm()
+        facility_form = FacilityForm(user=request.user)
         emission_data_form = EmissionDataForm()
 
     return render(request, 'appname/add_facility.html', {
@@ -1115,10 +1244,30 @@ def my_organisation(request):
         # ── Create a new organisation ──────────────────────────────────
         if action == 'create':
             name = request.POST.get('org_name', '').strip()
+            short_name = request.POST.get('short_name', '').strip()
+            org_type = request.POST.get('org_type', 'entity')
+            parent_id = request.POST.get('parent_id') or None
+
+            parent = None
+            if parent_id:
+                # Only nest under something you administer, or anyone could
+                # graft an entity onto another consortium's tree.
+                if int(parent_id) not in _manageable_org_ids(request.user):
+                    messages.error(request, 'You cannot add an organisation under that parent.')
+                    return redirect('my_organisation')
+                parent = get_object_or_404(Organisation, id=parent_id)
+
             if name:
-                org = Organisation.objects.create(name=name, created_by=request.user)
-                org.members.add(request.user)
-                messages.success(request, f'Organisation "{name}" created.')
+                org = Organisation.objects.create(
+                    name=name, short_name=short_name, org_type=org_type,
+                    parent=parent, created_by=request.user,
+                )
+                # Membership is inherited downward, so only a top-level node
+                # needs an explicit member — a child would be redundant.
+                if parent is None:
+                    org.members.add(request.user)
+                where = f' under {parent.display_label}' if parent else ''
+                messages.success(request, f'"{name}" created{where}.')
             else:
                 messages.error(request, 'Please enter an organisation name.')
 
@@ -1126,7 +1275,7 @@ def my_organisation(request):
         elif action == 'add_member':
             org_id = request.POST.get('org_id')
             email = request.POST.get('email', '').strip().lower()
-            org = get_object_or_404(Organisation, id=org_id, created_by=request.user)
+            org = _require_manageable_org(request.user, org_id)
             try:
                 new_member = AuthUser.objects.get(email__iexact=email)
                 org.members.add(new_member)
@@ -1138,7 +1287,7 @@ def my_organisation(request):
         elif action == 'remove_member':
             org_id = request.POST.get('org_id')
             user_id = request.POST.get('user_id')
-            org = get_object_or_404(Organisation, id=org_id, created_by=request.user)
+            org = _require_manageable_org(request.user, org_id)
             if str(request.user.id) != user_id:  # can't remove yourself as owner
                 org.members.remove(user_id)
                 messages.success(request, 'Member removed.')
@@ -1147,7 +1296,7 @@ def my_organisation(request):
         elif action == 'assign_facility':
             org_id = request.POST.get('org_id')
             facility_id = request.POST.get('facility_id')
-            org = get_object_or_404(Organisation, id=org_id, created_by=request.user)
+            org = _require_manageable_org(request.user, org_id)
             facility = get_object_or_404(Facility, id=facility_id, created_by=request.user)
             facility.organisation = org
             facility.save(update_fields=['organisation'])
@@ -1157,7 +1306,7 @@ def my_organisation(request):
         elif action == 'unassign_facility':
             org_id = request.POST.get('org_id')
             facility_id = request.POST.get('facility_id')
-            org = get_object_or_404(Organisation, id=org_id, created_by=request.user)
+            org = _require_manageable_org(request.user, org_id)
             facility = get_object_or_404(Facility, id=facility_id, organisation=org)
             facility.organisation = None
             facility.save(update_fields=['organisation'])
@@ -1168,10 +1317,18 @@ def my_organisation(request):
     # Facilities the user owns that aren't yet in any org (available to assign)
     unassigned_facilities = Facility.objects.filter(created_by=request.user, organisation__isnull=True)
 
+    tree_rows = _org_tree_rows(request.user)
+    manageable_ids = _manageable_org_ids(request.user)
     return render(request, 'appname/organisation.html', {
         'owned_orgs': owned_orgs,
         'member_orgs': member_orgs,
         'unassigned_facilities': unassigned_facilities,
+        'tree_rows': tree_rows,
+        'org_type_choices': Organisation.ORG_TYPE_CHOICES,
+        # Everything the user may nest a new organisation under.
+        'parent_options': Organisation.objects.filter(pk__in=manageable_ids).order_by('name'),
+        'portfolio_tco2e': sum((r['tco2e'] for r in tree_rows if r['depth'] == 0), Decimal('0')),
+        'portfolio_facilities': sum(r['facility_count'] for r in tree_rows if r['depth'] == 0),
     })
 
 

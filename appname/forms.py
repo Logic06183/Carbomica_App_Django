@@ -4,18 +4,24 @@ from decimal import Decimal
 
 from django import forms
 from django.forms import inlineformset_factory
-from .models import Facility, EmissionData, FacilityIntervention, Intervention, EmissionSource, Policy, OptimizationScenario
+from .models import Facility, EmissionData, FacilityIntervention, Intervention, EmissionSource, Policy, OptimizationScenario, Organisation
 
 class FacilityForm(forms.ModelForm):
     class Meta:
         model = Facility
-        fields = ['code_name', 'display_name', 'sector', 'country', 'facility_type']
+        fields = ['code_name', 'display_name', 'sector', 'country', 'facility_type',
+                  'organisation']
         labels = {
             'code_name': 'Code',
             'display_name': 'Name',
             'sector': 'Sector',
             'country': 'Country',
             'facility_type': 'Type',
+            'organisation': 'Belongs to',
+        }
+        help_texts = {
+            'organisation': 'Which entity owns this site. Everyone in that '
+                            'organisation, and anyone above it, will see it.',
         }
         widgets = {
             'code_name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g., HOSP001 / NGO_KE / LAB_42'}),
@@ -23,7 +29,28 @@ class FacilityForm(forms.ModelForm):
             'sector': forms.Select(attrs={'class': 'form-select'}),
             'country': forms.Select(attrs={'class': 'form-select'}),
             'facility_type': forms.Select(attrs={'class': 'form-select'}),
+            'organisation': forms.Select(attrs={'class': 'form-select'}),
         }
+
+    def __init__(self, *args, user=None, **kwargs):
+        """
+        Scope the organisation picker to what this user may file a site under.
+
+        Without the filter the dropdown would list every organisation in the
+        database, letting anyone attach a site to another consortium's entity
+        and expose its data to that consortium's members.
+        """
+        super().__init__(*args, **kwargs)
+        field = self.fields['organisation']
+        field.required = False
+        field.empty_label = '— Not part of an organisation —'
+        if user is not None:
+            from appname.views import _visible_org_ids
+            field.queryset = Organisation.objects.filter(
+                pk__in=_visible_org_ids(user)
+            ).order_by('name')
+        else:
+            field.queryset = Organisation.objects.none()
 
 class EmissionSourceForm(forms.ModelForm):
     class Meta:

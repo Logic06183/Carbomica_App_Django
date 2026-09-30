@@ -4,10 +4,12 @@
 <div class="row mb-4">
     <div class="col-12">
         <p class="section-label mb-1">Team access</p>
-        <h2 class="mb-0">My Organisation</h2>
+        <h2 class="mb-0">Organisations</h2>
         <p class="text-muted mt-1">
-            Group your colleagues so everyone on the team can view and run optimisations
-            across the same set of facilities.
+            Organisations nest. A consortium sits above its divisions, entities and
+            programmes, and each holds its own sites. Members of a parent see
+            everything beneath it, so a consortium lead gets one portfolio view while
+            each entity keeps its own.
         </p>
     </div>
 </div>
@@ -25,18 +27,100 @@
 </div>
 {% endif %}
 
+{% if tree_rows %}
+<!-- ── Portfolio hierarchy with roll-up ─────────────────────────────── -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <strong><i class="fas fa-sitemap me-2 text-primary"></i>Portfolio structure</strong>
+                <span class="text-muted small">
+                    {{ portfolio_facilities }} site{{ portfolio_facilities|pluralize }} ·
+                    <strong>{{ portfolio_tco2e|floatformat:1 }}</strong> tCO<sub>2</sub>e total
+                </span>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm mb-0 align-middle">
+                    <thead>
+                        <tr>
+                            <th style="width:38%;">Organisation</th>
+                            <th style="width:12%;">Type</th>
+                            <th class="text-end">Sites</th>
+                            <th class="text-end">tCO<sub>2</sub>e</th>
+                            <th class="text-end">Share</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in tree_rows %}
+                        <tr {% if row.depth == 0 %}class="table-light fw-semibold"{% endif %}>
+                            <td>
+                                <span style="display:inline-block;width:{{ row.depth }}rem;"></span>
+                                {% if row.depth > 0 %}<span class="text-muted me-1">└</span>{% endif %}
+                                {{ row.org.name }}
+                                {% if row.org.short_name %}
+                                <span class="badge bg-light text-dark ms-1">{{ row.org.short_name }}</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-muted" style="font-size:.75rem;">
+                                {{ row.org.get_org_type_display }}
+                            </td>
+                            <td class="text-end">{{ row.facility_count }}</td>
+                            <td class="text-end">{{ row.tco2e|floatformat:1 }}</td>
+                            <td class="text-end text-muted">
+                                {% if portfolio_tco2e > 0 %}
+                                    {% widthratio row.tco2e portfolio_tco2e 100 %}%
+                                {% else %}—{% endif %}
+                            </td>
+                            <td class="text-end">
+                                {% for fac in row.own_facilities %}
+                                <a href="{% url 'facility_detail' fac.id %}"
+                                   class="badge bg-light text-dark text-decoration-none me-1">
+                                    {{ fac.display_name }}
+                                </a>
+                                {% endfor %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="card-footer text-muted" style="font-size:.75rem;">
+                Sites and tCO<sub>2</sub>e are cumulative over each row's whole subtree, using
+                every site's latest reporting period. A parent row therefore equals the sum
+                of its children plus any sites held directly.
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <div class="row g-4">
 
     <!-- ── Owned organisations ─────────────────────────────────────── -->
     <div class="col-lg-8">
         {% if owned_orgs %}
+            <h5 class="mb-3">Manage organisations</h5>
+            <p class="text-muted small mb-3">
+                Each organisation below can hold its own members and sites. Expand one to
+                edit it — collapsed by default so a large consortium stays navigable.
+            </p>
+            <div class="accordion mb-4" id="orgAccordion">
             {% for org in owned_orgs %}
-            <div class="card mb-4">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <strong><i class="fas fa-users me-2 text-primary"></i>{{ org.name }}</strong>
-                    <span class="badge bg-primary">{{ org.members.count }} member{{ org.members.count|pluralize }}</span>
-                </div>
-                <div class="card-body">
+            <div class="accordion-item">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button"
+                            data-bs-toggle="collapse" data-bs-target="#org{{ org.id }}">
+                        <i class="fas fa-users me-2 text-primary"></i>
+                        <span class="flex-grow-1">{{ org.display_label }}</span>
+                        <span class="badge bg-secondary me-2" style="font-size:.65rem;">
+                            {{ org.get_org_type_display }}
+                        </span>
+                        <span class="badge bg-primary me-2">{{ org.members.count }} member{{ org.members.count|pluralize }}</span>
+                    </button>
+                </h2>
+                <div id="org{{ org.id }}" class="accordion-collapse collapse" data-bs-parent="#orgAccordion">
+                <div class="accordion-body">
 
                     <!-- Members list -->
                     <h6 class="mb-2">Members</h6>
@@ -124,8 +208,10 @@
                     {% endif %}
 
                 </div>
+                </div>
             </div>
             {% endfor %}
+            </div>
         {% else %}
             <div class="alert alert-info">
                 You haven't created an organisation yet. Create one on the right to start
@@ -160,18 +246,43 @@
     <div class="col-lg-4">
         <div class="card">
             <div class="card-body">
-                <h5 class="mb-3"><i class="fas fa-plus-circle me-2 text-success"></i>Create organisation</h5>
+                <h5 class="mb-3"><i class="fas fa-plus-circle me-2 text-success"></i>Add organisation</h5>
                 <p class="text-muted small mb-3">
-                    Give your team a name — e.g. "Mt Darwin District" or "AKHS Kenya".
-                    Invite colleagues by their Google email address after creating it.
+                    Leave the parent blank for a top-level body such as a consortium.
+                    Pick a parent to add a division, entity or programme beneath one —
+                    e.g. adding "Perinatal HIV Research Unit" under a consortium.
                 </p>
                 <form method="post">
                     {% csrf_token %}
                     <input type="hidden" name="action" value="create">
                     <div class="mb-3">
-                        <label class="form-label fw-semibold">Organisation name</label>
+                        <label class="form-label fw-semibold">Name</label>
                         <input type="text" name="org_name" class="form-control"
-                               placeholder="e.g. Mt Darwin District Team" required>
+                               placeholder="e.g. Perinatal HIV Research Unit" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">
+                            Short name <span class="text-muted fw-normal">(optional)</span>
+                        </label>
+                        <input type="text" name="short_name" class="form-control"
+                               placeholder="e.g. PHRU" maxlength="40">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Sits under</label>
+                        <select name="parent_id" class="form-select">
+                            <option value="">— Top level (no parent) —</option>
+                            {% for candidate in parent_options %}
+                            <option value="{{ candidate.id }}">{{ candidate.display_label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Type</label>
+                        <select name="org_type" class="form-select">
+                            {% for value, label in org_type_choices %}
+                            <option value="{{ value }}" {% if value == 'entity' %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
                     </div>
                     <button type="submit" class="btn btn-success w-100">
                         <i class="fas fa-plus me-1"></i> Create

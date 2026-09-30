@@ -28,6 +28,41 @@ from appname.middleware import DEMO_USERNAME, DEMO_EMAIL
 
 
 # ---------------------------------------------------------------------------
+# Organisation tree.
+#
+# Wits Health Consortium is the Wits Faculty of Health Sciences research-
+# management company and an umbrella over 100+ research entities, grouped into
+# divisions. The entities below are a real, representative subset of the FHS
+# Research Entities division — enough to demonstrate consortium-level roll-up
+# without seeding all of them.
+#
+# Declared parent-first so each parent exists before its children are created.
+# ---------------------------------------------------------------------------
+ORGANISATIONS = [
+    {'key': 'WHC',       'parent': None,  'org_type': 'consortium',
+     'name': 'Wits Health Consortium', 'short_name': 'WHC'},
+    {'key': 'FHS',       'parent': 'WHC', 'org_type': 'division',
+     'name': 'FHS Research Entities', 'short_name': 'FHS'},
+
+    {'key': 'PLANETARY', 'parent': 'FHS', 'org_type': 'entity',
+     'name': 'Wits Planetary Health', 'short_name': 'Planetary Health'},
+    {'key': 'PHRU',      'parent': 'FHS', 'org_type': 'entity',
+     'name': 'Perinatal HIV Research Unit', 'short_name': 'PHRU'},
+    {'key': 'VIDA',      'parent': 'FHS', 'org_type': 'entity',
+     'name': 'Wits Vaccines and Infectious Diseases Analytics Research Unit',
+     'short_name': 'VIDA'},
+    {'key': 'RHI',       'parent': 'FHS', 'org_type': 'entity',
+     'name': 'Wits Reproductive Health and HIV Institute', 'short_name': 'Wits RHI'},
+    {'key': 'AGINCOURT', 'parent': 'FHS', 'org_type': 'entity',
+     'name': 'Rural Public Health and Health Transitions Research Unit',
+     'short_name': 'Agincourt'},
+    {'key': 'DPHRU',     'parent': 'FHS', 'org_type': 'entity',
+     'name': 'Wits Developmental Pathways to Health Research Unit',
+     'short_name': 'DPHRU'},
+]
+
+
+# ---------------------------------------------------------------------------
 # Facility baselines.
 #
 # IMPORTANT — units. Every value below is *activity data* in the physical unit
@@ -174,23 +209,25 @@ FACILITIES = [
         },
     },
 
-    # ── Research sector — Wits Health Consortium demonstration group ─────────
-    # Activity data representative of a South African health-research group of
-    # this size. Figures are illustrative planning defaults, not audited
-    # returns: electricity from floor area × SANS 204 office/lab intensities,
-    # generator diesel sized for Eskom load-shedding, procurement spend from
-    # typical grant consumables budgets, flights from conference/fieldwork
-    # travel patterns. Every value is site-overridable in the app.
+    # ── Research sector — Wits Health Consortium ─────────────────────────────
+    # WHC is the University of the Witwatersrand Faculty of Health Sciences'
+    # research-management company, an umbrella over 100+ research entities.
+    # The entities and their locations below are real and public; the emission
+    # figures are ILLUSTRATIVE planning defaults for demonstration, not audited
+    # returns. They are sized from floor area x SANS 204 office/lab intensities,
+    # generator diesel for Eskom load-shedding, typical grant consumables
+    # budgets, and conference/fieldwork travel patterns. Every value is
+    # site-overridable in the app.
     {
-        'code_name': 'WHC_PHRU',
-        'display_name': 'Wits Planetary Health Research Division',
+        'code_name': 'WHC_PLANETARY',
+        'display_name': 'Wits Planetary Health — Parktown',
         'country': 'ZA',
         'sector': 'research',
         'facility_type': 'research_office',
-        'organisation': 'Wits Health Consortium',
+        'organisation': 'PLANETARY',
         'emission_source': 'Planetary Health — 2024 Annual Baseline',
         'emissions': {
-            'grid_electricity': Decimal('420000'),    # kWh (≈3,000 m² @ 140 kWh/m²)
+            'grid_electricity': Decimal('420000'),    # kWh (~3,000 m2 @ 140 kWh/m2)
             'grid_gas': Decimal('0'),
             'bottled_gas': Decimal('1200'),           # kg
             'liquid_fuel': Decimal('14000'),          # L standby generator
@@ -206,51 +243,123 @@ FACILITIES = [
         },
     },
     {
-        'code_name': 'WHC_IMMUNO',
-        'display_name': 'WHC Immunology & Vaccinology Laboratory',
+        'code_name': 'WHC_PHRU',
+        'display_name': 'Perinatal HIV Research Unit — Soweto',
         'country': 'ZA',
         'sector': 'research',
         'facility_type': 'university_lab',
-        'organisation': 'Wits Health Consortium',
-        'emission_source': 'Immunology Lab — 2024 Annual Baseline',
+        'organisation': 'PHRU',
+        'emission_source': 'PHRU Soweto — 2024 Annual Baseline',
         'emissions': {
-            'grid_electricity': Decimal('310000'),    # kWh (ULT freezer bank + HVAC)
+            'grid_electricity': Decimal('610000'),
+            'grid_gas': Decimal('0'),
+            'bottled_gas': Decimal('5200'),
+            'liquid_fuel': Decimal('22000'),
+            'vehicle_fuel_owned': Decimal('18000'),   # large community trial fleet
+            'business_travel': Decimal('240000'),
+            'anaesthetic_gases': Decimal('0'),
+            'refrigeration_gases': Decimal('85'),
+            'waste_management': Decimal('41'),
+            'medical_inhalers': Decimal('0'),
+            'contractor_logistics': Decimal('64000'),
+            'flights': Decimal('720000'),
+            'lab_consumables': Decimal('1650000'),
+        },
+    },
+    {
+        'code_name': 'WHC_VIDA',
+        'display_name': 'Wits VIDA Research Laboratory — Bara',
+        'country': 'ZA',
+        'sector': 'research',
+        'facility_type': 'university_lab',
+        'organisation': 'VIDA',
+        'emission_source': 'VIDA Laboratory — 2024 Annual Baseline',
+        'emissions': {
+            'grid_electricity': Decimal('310000'),    # ULT freezer bank + HVAC
             'grid_gas': Decimal('0'),
             'bottled_gas': Decimal('4500'),           # kg lab gases
             'liquid_fuel': Decimal('9000'),           # L generator (sample protection)
             'vehicle_fuel_owned': Decimal('2400'),
             'business_travel': Decimal('40000'),
             'anaesthetic_gases': Decimal('0'),
-            'refrigeration_gases': Decimal('70'),     # kg — freezer/cold-room heavy
-            'waste_management': Decimal('26'),        # tonnes
+            'refrigeration_gases': Decimal('70'),     # freezer / cold-room heavy
+            'waste_management': Decimal('26'),
             'medical_inhalers': Decimal('0'),
             'contractor_logistics': Decimal('22000'),
-            'flights': Decimal('280000'),             # passenger-km
-            'lab_consumables': Decimal('1400000'),    # USD — reagent-intensive
+            'flights': Decimal('280000'),
+            'lab_consumables': Decimal('1400000'),    # reagent-intensive
         },
     },
     {
-        'code_name': 'WHC_SPH',
-        'display_name': 'Wits School of Public Health',
+        'code_name': 'WHC_RHI',
+        'display_name': 'Wits RHI — Hillbrow Research Site',
+        'country': 'ZA',
+        'sector': 'research',
+        'facility_type': 'research_office',
+        'organisation': 'RHI',
+        'emission_source': 'Wits RHI Hillbrow — 2024 Annual Baseline',
+        'emissions': {
+            'grid_electricity': Decimal('720000'),
+            'grid_gas': Decimal('0'),
+            'bottled_gas': Decimal('2100'),
+            'liquid_fuel': Decimal('26000'),
+            'vehicle_fuel_owned': Decimal('21000'),
+            'business_travel': Decimal('310000'),
+            'anaesthetic_gases': Decimal('0'),
+            'refrigeration_gases': Decimal('64'),
+            'waste_management': Decimal('48'),
+            'medical_inhalers': Decimal('0'),
+            'contractor_logistics': Decimal('78000'),
+            'flights': Decimal('1850000'),            # large global-health portfolio
+            'lab_consumables': Decimal('1200000'),
+        },
+    },
+    {
+        'code_name': 'WHC_AGINCOURT',
+        'display_name': 'MRC/Wits Agincourt Field Site — Bushbuckridge',
+        'country': 'ZA',
+        'sector': 'research',
+        'facility_type': 'research_office',
+        'organisation': 'AGINCOURT',
+        'emission_source': 'Agincourt Field Site — 2024 Annual Baseline',
+        'emissions': {
+            'grid_electricity': Decimal('185000'),    # rural site, smaller draw
+            'grid_gas': Decimal('0'),
+            'bottled_gas': Decimal('3100'),
+            'liquid_fuel': Decimal('31000'),          # heavy generator reliance
+            'vehicle_fuel_owned': Decimal('42000'),   # household-survey fleet dominates
+            'business_travel': Decimal('480000'),
+            'anaesthetic_gases': Decimal('0'),
+            'refrigeration_gases': Decimal('22'),
+            'waste_management': Decimal('14'),
+            'medical_inhalers': Decimal('0'),
+            'contractor_logistics': Decimal('52000'),
+            'flights': Decimal('190000'),
+            'lab_consumables': Decimal('280000'),
+        },
+    },
+    {
+        'code_name': 'WHC_DPHRU',
+        'display_name': 'DPHRU — Soweto',
         'country': 'ZA',
         'sector': 'research',
         'facility_type': 'university_dept',
-        'organisation': 'Wits Health Consortium',
-        'emission_source': 'School of Public Health — 2024 Annual Baseline',
+        'organisation': 'DPHRU',
+        'emission_source': 'DPHRU Soweto — 2024 Annual Baseline',
         'emissions': {
-            'grid_electricity': Decimal('560000'),    # kWh
+            'grid_electricity': Decimal('560000'),
             'grid_gas': Decimal('0'),
             'bottled_gas': Decimal('900'),
-            'liquid_fuel': Decimal('18000'),          # L generator
-            'vehicle_fuel_owned': Decimal('11000'),   # L fieldwork fleet
-            'business_travel': Decimal('180000'),     # km
+            'liquid_fuel': Decimal('18000'),
+            'vehicle_fuel_owned': Decimal('11000'),
+            'business_travel': Decimal('180000'),
             'anaesthetic_gases': Decimal('0'),
             'refrigeration_gases': Decimal('30'),
-            'waste_management': Decimal('34'),        # tonnes
+            'waste_management': Decimal('34'),
             'medical_inhalers': Decimal('0'),
             'contractor_logistics': Decimal('48000'),
-            'flights': Decimal('1400000'),            # passenger-km — global health travel
-            'lab_consumables': Decimal('420000'),     # USD
+            'flights': Decimal('1400000'),
+            'lab_consumables': Decimal('420000'),
         },
     },
 ]
@@ -469,19 +578,26 @@ class Command(BaseCommand):
             defaults={'email': DEMO_EMAIL, 'first_name': 'Demo', 'last_name': 'Guest'},
         )
 
-        # Organisations referenced by facilities (demo groups like Wits Health
-        # Consortium). Created before facilities so the FK is available.
+        # Organisation tree, built parent-first so every parent FK resolves.
+        # The demo user is added only to the ROOT: access is inherited down the
+        # tree, so one membership grants the consortium view over every entity.
         org_map = {}
-        for org_name in dict.fromkeys(
-            f['organisation'] for f in FACILITIES if f.get('organisation')
-        ):
-            org, created = Organisation.objects.get_or_create(
-                name=org_name, defaults={'created_by': demo_user},
+        for spec in ORGANISATIONS:
+            org, created = Organisation.objects.update_or_create(
+                name=spec['name'],
+                defaults={
+                    'short_name': spec['short_name'],
+                    'org_type': spec['org_type'],
+                    'parent': org_map.get(spec['parent']) if spec['parent'] else None,
+                    'created_by': demo_user,
+                },
             )
-            org.members.add(demo_user)
-            org_map[org_name] = org
+            org_map[spec['key']] = org
+            if spec['parent'] is None:
+                org.members.add(demo_user)
+            indent = '    ' * (1 + org.depth)
             self.stdout.write(
-                f"  {'Created' if created else 'Found'} organisation: {org.name}"
+                f"{indent}{'Created' if created else 'Updated'} {org.org_type}: {org.display_label}"
             )
 
         for fdata in FACILITIES:

@@ -89,6 +89,18 @@
                             {{ facility_form.facility_type }}
                         </div>
                     </div>
+                    {% if facility_form.organisation.field.queryset.exists %}
+                    <div class="mt-3">
+                        <label class="form-label fw-semibold">
+                            Belongs to
+                            <i class="fas fa-question-circle help-icon"
+                               data-bs-toggle="popover" data-bs-placement="right"
+                               data-bs-content="The entity that owns this site — e.g. a research unit within a consortium. Everyone in that organisation, and anyone above it in the hierarchy, will see this site. Leave blank to keep it to yourself."></i>
+                        </label>
+                        {{ facility_form.organisation }}
+                        <div class="form-text">{{ facility_form.organisation.help_text }}</div>
+                    </div>
+                    {% endif %}
                 </div>
             </div>
 

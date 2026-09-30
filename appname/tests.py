@@ -17,7 +17,7 @@ from io import StringIO
 
 from appname.models import (
     Facility, EmissionData, EmissionSource,
-    Intervention, FacilityIntervention,
+    Intervention, FacilityIntervention, Organisation,
 )
 from appname.modeling import (
     INTERVENTION_LIBRARY,
@@ -1090,3 +1090,181 @@ class EmissionHistoryDeltaTest(TestCase):
         expected = Decimal('100000') * ELECTRICITY_EF['ZA']    # the drop, not the total
         self.assertEqual(older['delta_vs_latest'], expected)
         self.assertNotEqual(older['delta_vs_latest'], older['total_tco2e'])
+
+
+class OrganisationHierarchyTest(TestCase):
+    """Organisations nest (consortium → division → entity → site). Access
+    inherits downward only: a consortium lead sees every entity, an entity's
+    own members must NOT see their siblings."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.lead = User.objects.create_user('lead', 'lead@example.com', 'pw')
+        cls.phru_user = User.objects.create_user('phru', 'phru@example.com', 'pw')
+
+        cls.consortium = Organisation.objects.create(
+            name='Test Health Consortium', short_name='THC',
+            org_type='consortium', created_by=cls.lead,
+        )
+        cls.consortium.members.add(cls.lead)
+        cls.division = Organisation.objects.create(
+            name='Research Entities', org_type='division',
+            parent=cls.consortium, created_by=cls.lead,
+        )
+        cls.phru = Organisation.objects.create(
+            name='Perinatal Unit', short_name='PHRU', org_type='entity',
+            parent=cls.division, created_by=cls.lead,
+        )
+        cls.phru.members.add(cls.phru_user)
+        cls.vida = Organisation.objects.create(
+            name='Vaccines Unit', short_name='VIDA', org_type='entity',
+            parent=cls.division, created_by=cls.lead,
+        )
+
+        cls.phru_site = cls._site('PHRU_SITE', cls.phru, 100000)
+        cls.vida_site = cls._site('VIDA_SITE', cls.vida, 300000)
+
+    @classmethod
+    def _site(cls, code, org, kwh):
+        facility = Facility.objects.create(
+            code_name=code, display_name=code, country='ZA',
+            sector='research', organisation=org,
+        )
+        source = EmissionSource.objects.create(
+            facility=facility, code_name=f'{code}_SRC', display_name=code,
+        )
+        EmissionData.objects.create(
+            emission_source=source, date=date(2024, 12, 31),
+            grid_electricity=Decimal(str(kwh)),
+        )
+        return facility
+
+    # ── Tree shape ────────────────────────────────────────────────────
+    def test_descendants_span_the_whole_subtree(self):
+        ids = self.consortium.descendant_ids()
+        self.assertEqual(
+            ids,
+            {self.consortium.pk, self.division.pk, self.phru.pk, self.vida.pk},
+        )
+        self.assertEqual(self.phru.depth, 2)
+        self.assertEqual([o.pk for o in self.phru.ancestors()],
+                         [self.division.pk, self.consortium.pk])
+
+    def test_cycle_does_not_hang_the_walk(self):
+        """A parent pointed at its own descendant must not loop forever."""
+        self.consortium.parent = self.phru
+        self.consortium.save(update_fields=['parent'])
+        try:
+            self.assertIn(self.phru.pk, self.phru.descendant_ids())
+            self.assertLessEqual(len(self.consortium.ancestors()), 4)
+        finally:
+            self.consortium.parent = None
+            self.consortium.save(update_fields=['parent'])
+
+    # ── Access control ────────────────────────────────────────────────
+    def test_consortium_member_sees_every_entity_site(self):
+        from appname.views import _user_facilities
+        visible = set(_user_facilities(self.lead).values_list('code_name', flat=True))
+        self.assertEqual(visible, {'PHRU_SITE', 'VIDA_SITE'})
+
+    def test_entity_member_cannot_see_a_sibling_entity(self):
+        from appname.views import _user_facilities
+        visible = set(_user_facilities(self.phru_user).values_list('code_name', flat=True))
+        self.assertEqual(visible, {'PHRU_SITE'})
+        self.assertNotIn('VIDA_SITE', visible, 'Entity member can see a sibling entity')
+
+    def test_entity_member_cannot_reach_a_sibling_facility_page(self):
+        self.client.force_login(self.phru_user)
+        self.assertEqual(
+            self.client.get(f'/facilities/{self.phru_site.id}/').status_code, 200)
+        self.assertEqual(
+            self.client.get(f'/facilities/{self.vida_site.id}/').status_code, 404,
+            'Sibling entity facility page is reachable',
+        )
+
+    def test_entity_member_cannot_add_orgs_under_the_consortium(self):
+        self.client.force_login(self.phru_user)
+        self.client.post('/organisation/', {
+            'action': 'create', 'org_name': 'Sneaky Unit',
+            'parent_id': self.consortium.id, 'org_type': 'entity',
+        })
+        self.assertFalse(
+            Organisation.objects.filter(name='Sneaky Unit').exists(),
+            'A non-manager grafted an organisation onto another consortium',
+        )
+
+    # ── Roll-up ───────────────────────────────────────────────────────
+    def test_parent_rollup_equals_sum_of_children(self):
+        from appname.views import _org_tree_rows
+        rows = {r['org'].pk: r for r in _org_tree_rows(self.lead)}
+        consortium_row = rows[self.consortium.pk]
+        self.assertEqual(consortium_row['facility_count'], 2)
+        self.assertEqual(
+            consortium_row['tco2e'],
+            rows[self.phru.pk]['tco2e'] + rows[self.vida.pk]['tco2e'],
+        )
+
+    def test_entity_member_rollup_covers_only_their_subtree(self):
+        from appname.views import _org_tree_rows
+        rows = _org_tree_rows(self.phru_user)
+        self.assertEqual([r['org'].pk for r in rows], [self.phru.pk])
+        self.assertEqual(rows[0]['facility_count'], 1)
+
+
+class FacilityOrganisationPickerTest(TestCase):
+    """A new site must be filable directly under the user's own entity, and the
+    picker must not expose organisations the user cannot see — otherwise a site
+    could be attached to another consortium's entity and leak to its members."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.ours = User.objects.create_user('ours', 'ours@example.com', 'pw')
+        cls.theirs = User.objects.create_user('theirs', 'theirs@example.com', 'pw')
+
+        cls.our_consortium = Organisation.objects.create(
+            name='Our Consortium', org_type='consortium', created_by=cls.ours,
+        )
+        cls.our_consortium.members.add(cls.ours)
+        cls.our_entity = Organisation.objects.create(
+            name='Our Entity', org_type='entity',
+            parent=cls.our_consortium, created_by=cls.ours,
+        )
+        cls.their_entity = Organisation.objects.create(
+            name='Their Entity', org_type='entity', created_by=cls.theirs,
+        )
+        cls.their_entity.members.add(cls.theirs)
+
+    def test_picker_lists_own_subtree_only(self):
+        from appname.forms import FacilityForm
+        options = set(
+            FacilityForm(user=self.ours).fields['organisation'].queryset
+            .values_list('name', flat=True)
+        )
+        self.assertEqual(options, {'Our Consortium', 'Our Entity'})
+        self.assertNotIn('Their Entity', options)
+
+    def test_site_created_under_an_entity_is_visible_to_the_consortium(self):
+        from appname.views import _user_facilities
+        self.client.force_login(self.ours)
+        self.client.post('/add-facility/', {
+            'display_name': 'Entity Site', 'code_name': 'ENT_SITE',
+            'sector': 'research', 'country': 'ZA', 'facility_type': 'university_lab',
+            'organisation': self.our_entity.id, 'grid_electricity': '100000',
+        })
+        facility = Facility.objects.get(code_name='ENT_SITE')
+        self.assertEqual(facility.organisation, self.our_entity)
+        self.assertIn(facility, _user_facilities(self.ours))
+        self.assertNotIn(facility, _user_facilities(self.theirs))
+
+    def test_cannot_file_a_site_under_an_unseen_organisation(self):
+        self.client.force_login(self.ours)
+        self.client.post('/add-facility/', {
+            'display_name': 'Sneaky Site', 'code_name': 'SNEAK',
+            'sector': 'research', 'country': 'ZA', 'facility_type': 'university_lab',
+            'organisation': self.their_entity.id, 'grid_electricity': '100000',
+        })
+        sneaky = Facility.objects.filter(code_name='SNEAK').first()
+        self.assertIsNone(
+            sneaky.organisation if sneaky else None,
+            'A site was attached to an organisation the creator cannot see',
+        )
