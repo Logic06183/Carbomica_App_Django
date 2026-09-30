@@ -1243,11 +1243,36 @@ def facility_detail(request, facility_id):
     # Baseline tCO₂e (most recent record)
     baseline_tco2e = latest_breakdown['total_tco2e'] if latest_breakdown else Decimal('0')
 
-    # Potential tCO₂e savings from all linked interventions
-    potential_savings_pct = sum(
-        fi['emission_reduction_pct'] or 0 for fi in facility_interventions
-    )
-    potential_savings_tco2e = baseline_tco2e * min(potential_savings_pct, 100) / 100
+    # Potential tCO₂e savings if every linked intervention were applied.
+    #
+    # This must use the same drawdown model as the optimiser. Summing each
+    # intervention's headline reduction percentage double-counts every
+    # same-category measure (52 interventions each claiming a share of the same
+    # electricity baseline), which saturated the old clamp at 100% and reported
+    # the entire baseline as abatable on every facility. Reusing the optimiser's
+    # full-coverage scenario applies category drawdown and end-use caps, so this
+    # KPI now agrees with the "Full coverage" row on the optimisation results
+    # page instead of contradicting it by roughly a factor of two.
+    potential_savings_tco2e = Decimal('0')
+    if baseline_tco2e > 0:
+        # Keyed by EmissionData field name, NOT the human label used in
+        # latest_breakdown['breakdown'] — Intervention.target_category stores
+        # field names ('grid_electricity'), so label keys would silently match
+        # nothing and report zero abatement.
+        latest_ed = emission_records[0]
+        category_baselines = compute_tco2e(latest_ed, facility.country, facility.sector)
+        category_baselines.pop('total', None)
+        full_coverage = CarbomicaOptimizer(
+            facility_interventions=facility.facility_interventions.select_related(
+                'intervention', 'facility'
+            ).all(),
+            budget=Decimal('0'),          # ignored by full_coverage()
+            total_baseline_emissions=baseline_tco2e,
+            category_baselines=category_baselines,
+        ).full_coverage()
+        potential_savings_tco2e = sum(
+            r['emission_reduction'] for r in full_coverage
+        ) or Decimal('0')
 
     return render(request, 'appname/facility_detail.html', {
         'facility': facility,

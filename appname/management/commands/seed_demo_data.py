@@ -18,126 +18,239 @@ from datetime import date
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
+from django.contrib.auth.models import User
+
 from appname.models import (
     Facility, EmissionSource, EmissionData,
-    Intervention, FacilityIntervention,
+    Intervention, FacilityIntervention, Organisation,
 )
+from appname.middleware import DEMO_USERNAME, DEMO_EMAIL
 
 
+# ---------------------------------------------------------------------------
+# Facility baselines.
+#
+# IMPORTANT — units. Every value below is *activity data* in the physical unit
+# the model expects (kWh, m³, kg, litres, km, tonnes, units, passenger-km, USD),
+# NOT tCO₂e. modeling.compute_tco2e() applies the published conversion factors.
+#
+# The clinical figures published in HIGH Horizons D2.11 are stated as tCO₂e, so
+# the activity data here is back-calculated by inverting the documented factor
+# for each category (activity = published tCO₂e ÷ factor). That preserves the
+# published baseline exactly while storing the data in the model's native units.
+# The resulting values are physically sensible (e.g. Baragwanath ≈ 2.0 GWh/yr).
+# ---------------------------------------------------------------------------
 FACILITIES = [
     {
         'code_name': 'MTD_ZW',
         'display_name': 'Mt Darwin District Hospital',
         'country': 'ZW',
+        'sector': 'clinical',
         'facility_type': 'district_hospital',
+        'organisation': None,
         'emission_source': 'Mt Darwin — Annual Baseline',
-        # tCO2e per category (approximate, from D2.11 Zimbabwe data)
         'emissions': {
-            'grid_electricity': Decimal('85.4'),
-            'grid_gas': Decimal('0.0'),
-            'bottled_gas': Decimal('12.3'),
-            'liquid_fuel': Decimal('48.7'),
-            'vehicle_fuel_owned': Decimal('18.2'),
-            'business_travel': Decimal('5.1'),
-            'anaesthetic_gases': Decimal('142.0'),
-            'refrigeration_gases': Decimal('22.5'),
-            'waste_management': Decimal('31.8'),
-            'medical_inhalers': Decimal('8.4'),
+            'grid_electricity': Decimal('153597'),    # kWh      → 85.4 tCO₂e
+            'grid_gas': Decimal('0'),                 # m³
+            'bottled_gas': Decimal('4184'),           # kg LPG   → 12.3
+            'liquid_fuel': Decimal('18172'),          # litres   → 48.7
+            'vehicle_fuel_owned': Decimal('6791'),    # litres   → 18.2
+            'business_travel': Decimal('29825'),      # km       → 5.1
+            'anaesthetic_gases': Decimal('177'),      # kg agent → 142.0
+            'refrigeration_gases': Decimal('12.5'),   # kg       → 22.5
+            'waste_management': Decimal('29.6'),      # tonnes   → 31.8
+            'medical_inhalers': Decimal('444'),       # pMDI     → 8.4
+            'contractor_logistics': Decimal('19800'), # km
         },
     },
     {
         'code_name': 'AKHS_KE',
         'display_name': 'Aga Khan Hospital Mombasa',
         'country': 'KE',
+        'sector': 'clinical',
         'facility_type': 'provincial_hospital',
+        'organisation': None,
         'emission_source': 'AKHS Mombasa — Annual Baseline',
         'emissions': {
-            'grid_electricity': Decimal('210.6'),
-            'grid_gas': Decimal('0.0'),
-            'bottled_gas': Decimal('28.9'),
-            'liquid_fuel': Decimal('95.3'),
-            'vehicle_fuel_owned': Decimal('31.4'),
-            'business_travel': Decimal('12.7'),
-            'anaesthetic_gases': Decimal('98.5'),
-            'refrigeration_gases': Decimal('44.2'),
-            'waste_management': Decimal('56.1'),
-            'medical_inhalers': Decimal('14.8'),
+            'grid_electricity': Decimal('6581250'),   # kWh      → 210.6 tCO₂e
+            'grid_gas': Decimal('0'),
+            'bottled_gas': Decimal('9830'),           # → 28.9
+            'liquid_fuel': Decimal('35560'),          # → 95.3
+            'vehicle_fuel_owned': Decimal('11716'),   # → 31.4
+            'business_travel': Decimal('74269'),      # → 12.7
+            'anaesthetic_gases': Decimal('123'),      # → 98.5
+            'refrigeration_gases': Decimal('24.6'),   # → 44.2
+            'waste_management': Decimal('52.2'),      # → 56.1
+            'medical_inhalers': Decimal('783'),       # → 14.8
+            'contractor_logistics': Decimal('41200'),
         },
     },
     {
         'code_name': 'CHB_ZA',
         'display_name': 'Chris Hani Baragwanath Academic Hospital',
         'country': 'ZA',
+        'sector': 'clinical',
         'facility_type': 'central_hospital',
+        'organisation': None,
         'emission_source': 'CHB — Annual Baseline',
         'emissions': {
-            'grid_electricity': Decimal('1840.0'),
-            'grid_gas': Decimal('0.0'),
-            'bottled_gas': Decimal('85.0'),
-            'liquid_fuel': Decimal('210.0'),
-            'vehicle_fuel_owned': Decimal('72.0'),
-            'business_travel': Decimal('28.0'),
-            'anaesthetic_gases': Decimal('380.0'),
-            'refrigeration_gases': Decimal('145.0'),
-            'waste_management': Decimal('220.0'),
-            'medical_inhalers': Decimal('62.0'),
+            'grid_electricity': Decimal('1982759'),   # kWh      → 1840.0 tCO₂e
+            'grid_gas': Decimal('0'),
+            'bottled_gas': Decimal('28912'),          # → 85.0
+            'liquid_fuel': Decimal('78358'),          # → 210.0
+            'vehicle_fuel_owned': Decimal('26866'),   # → 72.0
+            'business_travel': Decimal('163743'),     # → 28.0
+            'anaesthetic_gases': Decimal('474'),      # → 380.0
+            'refrigeration_gases': Decimal('80.6'),   # → 145.0
+            'waste_management': Decimal('205'),       # → 220.0
+            'medical_inhalers': Decimal('3280'),      # → 62.0
+            'contractor_logistics': Decimal('128000'),
         },
     },
     {
         'code_name': 'MASH_ZW',
         'display_name': 'Mashonaland Central Provincial Hospital',
         'country': 'ZW',
+        'sector': 'clinical',
         'facility_type': 'provincial_hospital',
+        'organisation': None,
         'emission_source': 'Mashonaland — Annual Baseline',
         'emissions': {
-            'grid_electricity': Decimal('132.0'),
-            'grid_gas': Decimal('0.0'),
-            'bottled_gas': Decimal('18.5'),
-            'liquid_fuel': Decimal('74.2'),
-            'vehicle_fuel_owned': Decimal('25.8'),
-            'business_travel': Decimal('7.3'),
-            'anaesthetic_gases': Decimal('218.0'),
-            'refrigeration_gases': Decimal('35.0'),
-            'waste_management': Decimal('48.5'),
-            'medical_inhalers': Decimal('11.2'),
+            'grid_electricity': Decimal('237410'),    # → 132.0 tCO₂e
+            'grid_gas': Decimal('0'),
+            'bottled_gas': Decimal('6293'),           # → 18.5
+            'liquid_fuel': Decimal('27687'),          # → 74.2
+            'vehicle_fuel_owned': Decimal('9627'),    # → 25.8
+            'business_travel': Decimal('42690'),      # → 7.3
+            'anaesthetic_gases': Decimal('272'),      # → 218.0
+            'refrigeration_gases': Decimal('19.4'),   # → 35.0
+            'waste_management': Decimal('45.2'),      # → 48.5
+            'medical_inhalers': Decimal('593'),       # → 11.2
+            'contractor_logistics': Decimal('26400'),
         },
     },
     {
         'code_name': 'SWH_ZA',
         'display_name': 'Soweto Community Health Centre',
         'country': 'ZA',
+        'sector': 'clinical',
         'facility_type': 'health_centre',
+        'organisation': None,
         'emission_source': 'Soweto CHC — Annual Baseline',
         'emissions': {
-            'grid_electricity': Decimal('95.0'),
-            'grid_gas': Decimal('0.0'),
-            'bottled_gas': Decimal('8.2'),
-            'liquid_fuel': Decimal('22.0'),
-            'vehicle_fuel_owned': Decimal('14.5'),
-            'business_travel': Decimal('3.8'),
-            'anaesthetic_gases': Decimal('18.0'),
-            'refrigeration_gases': Decimal('12.0'),
-            'waste_management': Decimal('28.0'),
-            'medical_inhalers': Decimal('35.0'),
+            'grid_electricity': Decimal('102371'),    # → 95.0 tCO₂e
+            'grid_gas': Decimal('0'),
+            'bottled_gas': Decimal('2789'),           # → 8.2
+            'liquid_fuel': Decimal('8209'),           # → 22.0
+            'vehicle_fuel_owned': Decimal('5410'),    # → 14.5
+            'business_travel': Decimal('22222'),      # → 3.8
+            'anaesthetic_gases': Decimal('22.4'),     # → 18.0
+            'refrigeration_gases': Decimal('6.7'),    # → 12.0
+            'waste_management': Decimal('26.1'),      # → 28.0
+            'medical_inhalers': Decimal('1852'),      # → 35.0
+            'contractor_logistics': Decimal('14500'),
         },
     },
     {
         'code_name': 'KNH_KE',
         'display_name': 'Kenyatta National Hospital Nairobi',
         'country': 'KE',
+        'sector': 'clinical',
         'facility_type': 'central_hospital',
+        'organisation': None,
         'emission_source': 'KNH — Annual Baseline',
         'emissions': {
-            'grid_electricity': Decimal('980.0'),
-            'grid_gas': Decimal('0.0'),
-            'bottled_gas': Decimal('62.0'),
-            'liquid_fuel': Decimal('185.0'),
-            'vehicle_fuel_owned': Decimal('55.0'),
-            'business_travel': Decimal('22.0'),
-            'anaesthetic_gases': Decimal('275.0'),
-            'refrigeration_gases': Decimal('88.0'),
-            'waste_management': Decimal('142.0'),
-            'medical_inhalers': Decimal('38.0'),
+            'grid_electricity': Decimal('30625000'),  # → 980.0 tCO₂e
+            'grid_gas': Decimal('0'),
+            'bottled_gas': Decimal('21088'),          # → 62.0
+            'liquid_fuel': Decimal('69030'),          # → 185.0
+            'vehicle_fuel_owned': Decimal('20522'),   # → 55.0
+            'business_travel': Decimal('128655'),     # → 22.0
+            'anaesthetic_gases': Decimal('343'),      # → 275.0
+            'refrigeration_gases': Decimal('48.9'),   # → 88.0
+            'waste_management': Decimal('132'),       # → 142.0
+            'medical_inhalers': Decimal('2011'),      # → 38.0
+            'contractor_logistics': Decimal('96000'),
+        },
+    },
+
+    # ── Research sector — Wits Health Consortium demonstration group ─────────
+    # Activity data representative of a South African health-research group of
+    # this size. Figures are illustrative planning defaults, not audited
+    # returns: electricity from floor area × SANS 204 office/lab intensities,
+    # generator diesel sized for Eskom load-shedding, procurement spend from
+    # typical grant consumables budgets, flights from conference/fieldwork
+    # travel patterns. Every value is site-overridable in the app.
+    {
+        'code_name': 'WHC_PHRU',
+        'display_name': 'Wits Planetary Health Research Division',
+        'country': 'ZA',
+        'sector': 'research',
+        'facility_type': 'research_office',
+        'organisation': 'Wits Health Consortium',
+        'emission_source': 'Planetary Health — 2024 Annual Baseline',
+        'emissions': {
+            'grid_electricity': Decimal('420000'),    # kWh (≈3,000 m² @ 140 kWh/m²)
+            'grid_gas': Decimal('0'),
+            'bottled_gas': Decimal('1200'),           # kg
+            'liquid_fuel': Decimal('14000'),          # L standby generator
+            'vehicle_fuel_owned': Decimal('9000'),    # L fieldwork fleet
+            'business_travel': Decimal('120000'),     # km staff vehicles
+            'anaesthetic_gases': Decimal('0'),
+            'refrigeration_gases': Decimal('45'),     # kg HVAC + cold chain
+            'waste_management': Decimal('18'),        # tonnes (landfill route)
+            'medical_inhalers': Decimal('0'),
+            'contractor_logistics': Decimal('35000'), # km
+            'flights': Decimal('950000'),             # passenger-km
+            'lab_consumables': Decimal('850000'),     # USD procurement spend
+        },
+    },
+    {
+        'code_name': 'WHC_IMMUNO',
+        'display_name': 'WHC Immunology & Vaccinology Laboratory',
+        'country': 'ZA',
+        'sector': 'research',
+        'facility_type': 'university_lab',
+        'organisation': 'Wits Health Consortium',
+        'emission_source': 'Immunology Lab — 2024 Annual Baseline',
+        'emissions': {
+            'grid_electricity': Decimal('310000'),    # kWh (ULT freezer bank + HVAC)
+            'grid_gas': Decimal('0'),
+            'bottled_gas': Decimal('4500'),           # kg lab gases
+            'liquid_fuel': Decimal('9000'),           # L generator (sample protection)
+            'vehicle_fuel_owned': Decimal('2400'),
+            'business_travel': Decimal('40000'),
+            'anaesthetic_gases': Decimal('0'),
+            'refrigeration_gases': Decimal('70'),     # kg — freezer/cold-room heavy
+            'waste_management': Decimal('26'),        # tonnes
+            'medical_inhalers': Decimal('0'),
+            'contractor_logistics': Decimal('22000'),
+            'flights': Decimal('280000'),             # passenger-km
+            'lab_consumables': Decimal('1400000'),    # USD — reagent-intensive
+        },
+    },
+    {
+        'code_name': 'WHC_SPH',
+        'display_name': 'Wits School of Public Health',
+        'country': 'ZA',
+        'sector': 'research',
+        'facility_type': 'university_dept',
+        'organisation': 'Wits Health Consortium',
+        'emission_source': 'School of Public Health — 2024 Annual Baseline',
+        'emissions': {
+            'grid_electricity': Decimal('560000'),    # kWh
+            'grid_gas': Decimal('0'),
+            'bottled_gas': Decimal('900'),
+            'liquid_fuel': Decimal('18000'),          # L generator
+            'vehicle_fuel_owned': Decimal('11000'),   # L fieldwork fleet
+            'business_travel': Decimal('180000'),     # km
+            'anaesthetic_gases': Decimal('0'),
+            'refrigeration_gases': Decimal('30'),
+            'waste_management': Decimal('34'),        # tonnes
+            'medical_inhalers': Decimal('0'),
+            'contractor_logistics': Decimal('48000'),
+            'flights': Decimal('1400000'),            # passenger-km — global health travel
+            'lab_consumables': Decimal('420000'),     # USD
         },
     },
 ]
@@ -347,6 +460,30 @@ class Command(BaseCommand):
 
         # Facilities + emissions
         facility_map = {}
+        # Demo owner. Facilities are only visible to a user who either created
+        # them or shares an organisation with them (see views._visible_facilities),
+        # so seeded data MUST be owned by the account visitors land on. In
+        # DEMO_MODE the middleware auto-logs everyone in as `demo_guest`.
+        demo_user, _ = User.objects.get_or_create(
+            username=DEMO_USERNAME,
+            defaults={'email': DEMO_EMAIL, 'first_name': 'Demo', 'last_name': 'Guest'},
+        )
+
+        # Organisations referenced by facilities (demo groups like Wits Health
+        # Consortium). Created before facilities so the FK is available.
+        org_map = {}
+        for org_name in dict.fromkeys(
+            f['organisation'] for f in FACILITIES if f.get('organisation')
+        ):
+            org, created = Organisation.objects.get_or_create(
+                name=org_name, defaults={'created_by': demo_user},
+            )
+            org.members.add(demo_user)
+            org_map[org_name] = org
+            self.stdout.write(
+                f"  {'Created' if created else 'Found'} organisation: {org.name}"
+            )
+
         for fdata in FACILITIES:
             facility, _ = Facility.objects.update_or_create(
                 code_name=fdata['code_name'],
@@ -354,6 +491,9 @@ class Command(BaseCommand):
                     'display_name': fdata['display_name'],
                     'country': fdata['country'],
                     'facility_type': fdata['facility_type'],
+                    'sector': fdata['sector'],
+                    'organisation': org_map.get(fdata.get('organisation')),
+                    'created_by': demo_user,
                 },
             )
             facility_map[fdata['code_name']] = facility
@@ -364,10 +504,13 @@ class Command(BaseCommand):
                 defaults={'display_name': fdata['emission_source']},
             )
 
-            # One annual emission record per facility
+            # One annual emission record per facility. Research baselines are
+            # dated to the 2024 reporting year; the clinical case-study figures
+            # remain on their published 2023 baseline.
+            period_end = date(2024, 12, 31) if fdata['sector'] == 'research' else date(2023, 12, 31)
             EmissionData.objects.update_or_create(
                 emission_source=source,
-                date=date(2023, 12, 31),
+                date=period_end,
                 defaults=fdata['emissions'],
             )
             self.stdout.write(f'  Seeded facility: {facility.display_name} ({facility.country})')

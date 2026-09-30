@@ -917,3 +917,66 @@ class MethodologyPageTest(TestCase):
         self.assertContains(response, 'Known limitations')
         self.assertContains(response, 'Community validation')
         self.assertContains(response, '10.5281/zenodo.12730527')
+
+
+class PotentialSavingsKPITest(TestCase):
+    """Regression: the 'Potential savings' KPI on the facility profile summed
+    every linked intervention's headline reduction percentage. With the full
+    library attached that sum ran into the hundreds, the min(pct, 100) clamp
+    saturated, and the KPI reported the ENTIRE baseline as abatable — while the
+    optimisation results page, which applies drawdown, reported roughly half.
+    The KPI must use the same bounded full-coverage model."""
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command('sync_interventions', stdout=StringIO())
+        cls.user = User.objects.create_user('kpi', 'kpi@example.com', 'pw')
+
+    def _make_facility(self):
+        self.client.force_login(self.user)
+        self.client.post('/add-facility/', {
+            'display_name': 'KPI Research Division', 'code_name': 'KPI_RES',
+            'sector': 'research', 'country': 'ZA', 'facility_type': 'research_office',
+            'grid_electricity': '420000', 'bottled_gas': '1200', 'liquid_fuel': '14000',
+            'vehicle_fuel_owned': '9000', 'business_travel': '120000',
+            'refrigeration_gases': '45', 'waste_management': '18',
+            'contractor_logistics': '35000', 'flights': '950000',
+            'lab_consumables': '850000',
+        })
+        return Facility.objects.get(code_name='KPI_RES')
+
+    def test_potential_savings_is_strictly_below_baseline(self):
+        facility = self._make_facility()
+        response = self.client.get(f'/facilities/{facility.id}/')
+        self.assertEqual(response.status_code, 200)
+        baseline = response.context['baseline_tco2e']
+        potential = response.context['potential_savings_tco2e']
+
+        self.assertGreater(potential, Decimal('0'),
+                           'Potential savings collapsed to zero — category keys likely mismatched')
+        self.assertLess(potential, baseline,
+                        'Potential savings equals or exceeds the baseline — double-counting is back')
+
+    def test_kpi_matches_optimiser_full_coverage_scenario(self):
+        """The KPI and the results page must not disagree about the same number."""
+        facility = self._make_facility()
+        response = self.client.get(f'/facilities/{facility.id}/')
+        kpi = response.context['potential_savings_tco2e']
+
+        latest = EmissionData.objects.filter(
+            emission_source__facility=facility
+        ).order_by('-date', '-id').first()
+        categories = compute_tco2e(latest, facility.country, facility.sector)
+        baseline = categories.pop('total')
+        full_coverage = CarbomicaOptimizer(
+            facility_interventions=facility.facility_interventions.select_related(
+                'intervention', 'facility'
+            ).all(),
+            budget=Decimal('0'),
+            total_baseline_emissions=baseline,
+            category_baselines=categories,
+        ).full_coverage()
+        expected = sum(r['emission_reduction'] for r in full_coverage)
+
+        self.assertEqual(kpi, expected,
+                         'Facility KPI diverges from the optimiser full-coverage scenario')
