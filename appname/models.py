@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils.translation import gettext_lazy as _
@@ -263,6 +265,67 @@ class EmissionData(models.Model):
             self.waste_management + self.medical_inhalers + self.contractor_logistics +
             self.flights + self.lab_consumables
         )
+
+class ProcurementLine(models.Model):
+    """
+    One line of purchased goods or services for a reporting period.
+
+    Attached to an EmissionData record rather than to the facility directly:
+    that record already defines "this site, this period", so lines cannot drift
+    out of alignment with the baseline they belong to, and they can be
+    prefetched alongside it when computing a footprint.
+
+    When any lines exist for a record they REPLACE that record's single blended
+    lab_consumables estimate, so the two can never be counted together.
+    """
+
+    SOURCE_CHOICES = [
+        ('CSV', 'Imported from spend export'),
+        ('MANUAL', 'Entered by hand'),
+    ]
+
+    emission_data = models.ForeignKey(
+        EmissionData, related_name='procurement_lines', on_delete=models.CASCADE,
+    )
+    category = models.CharField(
+        max_length=40,
+        help_text='Key into modeling.PROCUREMENT_CATEGORIES. Unrecognised '
+                  'categories are stored as OTHER at import.'
+    )
+    description = models.CharField(max_length=255, blank=True)
+    supplier = models.CharField(
+        max_length=255, blank=True,
+        help_text='Captured for future supplier-level comparison. Not used in '
+                  'the calculation.'
+    )
+    spend_usd = models.DecimalField(
+        max_digits=14, decimal_places=2, validators=[MinValueValidator(0.0)],
+        help_text='Spend for this line in USD.'
+    )
+    source = models.CharField(max_length=10, choices=SOURCE_CHOICES, default='MANUAL')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _('Procurement Line')
+        verbose_name_plural = _('Procurement Lines')
+        ordering = ['-spend_usd']
+        indexes = [models.Index(fields=['emission_data', 'category'])]
+
+    def __str__(self):
+        return f'{self.category} — {self.spend_usd}'
+
+    @property
+    def spec(self):
+        from appname.modeling import PROCUREMENT_CATEGORIES
+        return PROCUREMENT_CATEGORIES.get(self.category) or PROCUREMENT_CATEGORIES['OTHER']
+
+    @property
+    def category_label(self):
+        return self.spec['display_name']
+
+    def tco2e(self):
+        return (self.spend_usd or Decimal('0')) * self.spec['factor']
+
 
 class Intervention(models.Model):
     code_name = models.CharField(max_length=100)

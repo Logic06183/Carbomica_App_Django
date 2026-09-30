@@ -186,6 +186,74 @@
         </div>
     </div>
 
+    <!-- ── Procurement hot spots (Scope 3 Cat 1) ── -->
+    {% if procurement_rows %}
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>
+                    <i class="fas fa-cart-shopping me-2" style="color:var(--hh-blue);"></i>
+                    Procurement hot spots — latest period
+                </span>
+                <a href="{% url 'upload_procurement' %}" class="btn btn-sm btn-outline-primary">
+                    <i class="fas fa-upload me-1"></i> Update spend
+                </a>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Category</th>
+                            <th class="text-end">Spend (USD)</th>
+                            <th class="text-end">tCO<sub>2</sub>e</th>
+                            <th class="text-end">% of carbon</th>
+                            <th class="text-end">% of spend</th>
+                            <th class="text-end">Carbon vs spend</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in procurement_rows %}
+                        <tr {% if row.cumulative_share <= 80 %}class="fw-semibold"{% else %}class="text-muted"{% endif %}>
+                            <td>
+                                {{ row.label }}
+                                {% if row.category == 'OTHER' %}
+                                <span class="badge bg-warning text-dark ms-1">unclassified</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end">${{ row.spend|floatformat:0|intcomma }}</td>
+                            <td class="text-end">{{ row.tco2e|floatformat:1 }}</td>
+                            <td class="text-end">{{ row.carbon_share|floatformat:1 }}%</td>
+                            <td class="text-end">{{ row.spend_share|floatformat:1 }}%</td>
+                            <td class="text-end">
+                                {% if row.intensity_gap > 1 %}
+                                <span class="badge" style="background:var(--hh-red);">
+                                    +{{ row.intensity_gap|floatformat:1 }} pts
+                                </span>
+                                {% elif row.intensity_gap < -1 %}
+                                <span class="badge" style="background:var(--hh-success);">
+                                    {{ row.intensity_gap|floatformat:1 }} pts
+                                </span>
+                                {% else %}
+                                <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="card-footer text-muted" style="font-size:.75rem;">
+                Bold rows are the categories making up the first 80% of procurement carbon —
+                start there. <strong>Carbon vs spend</strong> is the gap between a category's
+                share of emissions and its share of money: a red row costs little but emits a
+                lot, which is where switching supplier or specification pays off most.
+                Spend-based factors assume price tracks carbon, so treat these as a ranking of
+                where to look, not a precise measurement of each line.
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- ── Emission history ── -->
     <div class="col-lg-6">
         <div class="card">

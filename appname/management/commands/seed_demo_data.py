@@ -22,9 +22,58 @@ from django.contrib.auth.models import User
 
 from appname.models import (
     Facility, EmissionSource, EmissionData,
-    Intervention, FacilityIntervention, Organisation,
+    Intervention, FacilityIntervention, Organisation, ProcurementLine,
 )
 from appname.middleware import DEMO_USERNAME, DEMO_EMAIL
+
+
+# ---------------------------------------------------------------------------
+# Itemised procurement spend (Scope 3 Category 1).
+#
+# Split by category so the hot-spot view has something to show. Shares are
+# shaped on the pattern reported for life-and-health-science labs, where
+# consumables dominate purchases (Lannelongue et al. 2024, PLOS Sustainability
+# and Transformation). Illustrative, like the rest of the research data.
+#
+# Where a facility has lines here, they REPLACE its blended lab_consumables
+# figure, so the two must describe the same money: each block below totals
+# roughly its facility's lab_consumables spend.
+# Format: (facility_code, category, description, supplier, spend_usd)
+# ---------------------------------------------------------------------------
+PROCUREMENT_LINES = [
+    # Wits Planetary Health — ~$850,000, a mixed office/field research group
+    ('WHC_PLANETARY', 'LAB_PLASTICS',        'Sample collection consumables', 'Lasec',            Decimal('96000')),
+    ('WHC_PLANETARY', 'LAB_REAGENTS',        'Assay reagents',                'Thermo Fisher',    Decimal('120000')),
+    ('WHC_PLANETARY', 'IT_HARDWARE',         'Analysis workstations & laptops', 'Dell',           Decimal('145000')),
+    ('WHC_PLANETARY', 'IT_SOFTWARE',         'Statistical software & cloud',  'Microsoft',        Decimal('64000')),
+    ('WHC_PLANETARY', 'SUBCONTRACT_RESEARCH','Collaborating site payments',   'Various sites',    Decimal('210000')),
+    ('WHC_PLANETARY', 'PROF_SERVICES',       'Data management consultancy',   'Various',          Decimal('72000')),
+    ('WHC_PLANETARY', 'OFFICE_PAPER',        'Office supplies & printing',    'Waltons',          Decimal('28000')),
+    ('WHC_PLANETARY', 'FREIGHT_COURIER',     'Sample and document courier',   'DHL',              Decimal('34000')),
+    ('WHC_PLANETARY', 'CLEANING',            'Cleaning services',             'Bidvest',          Decimal('41000')),
+    ('WHC_PLANETARY', 'OTHER',               'Uncoded general expenditure',   '',                 Decimal('40000')),
+
+    # VIDA laboratory — ~$1,400,000, reagent and cold-chain heavy
+    ('WHC_VIDA', 'LAB_REAGENTS',    'Antibodies, enzymes, culture media', 'Thermo Fisher', Decimal('430000')),
+    ('WHC_VIDA', 'LAB_PLASTICS',    'Pipette tips, plates, tubes',        'Lasec',         Decimal('295000')),
+    ('WHC_VIDA', 'LAB_DIAGNOSTICS', 'ELISA and PCR kits',                 'Bio-Rad',       Decimal('210000')),
+    ('WHC_VIDA', 'LAB_CHEMICALS',   'Solvents and buffers',               'Merck',         Decimal('96000')),
+    ('WHC_VIDA', 'LAB_GASES',       'Liquid nitrogen and CO2',            'Afrox',         Decimal('78000')),
+    ('WHC_VIDA', 'COLD_CHAIN',      'ULT freezer replacement programme',  'Eppendorf',     Decimal('135000')),
+    ('WHC_VIDA', 'LAB_EQUIPMENT',   'Sequencer service & instruments',    'Illumina',      Decimal('92000')),
+    ('WHC_VIDA', 'FREIGHT_COURIER', 'Cold-chain sample shipping',         'World Courier', Decimal('48000')),
+    ('WHC_VIDA', 'LAB_GLASS',       'Glassware',                          'Lasec',         Decimal('16000')),
+
+    # PHRU — ~$1,650,000, large community trial portfolio
+    ('WHC_PHRU', 'MEDICAL_SUPPLIES',     'Trial participant clinical supplies', 'Various',     Decimal('340000')),
+    ('WHC_PHRU', 'LAB_REAGENTS',         'Immunology reagents',                 'Thermo Fisher', Decimal('300000')),
+    ('WHC_PHRU', 'LAB_PLASTICS',         'Specimen consumables',                'Lasec',       Decimal('265000')),
+    ('WHC_PHRU', 'PHARMA',               'Study drug and vaccines',             'Various',     Decimal('285000')),
+    ('WHC_PHRU', 'SUBCONTRACT_RESEARCH', 'Community site payments',             'Various',     Decimal('230000')),
+    ('WHC_PHRU', 'LAB_DIAGNOSTICS',      'Rapid test kits',                     'Abbott',      Decimal('120000')),
+    ('WHC_PHRU', 'FREIGHT_COURIER',      'Sample transport',                    'DHL',         Decimal('62000')),
+    ('WHC_PHRU', 'IT_HARDWARE',          'Field data capture tablets',          'Samsung',     Decimal('48000')),
+]
 
 
 # ---------------------------------------------------------------------------
@@ -630,6 +679,32 @@ class Command(BaseCommand):
                 defaults=fdata['emissions'],
             )
             self.stdout.write(f'  Seeded facility: {facility.display_name} ({facility.country})')
+
+        # Itemised procurement lines. Rebuilt from scratch each run so the
+        # seed stays idempotent without accumulating duplicates.
+        by_code = {f.code_name: f for f in facility_map.values()}
+        seeded_lines = 0
+        for (fcode, category, description, supplier, spend) in PROCUREMENT_LINES:
+            facility = by_code.get(fcode)
+            if facility is None:
+                continue
+            record = (
+                EmissionData.objects
+                .filter(emission_source__facility=facility)
+                .order_by('-date', '-id')
+                .first()
+            )
+            if record is None:
+                continue
+            ProcurementLine.objects.update_or_create(
+                emission_data=record,
+                category=category,
+                description=description,
+                defaults={'supplier': supplier, 'spend_usd': spend, 'source': 'CSV'},
+            )
+            seeded_lines += 1
+        if seeded_lines:
+            self.stdout.write(f'  Seeded {seeded_lines} procurement lines.')
 
         # Facility interventions
         for (fcode, icode, impl, maint, savings, status) in FACILITY_INTERVENTIONS:

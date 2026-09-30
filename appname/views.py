@@ -43,8 +43,12 @@ from .models import (
     FacilityIntervention,
     OptimizationScenario,
     OptimizationResult,
+    ProcurementLine,
 )
-from .modeling import CarbomicaOptimizer, calculate_npv, compute_tco2e, sum_tco2e
+from .modeling import (
+    CarbomicaOptimizer, calculate_npv, compute_tco2e, sum_tco2e,
+    PROCUREMENT_CATEGORIES, match_procurement_category, procurement_breakdown,
+)
 
 # ---------------------------------------------------------------------------
 # Shared constants
@@ -453,12 +457,30 @@ def methodology(request):
         seen.add(pool)
         pool_rows.append({'pool': pool.title(), 'share': f'{share * 100:.0f}%'})
 
+    # Procurement factors, rendered from the same constants the calculation
+    # uses, so this table cannot drift from what the app actually computes.
+    from .modeling import PROCUREMENT_EXCLUDED_NOTE
+    procurement_rows = [
+        {
+            'label': spec['display_name'],
+            'kg_per_usd': f"{spec['factor'] * 1000:.3f}",
+            'naics': spec['naics'],
+            'naics_title': spec['naics_title'],
+            'note': spec.get('note', ''),
+        }
+        for _, spec in sorted(
+            PROCUREMENT_CATEGORIES.items(), key=lambda kv: -kv[1]['factor']
+        )
+    ]
+
     return render(request, 'appname/methodology.html', {
         'factor_rows': factor_rows,
         'grid_rows': grid_rows,
         'pool_rows': pool_rows,
         'discount_rate': DISCOUNT_RATE * 100,
         'carbon_price': CARBON_CREDIT_PRICE_USD,
+        'procurement_rows': procurement_rows,
+        'procurement_excluded_note': PROCUREMENT_EXCLUDED_NOTE,
     })
 
 
@@ -1076,6 +1098,182 @@ def upload_emissions(request):
     })
 
 
+PROCUREMENT_CSV_COLUMNS = {
+    'category':    ['category', 'spend category', 'commodity', 'account',
+                    'account name', 'expense type', 'gl description', 'item type'],
+    'description': ['description', 'item', 'line description', 'details',
+                    'narrative', 'product'],
+    'supplier':    ['supplier', 'vendor', 'payee', 'supplier name', 'merchant'],
+    'spend_usd':   ['spend', 'spend usd', 'amount', 'value', 'total', 'cost',
+                    'net amount', 'amount usd', 'usd'],
+}
+
+
+def _match_procurement_column(header):
+    """Map a spend-export column heading onto one of our four fields."""
+    cleaned = (header or '').strip().lower().replace('_', ' ')
+    for field, aliases in PROCUREMENT_CSV_COLUMNS.items():
+        if cleaned in aliases:
+            return field
+    return None
+
+
+@login_required
+def upload_procurement(request):
+    """
+    Import a procurement spend export and itemise Scope 3 Category 1.
+
+    Purchased goods are the largest slice of a research organisation's footprint
+    but arrive as one blended number, which supports no decision. This turns a
+    finance-system CSV into per-category emissions.
+
+    Import REPLACES previously imported lines for the same site and period, so
+    re-running a corrected export cannot double-count. Hand-entered lines are
+    kept, since they were not part of the export.
+    """
+    facilities = _user_facilities(request.user).order_by('display_name')
+    import_report = None
+
+    if request.method == 'POST':
+        facility = get_object_or_404(
+            _user_facilities(request.user), id=request.POST.get('facility')
+        )
+
+        period_raw = (request.POST.get('period') or '').strip()
+        try:
+            period = date.fromisoformat(period_raw) if period_raw else date.today()
+        except ValueError:
+            messages.error(request, f'Invalid period "{period_raw}" — use YYYY-MM-DD.')
+            return redirect('upload_procurement')
+
+        # Attach to whatever record already covers this period for this site,
+        # whichever emission source it came from.
+        #
+        # Creating a fresh record on a dedicated upload source instead would add
+        # a SECOND record for the same period. "Latest" resolves by (-date, -id),
+        # so the new, otherwise-empty record would win and silently zero the
+        # site's electricity, flights and fuel — importing procurement would
+        # destroy the rest of the footprint.
+        emission_data = (
+            EmissionData.objects
+            .filter(emission_source__facility=facility, date=period)
+            .order_by('-id')
+            .first()
+        )
+        if emission_data is None:
+            source, _ = EmissionSource.objects.get_or_create(
+                facility=facility,
+                code_name=f'{facility.code_name}_UPLOAD',
+                defaults={'display_name': f'{facility.display_name} — Uploaded Data'},
+            )
+            emission_data = EmissionData.objects.create(
+                emission_source=source, date=period,
+            )
+
+        csv_file = request.FILES.get('csv_file')
+        if not csv_file:
+            messages.error(request, 'Choose a CSV file to import.')
+            return redirect('upload_procurement')
+
+        try:
+            decoded = csv_file.read().decode('utf-8-sig')   # handles Excel BOM
+        except UnicodeDecodeError:
+            messages.error(request, 'Could not read that file — save it as UTF-8 CSV.')
+            return redirect('upload_procurement')
+
+        reader = csv.DictReader(io.StringIO(decoded))
+        column_map = {h: _match_procurement_column(h) for h in (reader.fieldnames or [])}
+        if 'spend_usd' not in column_map.values():
+            messages.error(
+                request,
+                'No spend column found. Include a column named one of: '
+                + ', '.join(PROCUREMENT_CSV_COLUMNS['spend_usd']) + '.'
+            )
+            return redirect('upload_procurement')
+
+        parsed, errors, unmatched = [], [], []
+        for row_num, row in enumerate(reader, start=2):
+            values = {}
+            for header, raw in row.items():
+                field = column_map.get(header)
+                if field:
+                    values[field] = (raw or '').strip()
+
+            spend_raw = (values.get('spend_usd') or '').replace(',', '').replace('$', '')
+            if not spend_raw:
+                continue        # blank rows and subtotal spacers
+            try:
+                spend = Decimal(spend_raw)
+            except InvalidOperation:
+                errors.append(f'Row {row_num}: "{spend_raw}" is not a number.')
+                continue
+            if spend <= 0:
+                continue        # credits and zero lines carry no footprint
+
+            # Try the category column first, then fall back to the free-text
+            # description — many exports only carry a supplier and a narrative.
+            category, matched = match_procurement_category(values.get('category'))
+            if not matched:
+                category, matched = match_procurement_category(values.get('description'))
+            if not matched:
+                unmatched.append((values.get('category') or values.get('description') or '(blank)', spend))
+
+            parsed.append(ProcurementLine(
+                emission_data=emission_data,
+                category=category,
+                description=values.get('description', '')[:255],
+                supplier=values.get('supplier', '')[:255],
+                spend_usd=spend,
+                source='CSV',
+            ))
+
+        if parsed:
+            with transaction.atomic():
+                ProcurementLine.objects.filter(
+                    emission_data=emission_data, source='CSV'
+                ).delete()
+                ProcurementLine.objects.bulk_create(parsed)
+
+        total_spend = sum((line.spend_usd for line in parsed), Decimal('0'))
+        unclassified_spend = sum((spend for _, spend in unmatched), Decimal('0'))
+        import_report = {
+            'facility': facility,
+            'period': period,
+            'lines': len(parsed),
+            'total_spend': total_spend,
+            'tco2e': sum((line.tco2e() for line in parsed), Decimal('0')),
+            'unmatched_count': len(unmatched),
+            'unclassified_spend': unclassified_spend,
+            'unclassified_share': (
+                unclassified_spend / total_spend * 100 if total_spend else Decimal('0')
+            ),
+            'unmatched_examples': sorted(
+                {label for label, _ in unmatched}
+            )[:8],
+            'errors': errors[:10],
+        }
+        if parsed:
+            messages.success(
+                request,
+                f'Imported {len(parsed)} procurement lines for '
+                f'{facility.display_name} ({period}).'
+            )
+        else:
+            messages.warning(request, 'No usable rows found in that file.')
+
+    return render(request, 'appname/upload_procurement.html', {
+        'facilities': facilities,
+        'categories': [
+            {'code': code, **spec} for code, spec in sorted(
+                PROCUREMENT_CATEGORIES.items(), key=lambda kv: kv[1]['display_name']
+            )
+        ],
+        'csv_columns': PROCUREMENT_CSV_COLUMNS,
+        'import_report': import_report,
+        'today': date.today().isoformat(),
+    })
+
+
 @login_required
 def upload_interventions(request):
     """
@@ -1475,6 +1673,10 @@ def facility_detail(request, facility_id):
         'facility_interventions': facility_interventions,
         'baseline_tco2e': baseline_tco2e,
         'potential_savings_tco2e': potential_savings_tco2e,
+        # Per-category procurement hot spots for the latest period. Empty when
+        # the site has not imported a spend export, in which case the profile
+        # keeps showing the single blended lab_consumables figure.
+        'procurement_rows': procurement_breakdown(emission_records[0]) if emission_records else [],
         'category_chart_data': category_chart_data,
         'bar_chart_data': bar_chart_data,
         'emission_fields': EMISSION_FIELDS,

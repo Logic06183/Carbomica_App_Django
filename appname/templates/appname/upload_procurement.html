@@ -1,0 +1,175 @@
+{% extends 'appname/base.html' %}
+{% load humanize %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <p class="section-label mb-1">Scope 3 · Category 1</p>
+        <h2 class="mb-0">Procurement spend import</h2>
+        <p class="text-muted mt-1">
+            Purchased goods are usually the single largest part of a research
+            organisation's footprint. One blended spend figure can report that total but
+            cannot say where the carbon sits. Import a spend export and Verdex splits it
+            by category, so you can see which lines are worth acting on.
+        </p>
+    </div>
+</div>
+
+{% if import_report %}
+<div class="row mb-4"><div class="col-12">
+    <div class="card border-success">
+        <div class="card-header bg-success text-white">
+            <i class="fas fa-check-circle me-2"></i>Import summary —
+            {{ import_report.facility.display_name }} · {{ import_report.period }}
+        </div>
+        <div class="card-body">
+            <div class="row text-center g-3 mb-3">
+                <div class="col-6 col-md-3">
+                    <div class="text-muted small">Lines imported</div>
+                    <div class="fw-bold" style="font-size:1.5rem;">{{ import_report.lines }}</div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="text-muted small">Total spend</div>
+                    <div class="fw-bold" style="font-size:1.5rem;">${{ import_report.total_spend|floatformat:0|intcomma }}</div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="text-muted small">Procurement footprint</div>
+                    <div class="fw-bold" style="font-size:1.5rem;color:var(--hh-red);">
+                        {{ import_report.tco2e|floatformat:1 }}
+                    </div>
+                    <div class="text-muted" style="font-size:.7rem;">tCO<sub>2</sub>e</div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="text-muted small">Unclassified spend</div>
+                    <div class="fw-bold" style="font-size:1.5rem;">
+                        {{ import_report.unclassified_share|floatformat:0 }}%
+                    </div>
+                </div>
+            </div>
+
+            {% if import_report.unmatched_count %}
+            <div class="alert alert-warning mb-2">
+                <strong>{{ import_report.unmatched_count }} line{{ import_report.unmatched_count|pluralize }}</strong>
+                could not be matched to a category and {{ import_report.unmatched_count|pluralize:"was,were" }}
+                costed at the conservative unclassified rate. Renaming these in your export, or adding a category
+                column, will sharpen the result:
+                <div class="mt-2">
+                    {% for label in import_report.unmatched_examples %}
+                    <span class="badge bg-light text-dark me-1">{{ label }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            {% for err in import_report.errors %}
+            <div class="text-danger small">{{ err }}</div>
+            {% endfor %}
+
+            <a href="{% url 'facility_detail' import_report.facility.id %}" class="btn btn-primary mt-2">
+                <i class="fas fa-chart-pie me-1"></i> See the procurement hot spots
+            </a>
+        </div>
+    </div>
+</div></div>
+{% endif %}
+
+<div class="row g-4">
+    <div class="col-lg-7">
+        <div class="card">
+            <div class="card-header"><strong>Import a spend export</strong></div>
+            <div class="card-body">
+                <form method="post" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Site <span class="text-danger">*</span></label>
+                        <select name="facility" class="form-select" required>
+                            <option value="">— choose a site —</option>
+                            {% for f in facilities %}
+                            <option value="{{ f.id }}">{{ f.display_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Reporting period end</label>
+                        <input type="date" name="period" class="form-control" value="{{ today }}">
+                        <div class="form-text">
+                            Matches this spend to a reporting period. Re-importing the same
+                            period replaces the previous import rather than adding to it.
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">CSV file <span class="text-danger">*</span></label>
+                        <input type="file" name="csv_file" accept=".csv" class="form-control" required>
+                    </div>
+                    <button type="submit" class="btn btn-success">
+                        <i class="fas fa-upload me-1"></i> Import spend
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card mt-4">
+            <div class="card-header"><strong>What the file needs</strong></div>
+            <div class="card-body">
+                <p class="text-muted small">
+                    Export from your finance system as CSV. Column headings are matched
+                    flexibly, so most exports work unchanged. Only a spend column is
+                    required; a category or description column makes the result far more
+                    useful.
+                </p>
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead><tr><th>Field</th><th>Headings recognised</th></tr></thead>
+                        <tbody>
+                            {% for field, aliases in csv_columns.items %}
+                            <tr>
+                                <td class="fw-semibold">{{ field }}</td>
+                                <td class="text-muted small">{{ aliases|join:", " }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+<pre class="bg-light p-3 small mb-0" style="border-radius:.4rem;">category,description,supplier,amount
+Consumables,Pipette tips 200ul,Thermo Fisher,42000
+Reagents,PCR master mix,Bio-Rad,86000
+IT hardware,Analysis workstations,Dell,31000
+Courier,Cold-chain sample shipping,DHL,12500</pre>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-5">
+        <div class="card">
+            <div class="card-header"><strong>Categories &amp; factors</strong></div>
+            <div class="table-responsive" style="max-height:640px;overflow-y:auto;">
+                <table class="table table-sm mb-0">
+                    <thead><tr>
+                        <th>Category</th>
+                        <th class="text-end">tCO<sub>2</sub>e<br>per USD</th>
+                    </tr></thead>
+                    <tbody>
+                        {% for c in categories %}
+                        <tr>
+                            <td>
+                                {{ c.display_name }}
+                                <div class="text-muted" style="font-size:.7rem;">
+                                    NAICS {{ c.naics }}
+                                </div>
+                            </td>
+                            <td class="text-end">{{ c.factor|floatformat:6 }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="card-footer text-muted" style="font-size:.75rem;">
+                Spend-based factors from the US EPA Supply Chain GHG Emission Factors
+                v1.2 (2017 NAICS-6). Shown here as tCO<sub>2</sub>e per USD. Full
+                sources and limitations on the
+                <a href="{% url 'methodology' %}">methodology page</a>.
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

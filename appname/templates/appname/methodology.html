@@ -136,6 +136,63 @@
     </div>
 </div>
 
+<!-- ── Procurement factors (Scope 3 Cat 1) ── -->
+<div class="card mb-4">
+    <div class="card-header">
+        <i class="fas fa-cart-shopping me-2" style="color:var(--hh-blue);"></i>
+        Procurement spend factors — Scope 3, Category 1
+    </div>
+    <div class="card-body pb-0">
+        <p class="small text-muted mb-2">
+            Purchased goods are typically the largest single share of a research
+            organisation's footprint, so a site can itemise its spend rather than
+            submitting one blended figure. Where itemised lines exist they
+            <strong>replace</strong> the blended estimate for that period; the two are
+            never added together. Factors are spend-based environmentally-extended
+            input-output (EEIO) values from the
+            <a href="https://catalog.data.gov/dataset/supply-chain-greenhouse-gas-emission-factors-v1-2-by-naics-6"
+               target="_blank" rel="noopener">US EPA Supply Chain GHG Emission Factors v1.2</a>
+            (2017 NAICS-6, 2019 GHG data, "with margins", per 2021 USD at purchaser price).
+        </p>
+        <p class="small text-muted">
+            <strong>What spend-based factors can and cannot do.</strong> They assume price
+            tracks carbon, so a premium-priced low-carbon product scores worse than a cheap
+            high-carbon one, and a supplier's own efficiency is invisible. They are
+            appropriate for ranking where to look and for covering categories with no
+            physical data. They are not a substitute for supplier-specific or
+            life-cycle data on the lines that turn out to matter.
+            {{ procurement_excluded_note }}
+        </p>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-sm mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Category</th>
+                    <th class="text-end">kg CO<sub>2</sub>e / USD</th>
+                    <th>EPA source commodity</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in procurement_rows %}
+                <tr>
+                    <td>
+                        {{ row.label }}
+                        {% if row.note %}
+                        <div class="text-muted" style="font-size:.7rem;">{{ row.note }}</div>
+                        {% endif %}
+                    </td>
+                    <td class="text-end">{{ row.kg_per_usd }}</td>
+                    <td class="text-muted" style="font-size:.75rem;">
+                        {% if row.naics != '—' %}NAICS {{ row.naics }} — {% endif %}{{ row.naics_title }}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
 <!-- ── Limitations & roadmap ── -->
 <div class="card mb-4" style="border-left:4px solid var(--hh-red);">
     <div class="card-header"><i class="fas fa-exclamation-triangle me-2" style="color:var(--hh-red);"></i>Known limitations — read before citing results</div>

@@ -17,13 +17,14 @@ from io import StringIO
 
 from appname.models import (
     Facility, EmissionData, EmissionSource,
-    Intervention, FacilityIntervention, Organisation,
+    Intervention, FacilityIntervention, Organisation, ProcurementLine,
 )
 from appname.modeling import (
     INTERVENTION_LIBRARY,
     EMISSION_FACTORS, ELECTRICITY_EF,
     compute_tco2e, sum_tco2e,
     CarbomicaOptimizer,
+    PROCUREMENT_CATEGORIES, procurement_breakdown, match_procurement_category,
 )
 
 
@@ -1267,4 +1268,265 @@ class FacilityOrganisationPickerTest(TestCase):
         self.assertIsNone(
             sneaky.organisation if sneaky else None,
             'A site was attached to an organisation the creator cannot see',
+        )
+
+
+class ProcurementItemisationTest(TestCase):
+    """Itemised procurement must REPLACE the blended lab_consumables estimate,
+    never add to it, and must round-trip through the facility profile."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create_user('proc', 'proc@example.com', 'pw')
+        cls.facility = Facility.objects.create(
+            code_name='PROC_FAC', display_name='Procurement Facility', country='ZA',
+            sector='research', created_by=cls.user,
+        )
+        cls.source = EmissionSource.objects.create(
+            facility=cls.facility, code_name='PROC_SRC', display_name='baseline',
+        )
+        cls.record = EmissionData.objects.create(
+            emission_source=cls.source, date=date(2024, 12, 31),
+            lab_consumables=Decimal('1000000'),
+        )
+
+    def _breakdown(self):
+        return compute_tco2e(self.record, self.facility.country, self.facility.sector)
+
+    def test_blended_figure_used_when_no_lines(self):
+        expected = Decimal('1000000') * EMISSION_FACTORS['lab_consumables']
+        self.assertEqual(self._breakdown()['lab_consumables'], expected)
+
+    def test_lines_replace_rather_than_add_to_the_blended_figure(self):
+        blended = self._breakdown()['lab_consumables']
+        ProcurementLine.objects.create(
+            emission_data=self.record, category='LAB_REAGENTS',
+            spend_usd=Decimal('1000000'), source='CSV',
+        )
+        itemised = self._breakdown()['lab_consumables']
+        expected = Decimal('1000000') * PROCUREMENT_CATEGORIES['LAB_REAGENTS']['factor']
+
+        self.assertEqual(itemised, expected)
+        self.assertNotEqual(itemised, blended + expected,
+                            'Itemised lines were ADDED to the blended figure — double-counted')
+        self.assertLess(itemised, blended,
+                        'Classifying low-intensity spend should reduce the estimate')
+
+    def test_zero_spend_lines_are_not_treated_as_missing(self):
+        """A record with lines totalling zero must report zero, not fall back."""
+        ProcurementLine.objects.create(
+            emission_data=self.record, category='LAB_REAGENTS',
+            spend_usd=Decimal('0'), source='MANUAL',
+        )
+        self.assertEqual(self._breakdown()['lab_consumables'], Decimal('0'))
+
+    def test_breakdown_ranks_by_carbon_and_flags_intensity_gap(self):
+        # Big spend, low intensity vs small spend, high intensity.
+        ProcurementLine.objects.create(
+            emission_data=self.record, category='LAB_REAGENTS',
+            spend_usd=Decimal('500000'), source='CSV')
+        ProcurementLine.objects.create(
+            emission_data=self.record, category='LAB_CHEMICALS',
+            spend_usd=Decimal('100000'), source='CSV')
+
+        rows = procurement_breakdown(self.record)
+        self.assertEqual(rows[0]['category'], 'LAB_CHEMICALS',
+                         'Ranking should be by carbon, not by spend')
+        self.assertGreater(rows[0]['intensity_gap'], 0)
+        self.assertLess(rows[1]['intensity_gap'], 0)
+        self.assertAlmostEqual(float(rows[-1]['cumulative_share']), 100.0, places=4)
+
+    def test_facility_profile_shows_hot_spots(self):
+        ProcurementLine.objects.create(
+            emission_data=self.record, category='LAB_CHEMICALS',
+            description='Solvents', spend_usd=Decimal('100000'), source='CSV')
+        self.client.force_login(self.user)
+        response = self.client.get(f'/facilities/{self.facility.id}/')
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Procurement hot spots')
+        self.assertContains(response, 'Chemicals &amp; solvents')
+
+
+class ProcurementImportTest(TestCase):
+    """The CSV import has to cope with a real finance export: unfamiliar column
+    names, currency formatting, credits, blank rows, and categories that do not
+    match ours."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create_user('imp', 'imp@example.com', 'pw')
+        cls.facility = Facility.objects.create(
+            code_name='IMP_FAC', display_name='Import Facility', country='ZA',
+            sector='research', created_by=cls.user,
+        )
+
+    def _post(self, csv_body, period='2024-12-31'):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        self.client.force_login(self.user)
+        return self.client.post('/upload/procurement/', {
+            'facility': self.facility.id,
+            'period': period,
+            'csv_file': SimpleUploadedFile('spend.csv', csv_body.encode(), 'text/csv'),
+        })
+
+    def test_imports_a_typical_finance_export(self):
+        response = self._post(
+            'Account Name,Details,Vendor,Net Amount\n'
+            'Consumables,Pipette tips 200ul,Thermo Fisher,"42,000.00"\n'
+            'Reagents,PCR master mix,Bio-Rad,$86000\n'
+            'IT hardware,Workstations,Dell,31000\n'
+        )
+        self.assertEqual(response.status_code, 200)
+        lines = ProcurementLine.objects.filter(
+            emission_data__emission_source__facility=self.facility)
+        self.assertEqual(lines.count(), 3)
+        self.assertEqual(
+            set(lines.values_list('category', flat=True)),
+            {'LAB_PLASTICS', 'LAB_REAGENTS', 'IT_HARDWARE'},
+        )
+        self.assertEqual(lines.get(category='LAB_PLASTICS').spend_usd, Decimal('42000'))
+        self.assertEqual(lines.get(category='LAB_REAGENTS').supplier, 'Bio-Rad')
+
+    def test_credits_and_blank_rows_are_skipped(self):
+        self._post(
+            'category,description,supplier,amount\n'
+            'Reagents,Master mix,Bio-Rad,50000\n'
+            'Reagents,Credit note,Bio-Rad,-5000\n'
+            ',,,\n'
+            'Reagents,Zero line,Bio-Rad,0\n'
+        )
+        self.assertEqual(
+            ProcurementLine.objects.filter(
+                emission_data__emission_source__facility=self.facility).count(),
+            1,
+        )
+
+    def test_unmatched_categories_fall_back_to_other_and_are_reported(self):
+        response = self._post(
+            'category,description,supplier,amount\n'
+            'ZZ-9911 Sundry,Miscellaneous,Various,25000\n'
+        )
+        line = ProcurementLine.objects.get(
+            emission_data__emission_source__facility=self.facility)
+        self.assertEqual(line.category, 'OTHER')
+        report = response.context['import_report']
+        self.assertEqual(report['unmatched_count'], 1)
+        self.assertEqual(report['unclassified_share'], Decimal('100'))
+
+    def test_reimport_replaces_rather_than_duplicates(self):
+        body = ('category,description,supplier,amount\n'
+                'Reagents,Master mix,Bio-Rad,50000\n')
+        self._post(body)
+        self._post(body)
+        self.assertEqual(
+            ProcurementLine.objects.filter(
+                emission_data__emission_source__facility=self.facility).count(),
+            1,
+            'Re-importing the same period duplicated the spend',
+        )
+
+    def test_reimport_keeps_hand_entered_lines(self):
+        self._post('category,description,supplier,amount\n'
+                   'Reagents,Master mix,Bio-Rad,50000\n')
+        record = EmissionData.objects.filter(
+            emission_source__facility=self.facility).first()
+        ProcurementLine.objects.create(
+            emission_data=record, category='LAB_GASES',
+            description='Hand-added nitrogen', spend_usd=Decimal('9000'),
+            source='MANUAL',
+        )
+        self._post('category,description,supplier,amount\n'
+                   'Reagents,Master mix,Bio-Rad,50000\n')
+        self.assertTrue(
+            ProcurementLine.objects.filter(
+                emission_data=record, source='MANUAL').exists(),
+            'Re-import deleted a hand-entered line it did not own',
+        )
+
+    def test_missing_spend_column_is_rejected(self):
+        self._post('category,description,supplier\nReagents,Master mix,Bio-Rad\n')
+        self.assertFalse(
+            ProcurementLine.objects.filter(
+                emission_data__emission_source__facility=self.facility).exists())
+
+    def test_cannot_import_against_another_users_facility(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        stranger = User.objects.create_user('stranger', 's@example.com', 'pw')
+        self.client.force_login(stranger)
+        response = self.client.post('/upload/procurement/', {
+            'facility': self.facility.id, 'period': '2024-12-31',
+            'csv_file': SimpleUploadedFile(
+                'spend.csv', b'category,amount\nReagents,50000\n', 'text/csv'),
+        })
+        self.assertEqual(response.status_code, 404)
+
+
+class ProcurementImportPreservesBaselineTest(TestCase):
+    """Regression: importing procurement created a second EmissionData for the
+    same period on a dedicated upload source. Because "latest" resolves by
+    (-date, -id), that otherwise-empty record won and zeroed the site's
+    electricity, flights and fuel. Importing spend must never erase the rest of
+    the footprint."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create_user('preserve', 'p@example.com', 'pw')
+        cls.facility = Facility.objects.create(
+            code_name='KEEP_FAC', display_name='Keep Facility', country='ZA',
+            sector='research', created_by=cls.user,
+        )
+        source = EmissionSource.objects.create(
+            facility=cls.facility, code_name='KEEP_SRC', display_name='baseline',
+        )
+        EmissionData.objects.create(
+            emission_source=source, date=date(2024, 12, 31),
+            grid_electricity=Decimal('420000'), flights=Decimal('950000'),
+        )
+
+    def _import(self, period='2024-12-31'):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        self.client.force_login(self.user)
+        return self.client.post('/upload/procurement/', {
+            'facility': self.facility.id, 'period': period,
+            'csv_file': SimpleUploadedFile(
+                'spend.csv',
+                b'category,description,supplier,amount\n'
+                b'Reagents,Master mix,Bio-Rad,50000\n',
+                'text/csv'),
+        })
+
+    def _latest(self):
+        return (EmissionData.objects
+                .filter(emission_source__facility=self.facility)
+                .order_by('-date', '-id').first())
+
+    def test_import_does_not_create_a_second_record_for_the_period(self):
+        self._import()
+        self.assertEqual(
+            EmissionData.objects.filter(
+                emission_source__facility=self.facility,
+                date=date(2024, 12, 31)).count(),
+            1,
+            'Import created a duplicate record for a period that already had one',
+        )
+
+    def test_existing_emissions_survive_the_import(self):
+        before = compute_tco2e(self._latest(), 'ZA', 'research')
+        self._import()
+        after_record = self._latest()
+        after = compute_tco2e(after_record, 'ZA', 'research')
+
+        self.assertEqual(after_record.grid_electricity, Decimal('420000'))
+        self.assertEqual(after['grid_electricity'], before['grid_electricity'])
+        self.assertEqual(after['flights'], before['flights'])
+        self.assertGreater(after['total'], Decimal('0'))
+        self.assertTrue(after_record.procurement_lines.exists())
+
+    def test_period_with_no_record_still_gets_one(self):
+        self._import(period='2023-12-31')
+        self.assertTrue(
+            EmissionData.objects.filter(
+                emission_source__facility=self.facility,
+                date=date(2023, 12, 31)).exists(),
+            'Importing into an unreported period should create the record',
         )

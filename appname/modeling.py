@@ -114,6 +114,254 @@ WASTE_EF = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Procurement categories (GHG Protocol Scope 3, Category 1 — Purchased goods
+# and services).
+#
+# Purchased goods are the largest single slice of a research organisation's
+# footprint (Lannelongue et al. 2024, PLOS Sustainability and Transformation,
+# "Purchases dominate the carbon footprint of research laboratories"), yet a
+# single blended spend factor cannot say WHERE that carbon sits, so it supports
+# no procurement decision. Splitting spend by category is what turns the number
+# into something a procurement officer can act on.
+#
+# Factors are spend-based EEIO values from the US EPA Supply Chain Greenhouse
+# Gas Emission Factors v1.2 (2017 NAICS-6, 2019 GHG data), "with margins",
+# expressed by EPA as kgCO2e per 2021 USD at purchaser price. Stored here as
+# tCO2e per USD to match the rest of EMISSION_FACTORS, i.e. EPA value / 1000.
+# Dataset: https://catalog.data.gov/dataset/supply-chain-greenhouse-gas-emission-factors-v1-2-by-naics-6
+#
+# Spend-based factors are the weakest link in any footprint: they assume price
+# tracks carbon, so a premium-priced low-carbon product looks worse than a cheap
+# high-carbon one. They are appropriate for hot-spot ranking and for coverage of
+# categories with no physical data, which is what this table is for. The
+# methodology page states this limitation.
+# ---------------------------------------------------------------------------
+PROCUREMENT_CATEGORIES = {
+    'LAB_PLASTICS': {
+        'display_name': 'Lab plastics & single-use consumables',
+        'factor': Decimal('0.000403'),
+        'naics': '326199',
+        'naics_title': 'All Other Plastics Product Manufacturing',
+        'note': 'Pipette tips, tubes, plates, gloves, single-use labware.',
+    },
+    'LAB_CHEMICALS': {
+        'display_name': 'Chemicals & solvents',
+        'factor': Decimal('0.001510'),
+        'naics': '325199',
+        'naics_title': 'All Other Basic Organic Chemical Manufacturing',
+        'note': 'Bulk solvents and organic chemicals. Carbon-intensive per dollar.',
+    },
+    'LAB_REAGENTS': {
+        'display_name': 'Reagents & biological products',
+        'factor': Decimal('0.000085'),
+        'naics': '325414',
+        'naics_title': 'Biological Product (except Diagnostic) Manufacturing',
+        'note': 'Antibodies, enzymes, media, cell culture reagents.',
+    },
+    'LAB_DIAGNOSTICS': {
+        'display_name': 'Diagnostic kits & assays',
+        'factor': Decimal('0.000143'),
+        'naics': '325413',
+        'naics_title': 'In-Vitro Diagnostic Substance Manufacturing',
+        'note': 'ELISA, PCR and rapid-test kits.',
+    },
+    'LAB_GASES': {
+        'display_name': 'Industrial & laboratory gases',
+        'factor': Decimal('0.001450'),
+        'naics': '325120',
+        'naics_title': 'Industrial Gas Manufacturing',
+        'note': 'Liquid nitrogen, CO2 for incubators, compressed gases.',
+    },
+    'LAB_GLASS': {
+        'display_name': 'Glassware',
+        'factor': Decimal('0.000490'),
+        'naics': '327215',
+        'naics_title': 'Glass Product Manufacturing Made of Purchased Glass',
+        'note': 'Reusable glassware. Low spend, but a reuse lever.',
+    },
+    'LAB_EQUIPMENT': {
+        'display_name': 'Laboratory instruments & equipment',
+        'factor': Decimal('0.000093'),
+        'naics': '334516',
+        'naics_title': 'Analytical Laboratory Instrument Manufacturing',
+        'note': 'Sequencers, analysers, centrifuges, spectrometers.',
+    },
+    'COLD_CHAIN': {
+        'display_name': 'Refrigeration & cold-chain equipment',
+        'factor': Decimal('0.000236'),
+        'naics': '333415',
+        'naics_title': 'Air-Conditioning and Commercial and Industrial Refrigeration Equipment Manufacturing',
+        'note': 'ULT freezers, cold rooms, sample fridges. Capital purchase only — '
+                'running electricity sits under Grid Electricity.',
+    },
+    'MEDICAL_SUPPLIES': {
+        'display_name': 'Medical & surgical supplies',
+        'factor': Decimal('0.000190'),
+        'naics': '339112',
+        'naics_title': 'Surgical and Medical Instrument Manufacturing',
+        'note': 'Clinical trial and participant-facing consumables.',
+    },
+    'PHARMA': {
+        'display_name': 'Pharmaceuticals & study drugs',
+        'factor': Decimal('0.000107'),
+        'naics': '325412',
+        'naics_title': 'Pharmaceutical Preparation Manufacturing',
+    },
+    'IT_HARDWARE': {
+        'display_name': 'Computing & IT hardware',
+        'factor': Decimal('0.000112'),
+        'naics': '334111',
+        'naics_title': 'Electronic Computer Manufacturing',
+        'note': 'Laptops, servers, storage. A major line for data-heavy groups.',
+    },
+    'IT_SOFTWARE': {
+        'display_name': 'Software & licences',
+        'factor': Decimal('0.000097'),
+        'naics': '511210',
+        'naics_title': 'Software Publishers',
+    },
+    'OFFICE_PAPER': {
+        'display_name': 'Office supplies & paper',
+        'factor': Decimal('0.000418'),
+        'naics': '322230',
+        'naics_title': 'Stationery Product Manufacturing',
+    },
+    'FREIGHT_COURIER': {
+        'display_name': 'Freight, courier & sample shipping',
+        'factor': Decimal('0.000257'),
+        'naics': '492110',
+        'naics_title': 'Couriers and Express Delivery Services',
+        'note': 'Cold-chain sample shipping and inbound deliveries.',
+    },
+    'FACILITIES_MAINT': {
+        'display_name': 'Facilities, maintenance & fit-out',
+        'factor': Decimal('0.000245'),
+        'naics': '238220',
+        'naics_title': 'Plumbing, Heating, and Air-Conditioning Contractors',
+    },
+    'CLEANING': {
+        'display_name': 'Cleaning & janitorial services',
+        'factor': Decimal('0.000167'),
+        'naics': '561720',
+        'naics_title': 'Janitorial Services',
+    },
+    'SUBCONTRACT_RESEARCH': {
+        'display_name': 'Subcontracted research & site payments',
+        'factor': Decimal('0.000174'),
+        'naics': '541715',
+        'naics_title': 'Research and Development in the Physical, Engineering and Life Sciences',
+        'note': 'Payments to collaborating sites and CROs.',
+    },
+    'PROF_SERVICES': {
+        'display_name': 'Professional & consulting services',
+        'factor': Decimal('0.000084'),
+        'naics': '541611',
+        'naics_title': 'Administrative Management and General Management Consulting Services',
+    },
+    'OTHER': {
+        'display_name': 'Other / unclassified spend',
+        'factor': Decimal('0.000449'),
+        'naics': '—',
+        'naics_title': '75th percentile across all 1,016 EPA commodities',
+        'note': 'Deliberately conservative: set above the median (0.208 kgCO2e/USD) '
+                'so unclassified spend is not under-counted, and so classifying a '
+                'line almost always lowers the reported figure.',
+    },
+}
+
+# Categories whose emissions are already captured elsewhere must NOT appear
+# here, or they would be counted twice. Waste disposal services are the obvious
+# trap: that spend belongs to the Waste Management category, which uses a
+# physical tonnage factor.
+PROCUREMENT_EXCLUDED_NOTE = (
+    'Waste disposal, electricity, fuel and travel are deliberately absent. '
+    'Those are already measured with physical activity data elsewhere in the '
+    'footprint, so counting the spend as well would double-count them.'
+)
+
+
+# Words a finance-system export is likely to contain, mapped to our categories.
+# A spend export names things like "Consumables - plastics" or "Ref: Thermo
+# Fisher tips", never 'LAB_PLASTICS', so import has to meet the data where it
+# is. Checked longest-first so 'lab equipment' wins over bare 'lab'.
+PROCUREMENT_ALIASES = {
+    'LAB_PLASTICS': ['plastic', 'pipette', 'tip', 'tube', 'glove', 'labware',
+                     'disposable', 'single-use', 'single use', 'petri', 'plate',
+                     'consumable'],
+    'LAB_CHEMICALS': ['chemical', 'solvent', 'ethanol', 'methanol', 'acid',
+                      'buffer', 'stain'],
+    'LAB_REAGENTS': ['reagent', 'antibod', 'enzyme', 'media', 'serum',
+                     'cell culture', 'biological', 'primer', 'probe'],
+    'LAB_DIAGNOSTICS': ['diagnostic', 'assay', 'elisa', 'pcr kit', 'test kit',
+                        'rapid test'],
+    'LAB_GASES': ['gas cylinder', 'liquid nitrogen', 'nitrogen', 'co2 gas',
+                  'compressed gas', 'industrial gas'],
+    'LAB_GLASS': ['glassware', 'glass'],
+    'LAB_EQUIPMENT': ['lab equipment', 'laboratory equipment', 'instrument',
+                      'centrifuge', 'sequencer', 'analyser', 'analyzer',
+                      'microscope', 'spectrometer'],
+    'COLD_CHAIN': ['freezer', 'cold chain', 'cold-chain', 'refrigerat',
+                   'fridge', 'cold room', 'ult'],
+    'MEDICAL_SUPPLIES': ['medical supply', 'medical supplies', 'surgical',
+                         'syringe', 'needle', 'dressing', 'clinical supply'],
+    'PHARMA': ['pharmaceutic', 'drug', 'medicine', 'vaccine', 'study drug'],
+    'IT_HARDWARE': ['laptop', 'computer', 'server', 'hardware', 'monitor',
+                    'printer', 'storage', 'tablet'],
+    'IT_SOFTWARE': ['software', 'licence', 'license', 'subscription', 'saas',
+                    'cloud'],
+    'OFFICE_PAPER': ['stationery', 'paper', 'office supply', 'office supplies',
+                     'printing'],
+    'FREIGHT_COURIER': ['courier', 'freight', 'shipping', 'postage', 'dhl',
+                        'logistics', 'delivery'],
+    'FACILITIES_MAINT': ['maintenance', 'repair', 'fit-out', 'fitout',
+                         'building', 'plumbing', 'electrical work',
+                         'construction'],
+    'CLEANING': ['cleaning', 'janitor', 'hygiene'],
+    'SUBCONTRACT_RESEARCH': ['subcontract', 'sub-contract', 'cro', 'site payment',
+                             'collaborat', 'participant reimbursement'],
+    'PROF_SERVICES': ['consult', 'professional service', 'legal', 'audit',
+                      'accounting', 'training'],
+}
+
+
+def match_procurement_category(text):
+    """
+    Best-guess category for a free-text spend description.
+
+    Returns (category_code, matched) — matched is False when nothing hit and the
+    line falls back to OTHER, so the import can report how much spend went
+    unclassified instead of silently absorbing it.
+    """
+    if not text:
+        return 'OTHER', False
+    needle = str(text).strip().lower()
+
+    # An exact category code or display name always wins.
+    for code, spec in PROCUREMENT_CATEGORIES.items():
+        if needle == code.lower() or needle == spec['display_name'].lower():
+            return code, True
+
+    # Otherwise longest alias first, so 'lab equipment' beats 'plate'.
+    candidates = [
+        (alias, code)
+        for code, aliases in PROCUREMENT_ALIASES.items()
+        for alias in aliases
+    ]
+    for alias, code in sorted(candidates, key=lambda pair: -len(pair[0])):
+        if alias in needle:
+            return code, True
+    return 'OTHER', False
+
+
+def procurement_category_choices():
+    """(code, label) pairs for form fields, ordered by display name."""
+    return sorted(
+        ((code, spec['display_name']) for code, spec in PROCUREMENT_CATEGORIES.items()),
+        key=lambda pair: pair[1],
+    )
+
+
 def compute_tco2e(emission_data, country='OTHER', sector=None):
     """
     Convert raw usage quantities stored in an EmissionData record to tCO₂e.
@@ -126,6 +374,12 @@ def compute_tco2e(emission_data, country='OTHER', sector=None):
 
     Returns:
         dict with one key per emission field (tCO₂e value) plus 'total'.
+
+    Procurement: when the record has itemised procurement lines, they replace
+    the single blended lab_consumables estimate rather than adding to it. This
+    is resolved here, inside the one function every caller already routes
+    through, so the dashboard, facility profile and optimiser all agree without
+    each needing to know procurement exists.
     """
     electricity_ef = ELECTRICITY_EF.get(country, ELECTRICITY_EF['OTHER'])
     waste_ef = WASTE_EF['clinical'] if sector == 'clinical' else WASTE_EF['default']
@@ -139,8 +393,78 @@ def compute_tco2e(emission_data, country='OTHER', sector=None):
         else:
             ef = factor or Decimal('0')
         results[field] = Decimal(str(raw)) * ef
+
+    itemised = itemised_procurement_tco2e(emission_data)
+    if itemised is not None:
+        results['lab_consumables'] = itemised
+
     results['total'] = sum(results.values())
     return results
+
+
+def itemised_procurement_tco2e(emission_data):
+    """
+    tCO₂e from this record's procurement lines, or None if it has none.
+
+    None (rather than zero) is the signal to fall back to the blended
+    lab_consumables spend figure — a record with no lines is un-itemised, not a
+    record with zero procurement.
+
+    Tolerates an unsaved or line-less record so compute_tco2e() stays usable on
+    in-memory instances, which several callers rely on.
+    """
+    if getattr(emission_data, 'pk', None) is None:
+        return None
+    try:
+        lines = emission_data.procurement_lines.all()
+    except (AttributeError, ValueError):
+        return None
+    lines = list(lines)
+    if not lines:
+        return None
+    return sum((line.tco2e() for line in lines), Decimal('0'))
+
+
+def procurement_breakdown(emission_data):
+    """
+    Per-category procurement rollup for the hot-spot view, biggest first.
+
+    Returns [] when the record has no lines. Each row carries the category's
+    share of procurement carbon AND its share of spend, because the gap between
+    those two is the actionable insight: a category at 5% of spend but 30% of
+    carbon is where a procurement officer should look first.
+    """
+    lines = list(emission_data.procurement_lines.all()) if getattr(emission_data, 'pk', None) else []
+    if not lines:
+        return []
+
+    totals = {}
+    for line in lines:
+        row = totals.setdefault(line.category, {
+            'category': line.category,
+            'label': line.category_label,
+            'spec': line.spec,
+            'spend': Decimal('0'),
+            'tco2e': Decimal('0'),
+            'line_count': 0,
+        })
+        row['spend'] += line.spend_usd or Decimal('0')
+        row['tco2e'] += line.tco2e()
+        row['line_count'] += 1
+
+    total_tco2e = sum((r['tco2e'] for r in totals.values()), Decimal('0'))
+    total_spend = sum((r['spend'] for r in totals.values()), Decimal('0'))
+    rows = sorted(totals.values(), key=lambda r: r['tco2e'], reverse=True)
+
+    cumulative = Decimal('0')
+    for row in rows:
+        row['carbon_share'] = (row['tco2e'] / total_tco2e * 100) if total_tco2e else Decimal('0')
+        row['spend_share'] = (row['spend'] / total_spend * 100) if total_spend else Decimal('0')
+        # Positive means this category punches above its spend — the hot spots.
+        row['intensity_gap'] = row['carbon_share'] - row['spend_share']
+        cumulative += row['carbon_share']
+        row['cumulative_share'] = cumulative
+    return rows
 
 
 def sum_tco2e(emission_data_qs, country='OTHER', sector=None):
