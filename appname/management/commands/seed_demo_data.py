@@ -23,6 +23,7 @@ from django.contrib.auth.models import User
 from appname.models import (
     Facility, EmissionSource, EmissionData,
     Intervention, FacilityIntervention, Organisation, ProcurementLine,
+    Project, ProjectSite,
 )
 from appname.middleware import DEMO_USERNAME, DEMO_EMAIL
 
@@ -73,6 +74,47 @@ PROCUREMENT_LINES = [
     ('WHC_PHRU', 'LAB_DIAGNOSTICS',      'Rapid test kits',                     'Abbott',      Decimal('120000')),
     ('WHC_PHRU', 'FREIGHT_COURIER',      'Sample transport',                    'DHL',         Decimal('62000')),
     ('WHC_PHRU', 'IT_HARDWARE',          'Field data capture tablets',          'Samsung',     Decimal('48000')),
+]
+
+
+# ---------------------------------------------------------------------------
+# Funded awards.
+#
+# A grant runs across several entities, which is the whole point of the module:
+# one award, three sites, each contributing a stated share. Shares here are
+# illustrative, but the shape is real — a Wellcome award with staff split across
+# a co-ordinating unit and two laboratories.
+#
+# Format: (key, name, funder, grant_ref, PI, lead org key, basis, note)
+# ---------------------------------------------------------------------------
+PROJECTS = [
+    {
+        'key': 'CLIMATE_CHILD',
+        'name': 'Climate & Child Health Cohort',
+        'funder': 'wellcome',
+        'grant_reference': '225000/Z/22/Z',
+        'principal_investigator': 'Prof. A. Ndlovu',
+        'organisation': 'PLANETARY',
+        'allocation_basis': 'fte',
+        'allocation_note': (
+            'Staff FTE from the 2024 timesheet return: 4.1 of 38.0 FTE at Wits '
+            'Planetary Health (Parktown), 2.6 of 46.0 FTE at the VIDA laboratory '
+            '(Bara), and 1.9 of 52.0 FTE at PHRU (Soweto). Reviewed by the WHC '
+            'grants office, March 2025.'
+        ),
+        'sites': [
+            ('WHC_PLANETARY', Decimal('10.79'), '4.1 of 38.0 FTE'),
+            ('WHC_VIDA',      Decimal('5.65'),  '2.6 of 46.0 FTE'),
+            ('WHC_PHRU',      Decimal('3.65'),  '1.9 of 52.0 FTE'),
+        ],
+        # Spend charged directly to the award (facility_code, category, description, supplier, USD)
+        'direct_spend': [
+            ('WHC_VIDA',      'LAB_DIAGNOSTICS', 'Cohort assay kits',        'Bio-Rad',       Decimal('64000')),
+            ('WHC_VIDA',      'LAB_PLASTICS',    'Cohort specimen consumables', 'Lasec',      Decimal('38000')),
+            ('WHC_PLANETARY', 'IT_HARDWARE',     'Cohort data platform servers', 'Dell',      Decimal('47000')),
+            ('WHC_PHRU',      'MEDICAL_SUPPLIES','Participant clinical supplies', 'Various',  Decimal('52000')),
+        ],
+    },
 ]
 
 
@@ -729,6 +771,51 @@ class Command(BaseCommand):
             )
             fi.roi = fi.calculate_roi()
             fi.save(update_fields=['roi'])
+
+        # Funded awards, with their sites and any spend charged directly to them.
+        for spec in PROJECTS:
+            project, _ = Project.objects.update_or_create(
+                name=spec['name'],
+                defaults={
+                    'grant_reference': spec['grant_reference'],
+                    'funder': spec['funder'],
+                    'principal_investigator': spec['principal_investigator'],
+                    'organisation': org_map.get(spec['organisation']),
+                    'allocation_basis': spec['allocation_basis'],
+                    'allocation_note': spec['allocation_note'],
+                    'created_by': demo_user,
+                },
+            )
+            for (fcode, share, note) in spec['sites']:
+                facility = by_code.get(fcode)
+                if facility is None:
+                    continue
+                ProjectSite.objects.update_or_create(
+                    project=project, facility=facility,
+                    defaults={'share_pct': share, 'basis_note': note},
+                )
+            for (fcode, category, description, supplier, spend) in spec['direct_spend']:
+                facility = by_code.get(fcode)
+                if facility is None:
+                    continue
+                record = (
+                    EmissionData.objects
+                    .filter(emission_source__facility=facility)
+                    .order_by('-date', '-id')
+                    .first()
+                )
+                if record is None:
+                    continue
+                ProcurementLine.objects.update_or_create(
+                    emission_data=record, category=category, description=description,
+                    defaults={
+                        'supplier': supplier, 'spend_usd': spend,
+                        'source': 'CSV', 'project': project,
+                    },
+                )
+            self.stdout.write(
+                f'  Seeded award: {project.name} ({len(spec["sites"])} sites)'
+            )
 
         self.stdout.write(self.style.SUCCESS(
             f'\nDone. Seeded {len(FACILITIES)} facilities, '

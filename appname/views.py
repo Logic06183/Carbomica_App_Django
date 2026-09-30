@@ -44,10 +44,13 @@ from .models import (
     OptimizationScenario,
     OptimizationResult,
     ProcurementLine,
+    Project,
+    ProjectSite,
 )
 from .modeling import (
     CarbomicaOptimizer, calculate_npv, compute_tco2e, sum_tco2e,
     PROCUREMENT_CATEGORIES, match_procurement_category, procurement_breakdown,
+    project_footprint,
 )
 
 # ---------------------------------------------------------------------------
@@ -1683,4 +1686,144 @@ def facility_detail(request, facility_id):
         'category_labels': CATEGORY_LABELS,
         'category_rows': category_rows,
         'scope_totals': scope_totals,
+    })
+
+
+# ---------------------------------------------------------------------------
+# Projects (awards) — funder-facing carbon reporting
+# ---------------------------------------------------------------------------
+
+def _user_projects(user):
+    """
+    Awards this user can see: ones they created, plus any whose lead entity or
+    participating sites fall inside their visible organisations. Reuses the same
+    subtree rules as facilities so a consortium lead sees every award beneath
+    them and an entity member sees only their own.
+    """
+    visible_facilities = _user_facilities(user)
+    return Project.objects.filter(
+        Q(created_by=user)
+        | Q(organisation_id__in=_visible_org_ids(user))
+        | Q(sites__facility__in=visible_facilities)
+    ).distinct()
+
+
+@login_required
+def projects(request):
+    """List awards with their attributed footprint."""
+    project_qs = _user_projects(request.user).select_related('organisation')
+
+    if request.method == 'POST' and request.POST.get('action') == 'create':
+        name = (request.POST.get('name') or '').strip()
+        if not name:
+            messages.error(request, 'Give the award a name.')
+            return redirect('projects')
+
+        organisation = None
+        org_id = request.POST.get('organisation') or None
+        if org_id and int(org_id) in _visible_org_ids(request.user):
+            organisation = get_object_or_404(Organisation, id=org_id)
+
+        project = Project.objects.create(
+            name=name,
+            grant_reference=(request.POST.get('grant_reference') or '').strip(),
+            funder=request.POST.get('funder') or 'other',
+            funder_other=(request.POST.get('funder_other') or '').strip(),
+            principal_investigator=(request.POST.get('principal_investigator') or '').strip(),
+            organisation=organisation,
+            allocation_basis=request.POST.get('allocation_basis') or Project.BASIS_FTE,
+            created_by=request.user,
+        )
+        messages.success(request, f'Award "{project.name}" created. Add its sites and shares next.')
+        return redirect('project_detail', project_id=project.id)
+
+    rows = []
+    for project in project_qs:
+        footprint = project_footprint(project)
+        rows.append({
+            'project': project,
+            'total': footprint['total'],
+            'site_count': len(footprint['site_rows']),
+            'needs_sites': not footprint['site_rows'],
+        })
+    rows.sort(key=lambda r: r['total'], reverse=True)
+
+    return render(request, 'appname/projects.html', {
+        'rows': rows,
+        'funder_choices': Project.FUNDER_CHOICES,
+        'basis_choices': Project.ALLOCATION_BASIS_CHOICES,
+        'org_options': Organisation.objects.filter(
+            pk__in=_visible_org_ids(request.user)
+        ).order_by('name'),
+        'portfolio_total': sum((r['total'] for r in rows), Decimal('0')),
+    })
+
+
+@login_required
+def project_detail(request, project_id):
+    """The funder-facing carbon report for one award."""
+    project = get_object_or_404(_user_projects(request.user), id=project_id)
+
+    if request.method == 'POST':
+        action = request.POST.get('action')
+
+        if action == 'add_site':
+            facility = get_object_or_404(
+                _user_facilities(request.user), id=request.POST.get('facility')
+            )
+            try:
+                share = Decimal(request.POST.get('share_pct') or '0')
+            except InvalidOperation:
+                share = Decimal('0')
+            share = max(Decimal('0'), min(share, Decimal('100')))
+            ProjectSite.objects.update_or_create(
+                project=project, facility=facility,
+                defaults={
+                    'share_pct': share,
+                    'basis_note': (request.POST.get('basis_note') or '').strip(),
+                },
+            )
+            messages.success(request, f'{facility.display_name} added at {share}%.')
+
+        elif action == 'remove_site':
+            ProjectSite.objects.filter(
+                project=project, id=request.POST.get('site_id')
+            ).delete()
+            messages.success(request, 'Site removed from the award.')
+
+        elif action == 'update_note':
+            project.allocation_basis = request.POST.get('allocation_basis') or project.allocation_basis
+            project.allocation_note = (request.POST.get('allocation_note') or '').strip()
+            project.save(update_fields=['allocation_basis', 'allocation_note'])
+            messages.success(request, 'Allocation basis updated.')
+
+        return redirect('project_detail', project_id=project.id)
+
+    footprint = project_footprint(project)
+
+    scope_totals = {1: Decimal('0'), 2: Decimal('0'), 3: Decimal('0')}
+    for field, value in footprint['by_category'].items():
+        scope = CATEGORY_SCOPES.get(field)
+        if scope:
+            scope_totals[scope] += value
+
+    category_rows = [
+        {
+            'label': CATEGORY_LABELS.get(row['field'], row['field']),
+            'scope': CATEGORY_SCOPES.get(row['field']),
+            'tco2e': row['tco2e'],
+            'share': (row['tco2e'] / footprint['total'] * 100) if footprint['total'] else Decimal('0'),
+        }
+        for row in footprint['category_rows']
+    ]
+
+    assigned_ids = [row['facility'].id for row in footprint['site_rows']]
+    return render(request, 'appname/project_detail.html', {
+        'project': project,
+        'footprint': footprint,
+        'category_rows': category_rows,
+        'scope_totals': scope_totals,
+        'basis_choices': Project.ALLOCATION_BASIS_CHOICES,
+        'available_facilities': _user_facilities(request.user)
+            .exclude(id__in=assigned_ids).order_by('display_name'),
     })

@@ -1,0 +1,150 @@
+{% extends 'appname/base.html' %}
+{% load humanize %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <p class="section-label mb-1">Funded awards</p>
+        <h2 class="mb-0">Projects</h2>
+        <p class="text-muted mt-1">
+            Funders ask for the footprint of an <em>award</em>, not an organisation.
+            Wellcome's environmental sustainability funding policy makes staff time to
+            assess and report on an award's emissions an eligible cost, and expects an
+            auditable record where staff work across more than one award. Each project
+            here carries its own footprint, its own sites, and the basis used to
+            apportion shared emissions.
+        </p>
+    </div>
+</div>
+
+{% if rows %}
+<div class="row mb-4"><div class="col-12">
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <strong><i class="fas fa-folder-open me-2 text-primary"></i>Award portfolio</strong>
+            <span class="text-muted small">
+                {{ rows|length }} award{{ rows|length|pluralize }} ·
+                <strong>{{ portfolio_total|floatformat:1 }}</strong> tCO<sub>2</sub>e attributed
+            </span>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Award</th>
+                        <th>Funder</th>
+                        <th>Lead entity</th>
+                        <th class="text-end">Sites</th>
+                        <th class="text-end">tCO<sub>2</sub>e</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rows %}
+                    <tr>
+                        <td>
+                            <a href="{% url 'project_detail' row.project.id %}" class="fw-semibold text-decoration-none">
+                                {{ row.project.name }}
+                            </a>
+                            {% if row.project.grant_reference %}
+                            <div class="text-muted" style="font-size:.7rem;">{{ row.project.grant_reference }}</div>
+                            {% endif %}
+                        </td>
+                        <td>{{ row.project.funder_label }}</td>
+                        <td class="text-muted small">{{ row.project.organisation.display_label|default:"—" }}</td>
+                        <td class="text-end">{{ row.site_count }}</td>
+                        <td class="text-end fw-semibold">{{ row.total|floatformat:1 }}</td>
+                        <td class="text-end">
+                            {% if row.needs_sites %}
+                            <span class="badge bg-warning text-dark">add sites</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="card-footer text-muted" style="font-size:.75rem;">
+            An award's footprint is purchases charged directly to it, plus its stated
+            share of each site's shared running emissions. Awards can overlap sites
+            without double-counting: a purchase charged to one award is never
+            apportioned to another.
+        </div>
+    </div>
+</div></div>
+{% endif %}
+
+<div class="row g-4">
+    <div class="col-lg-7">
+        {% if not rows %}
+        <div class="alert alert-info">
+            No awards yet. Create one on the right, then add the sites it runs at and the
+            share of each site attributable to the award.
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="col-lg-5">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="mb-3"><i class="fas fa-plus-circle me-2 text-success"></i>New award</h5>
+                <form method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="create">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Award title <span class="text-danger">*</span></label>
+                        <input type="text" name="name" class="form-control" required
+                               placeholder="e.g. Climate &amp; Child Health Cohort">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Funder</label>
+                        <select name="funder" class="form-select">
+                            {% for value, label in funder_choices %}
+                            <option value="{{ value }}">{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Funder name if "Other"</label>
+                        <input type="text" name="funder_other" class="form-control">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Grant reference</label>
+                        <input type="text" name="grant_reference" class="form-control"
+                               placeholder="e.g. 225000/Z/22/Z">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Principal investigator</label>
+                        <input type="text" name="principal_investigator" class="form-control">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Lead entity</label>
+                        <select name="organisation" class="form-select">
+                            <option value="">— none —</option>
+                            {% for org in org_options %}
+                            <option value="{{ org.id }}">{{ org.display_label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Allocation basis</label>
+                        <select name="allocation_basis" class="form-select">
+                            {% for value, label in basis_choices %}
+                            <option value="{{ value }}">{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">
+                            How shared site emissions are apportioned. Staff FTE is the
+                            default because it is the record Wellcome already expects
+                            grant holders to keep.
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-success w-100">
+                        <i class="fas fa-plus me-1"></i> Create award
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

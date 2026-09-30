@@ -1479,3 +1479,173 @@ class GreenInvestmentAnalyzer:
 
     def calculate_carbon_credits(self, emission_reduction_tco2e):
         return Decimal(str(emission_reduction_tco2e)) * self.CARBON_CREDIT_PRICE
+
+
+# ---------------------------------------------------------------------------
+# Project (award) attribution
+#
+# Funders increasingly ask for the footprint of an AWARD rather than an
+# organisation. Wellcome's environmental sustainability funding policy makes
+# staff time to "assess, measure and report on the award's emissions and
+# resource usage" an eligible cost, and requires "an auditable record of their
+# time on the project" where staff work across more than one award.
+#
+# An award's footprint is therefore built the way grant finance already works,
+# from two parts:
+#
+#   DIRECT      — purchases charged to the award. Counted in full.
+#   APPORTIONED — the award's stated share of a site's shared running
+#                 emissions (electricity, waste, fuel, shared travel), on a
+#                 declared basis: staff FTE by default, since that is the
+#                 record the funder already expects to exist.
+#
+# The two must never overlap. Procurement lines tagged to THIS award are
+# direct; lines tagged to ANOTHER award are excluded from the pool entirely;
+# only untagged lines are apportioned. Without that exclusion a site running
+# three grants would report each of them a share of the other two's purchases.
+# ---------------------------------------------------------------------------
+
+# Categories that are shared site overheads and can only be apportioned.
+# Procurement is handled separately because it supports direct attribution.
+APPORTIONABLE_FIELDS = [
+    'grid_electricity', 'grid_gas', 'bottled_gas', 'liquid_fuel',
+    'vehicle_fuel_owned', 'business_travel', 'anaesthetic_gases',
+    'refrigeration_gases', 'waste_management', 'medical_inhalers',
+    'contractor_logistics', 'flights',
+]
+
+
+def _latest_record(facility):
+    from appname.models import EmissionData
+    return (
+        EmissionData.objects
+        .filter(emission_source__facility=facility)
+        .order_by('-date', '-id')
+        .first()
+    )
+
+
+def project_footprint(project):
+    """
+    Attribute emissions to one award.
+
+    Returns a dict with per-site rows, the direct/apportioned split, a category
+    breakdown, scope totals, and the procurement hot spots for spend charged to
+    the award. Sites with no emission record are reported so the gap is visible
+    rather than silently reducing the total.
+    """
+    from appname.models import ProcurementLine
+
+    site_rows = []
+    by_category = {field: Decimal('0') for field in APPORTIONABLE_FIELDS}
+    by_category['lab_consumables'] = Decimal('0')
+    direct_total = Decimal('0')
+    apportioned_total = Decimal('0')
+    direct_lines = []
+
+    for project_site in project.sites.select_related('facility').all():
+        facility = project_site.facility
+        share = (project_site.share_pct or Decimal('0')) / Decimal('100')
+        record = _latest_record(facility)
+        if record is None:
+            site_rows.append({
+                'site_id': project_site.id,
+                'facility': facility,
+                'share_pct': project_site.share_pct,
+                'basis_note': project_site.basis_note,
+                'period': None,
+                'apportioned': Decimal('0'),
+                'direct': Decimal('0'),
+                'total': Decimal('0'),
+                'missing_data': True,
+            })
+            continue
+
+        full = compute_tco2e(record, facility.country, facility.sector)
+
+        site_apportioned = Decimal('0')
+        for field in APPORTIONABLE_FIELDS:
+            value = full.get(field, Decimal('0')) * share
+            by_category[field] += value
+            site_apportioned += value
+
+        # Procurement: direct lines in full, untagged lines apportioned, other
+        # awards' lines excluded from the pool altogether.
+        lines = list(record.procurement_lines.all())
+        if lines:
+            site_direct = sum(
+                (line.tco2e() for line in lines if line.project_id == project.id),
+                Decimal('0'),
+            )
+            untagged_pool = sum(
+                (line.tco2e() for line in lines if line.project_id is None),
+                Decimal('0'),
+            )
+            direct_lines.extend(
+                line for line in lines if line.project_id == project.id
+            )
+        else:
+            # Un-itemised site: the blended procurement figure is shared, so it
+            # can only be apportioned.
+            site_direct = Decimal('0')
+            untagged_pool = full.get('lab_consumables', Decimal('0'))
+
+        procurement_apportioned = untagged_pool * share
+        by_category['lab_consumables'] += procurement_apportioned + site_direct
+        site_apportioned += procurement_apportioned
+
+        direct_total += site_direct
+        apportioned_total += site_apportioned
+        site_rows.append({
+            'site_id': project_site.id,
+            'facility': facility,
+            'share_pct': project_site.share_pct,
+            'basis_note': project_site.basis_note,
+            'period': record.date,
+            'apportioned': site_apportioned,
+            'direct': site_direct,
+            'total': site_apportioned + site_direct,
+            'missing_data': False,
+        })
+
+    total = direct_total + apportioned_total
+    category_rows = sorted(
+        (
+            {'field': field, 'tco2e': value}
+            for field, value in by_category.items() if value > 0
+        ),
+        key=lambda row: row['tco2e'], reverse=True,
+    )
+
+    return {
+        'site_rows': site_rows,
+        'category_rows': category_rows,
+        'by_category': by_category,
+        'direct_total': direct_total,
+        'apportioned_total': apportioned_total,
+        'total': total,
+        'direct_share_pct': (direct_total / total * 100) if total else Decimal('0'),
+        'procurement_rows': _project_procurement_rows(direct_lines),
+        'sites_missing_data': [r for r in site_rows if r['missing_data']],
+    }
+
+
+def _project_procurement_rows(lines):
+    """Per-category rollup of spend charged directly to an award."""
+    if not lines:
+        return []
+    totals = {}
+    for line in lines:
+        row = totals.setdefault(line.category, {
+            'category': line.category,
+            'label': line.category_label,
+            'spend': Decimal('0'),
+            'tco2e': Decimal('0'),
+        })
+        row['spend'] += line.spend_usd or Decimal('0')
+        row['tco2e'] += line.tco2e()
+    rows = sorted(totals.values(), key=lambda r: r['tco2e'], reverse=True)
+    grand = sum((r['tco2e'] for r in rows), Decimal('0'))
+    for row in rows:
+        row['share'] = (row['tco2e'] / grand * 100) if grand else Decimal('0')
+    return rows

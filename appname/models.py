@@ -266,6 +266,138 @@ class EmissionData(models.Model):
             self.flights + self.lab_consumables
         )
 
+class Project(models.Model):
+    """
+    A funded award — the unit funders actually care about.
+
+    Organisations answer "who owns the building"; projects answer "what the
+    money is for". They cross-cut: one grant runs across several entities, and
+    one entity runs many grants. Wellcome's environmental sustainability funding
+    policy makes staff time to "assess, measure and report on the award's
+    emissions and resource usage" an eligible cost, so the award — not the
+    organisation — is what has to be reportable.
+    """
+
+    FUNDER_CHOICES = [
+        ('wellcome', 'Wellcome Trust'),
+        ('nih', 'NIH'),
+        ('ukri', 'UKRI'),
+        ('gates', 'Gates Foundation'),
+        ('eu', 'European Commission'),
+        ('samrc', 'South African MRC'),
+        ('nrf', 'National Research Foundation (SA)'),
+        ('other', 'Other'),
+    ]
+
+    # How a project's share of a site's SHARED emissions is derived.
+    # Wellcome requires "an auditable record of their time on the project" where
+    # staff span multiple awards, so staff FTE is the default: it is the basis
+    # the funder has already asked grant holders to keep records for.
+    BASIS_FTE = 'fte'
+    ALLOCATION_BASIS_CHOICES = [
+        (BASIS_FTE, 'Staff FTE share'),
+        ('budget', 'Share of site budget'),
+        ('space', 'Share of floor / bench space'),
+        ('stated', 'Directly stated share'),
+    ]
+
+    name = models.CharField(max_length=255)
+    grant_reference = models.CharField(
+        max_length=100, blank=True,
+        help_text='The funder\'s award number, e.g. "225000/Z/22/Z".'
+    )
+    funder = models.CharField(max_length=20, choices=FUNDER_CHOICES, default='other')
+    funder_other = models.CharField(
+        max_length=200, blank=True,
+        help_text='Funder name when "Other" is selected.'
+    )
+    principal_investigator = models.CharField(max_length=200, blank=True)
+    organisation = models.ForeignKey(
+        'Organisation', null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='projects',
+        help_text='Lead entity holding the award.'
+    )
+    start_date = models.DateField(null=True, blank=True)
+    end_date = models.DateField(null=True, blank=True)
+    budget_usd = models.DecimalField(
+        max_digits=14, decimal_places=2, null=True, blank=True,
+        validators=[MinValueValidator(0.0)],
+        help_text='Total award value in USD.'
+    )
+    allocation_basis = models.CharField(
+        max_length=20, choices=ALLOCATION_BASIS_CHOICES, default=BASIS_FTE,
+        help_text='How shared site emissions are apportioned to this award.'
+    )
+    allocation_note = models.TextField(
+        blank=True,
+        help_text='The auditable record behind the shares — e.g. "3.2 FTE of '
+                  '41.0 FTE at the Bara laboratory, from the 2024 timesheet '
+                  'return". Reproduced on the funder report.'
+    )
+    created_by = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='projects',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _('Project')
+        verbose_name_plural = _('Projects')
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+    @property
+    def funder_label(self):
+        if self.funder == 'other':
+            return self.funder_other or 'Other'
+        return self.get_funder_display()
+
+    @property
+    def reference_label(self):
+        return f'{self.funder_label} · {self.grant_reference}' if self.grant_reference else self.funder_label
+
+
+class ProjectSite(models.Model):
+    """
+    A facility an award runs at, and the award's share of that site's shared
+    emissions.
+
+    The share applies only to emissions that cannot be attributed directly —
+    electricity, waste, shared travel. Procurement lines tagged to this project
+    are counted in full instead, and lines tagged to a DIFFERENT project are
+    excluded from the pool this share is taken from, so nothing is counted twice.
+    """
+
+    project = models.ForeignKey(Project, related_name='sites', on_delete=models.CASCADE)
+    facility = models.ForeignKey(
+        'Facility', related_name='project_sites', on_delete=models.CASCADE,
+    )
+    share_pct = models.DecimalField(
+        max_digits=6, decimal_places=3,
+        validators=[MinValueValidator(0.0), MaxValueValidator(100.0)],
+        help_text='Percentage of this site\'s shared emissions attributable to the award.'
+    )
+    basis_note = models.CharField(
+        max_length=255, blank=True,
+        help_text='Evidence for this share, e.g. "3.2 of 41.0 FTE".'
+    )
+
+    class Meta:
+        verbose_name = _('Project Site')
+        verbose_name_plural = _('Project Sites')
+        ordering = ['-share_pct']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['project', 'facility'], name='unique_project_facility',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.project} @ {self.facility} ({self.share_pct}%)'
+
+
 class ProcurementLine(models.Model):
     """
     One line of purchased goods or services for a reporting period.
@@ -301,6 +433,12 @@ class ProcurementLine(models.Model):
     spend_usd = models.DecimalField(
         max_digits=14, decimal_places=2, validators=[MinValueValidator(0.0)],
         help_text='Spend for this line in USD.'
+    )
+    project = models.ForeignKey(
+        Project, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='procurement_lines',
+        help_text='Award this purchase was charged to. Tagged lines are '
+                  'attributed to that award in full rather than apportioned.'
     )
     source = models.CharField(max_length=10, choices=SOURCE_CHOICES, default='MANUAL')
     created_at = models.DateTimeField(auto_now_add=True)

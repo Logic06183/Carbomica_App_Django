@@ -1,0 +1,282 @@
+{% extends 'appname/base.html' %}
+{% load humanize %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-1">
+    <div>
+        <p class="section-label mb-1">Award carbon report</p>
+        <h2 class="mb-1">{{ project.name }}</h2>
+        <p class="text-muted mb-0">
+            {{ project.reference_label }}
+            {% if project.principal_investigator %} · PI {{ project.principal_investigator }}{% endif %}
+            {% if project.organisation %} · {{ project.organisation.display_label }}{% endif %}
+        </p>
+    </div>
+    <div class="text-nowrap">
+        <button onclick="window.print()" class="btn btn-outline-secondary btn-sm">
+            <i class="fas fa-print me-1"></i> Print / PDF
+        </button>
+        <a href="{% url 'projects' %}" class="btn btn-outline-secondary btn-sm">
+            <i class="fas fa-arrow-left me-1"></i> Awards
+        </a>
+    </div>
+</div>
+
+<!-- ── Headline ── -->
+<div class="row g-3 my-2">
+    <div class="col-6 col-md-3">
+        <div class="card text-center py-3">
+            <div class="text-muted small mb-1">Award footprint</div>
+            <div class="fw-bold" style="font-size:1.6rem;color:var(--hh-red);">
+                {{ footprint.total|floatformat:1 }}
+            </div>
+            <div class="text-muted" style="font-size:.75rem;">tCO<sub>2</sub>e</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card text-center py-3">
+            <div class="text-muted small mb-1">Charged directly</div>
+            <div class="fw-bold" style="font-size:1.6rem;">{{ footprint.direct_total|floatformat:1 }}</div>
+            <div class="text-muted" style="font-size:.75rem;">
+                {{ footprint.direct_share_pct|floatformat:0 }}% of the award
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card text-center py-3">
+            <div class="text-muted small mb-1">Apportioned</div>
+            <div class="fw-bold" style="font-size:1.6rem;">{{ footprint.apportioned_total|floatformat:1 }}</div>
+            <div class="text-muted" style="font-size:.75rem;">share of site overheads</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card text-center py-3">
+            <div class="text-muted small mb-1">GHG Protocol scopes</div>
+            <div style="font-size:.85rem;" class="mt-1">
+                <span class="badge bg-danger">S1 {{ scope_totals.1|floatformat:1 }}</span>
+                <span class="badge bg-primary">S2 {{ scope_totals.2|floatformat:1 }}</span>
+                <span class="badge bg-secondary">S3 {{ scope_totals.3|floatformat:1 }}</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if messages %}{% endif %}
+
+<div class="row g-4">
+    <!-- ── Sites and allocation ── -->
+    <div class="col-lg-7">
+        <div class="card">
+            <div class="card-header"><strong>Sites and apportionment</strong></div>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Site</th>
+                            <th class="text-end">Share</th>
+                            <th>Basis</th>
+                            <th class="text-end">Apportioned</th>
+                            <th class="text-end">Direct</th>
+                            <th class="text-end">Total</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in footprint.site_rows %}
+                        <tr>
+                            <td>
+                                <a href="{% url 'facility_detail' row.facility.id %}" class="text-decoration-none">
+                                    {{ row.facility.display_name }}
+                                </a>
+                                {% if row.missing_data %}
+                                <span class="badge bg-warning text-dark ms-1">no emission data</span>
+                                {% elif row.period %}
+                                <div class="text-muted" style="font-size:.7rem;">{{ row.period|date:"M Y" }}</div>
+                                {% endif %}
+                            </td>
+                            <td class="text-end">{{ row.share_pct|floatformat:2 }}%</td>
+                            <td class="text-muted" style="font-size:.75rem;">{{ row.basis_note|default:"—" }}</td>
+                            <td class="text-end">{{ row.apportioned|floatformat:1 }}</td>
+                            <td class="text-end">{{ row.direct|floatformat:1 }}</td>
+                            <td class="text-end fw-semibold">{{ row.total|floatformat:1 }}</td>
+                            <td class="text-end">
+                                <form method="post" class="d-inline">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="action" value="remove_site">
+                                    <input type="hidden" name="site_id" value="{{ row.site_id }}">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger"
+                                            onclick="return confirm('Remove {{ row.facility.display_name }} from this award?')">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="7" class="text-muted p-3">
+                            No sites yet. Add the facilities this award runs at, with the share
+                            of each attributable to it.
+                        </td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="card-footer text-muted" style="font-size:.75rem;">
+                <strong>Direct</strong> is spend charged to this award, counted in full.
+                <strong>Apportioned</strong> is the award's share of that site's shared
+                running emissions. Purchases charged to a different award are excluded
+                from the pool entirely, so two awards at the same site never double-count
+                each other's spend.
+            </div>
+        </div>
+
+        <!-- Add site -->
+        <div class="card mt-3">
+            <div class="card-body">
+                <h6 class="mb-3">Add a site to this award</h6>
+                <form method="post" class="row g-2 align-items-end">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="add_site">
+                    <div class="col-md-5">
+                        <label class="form-label small fw-semibold">Site</label>
+                        <select name="facility" class="form-select form-select-sm" required>
+                            <option value="">— choose —</option>
+                            {% for f in available_facilities %}
+                            <option value="{{ f.id }}">{{ f.display_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small fw-semibold">Share %</label>
+                        <input type="number" step="0.01" min="0" max="100" name="share_pct"
+                               class="form-control form-control-sm" required placeholder="7.8">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small fw-semibold">Evidence</label>
+                        <input type="text" name="basis_note" class="form-control form-control-sm"
+                               placeholder="3.2 of 41.0 FTE">
+                    </div>
+                    <div class="col-md-2">
+                        <button type="submit" class="btn btn-sm btn-success w-100">Add</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Breakdown ── -->
+    <div class="col-lg-5">
+        <div class="card">
+            <div class="card-header"><strong>Attributed emissions by category</strong></div>
+            <div class="table-responsive">
+                <table class="table table-sm mb-0">
+                    <thead class="table-light">
+                        <tr><th>Category</th><th class="text-end">tCO<sub>2</sub>e</th><th class="text-end">Share</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for row in category_rows %}
+                        <tr>
+                            <td>
+                                {{ row.label }}
+                                <span class="badge bg-light text-dark ms-1" style="font-size:.6rem;">S{{ row.scope }}</span>
+                            </td>
+                            <td class="text-end">{{ row.tco2e|floatformat:1 }}</td>
+                            <td class="text-end text-muted">{{ row.share|floatformat:1 }}%</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="3" class="text-muted p-3">No emissions attributed yet.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        {% if footprint.procurement_rows %}
+        <div class="card mt-3">
+            <div class="card-header"><strong>Spend charged to this award</strong></div>
+            <div class="table-responsive">
+                <table class="table table-sm mb-0">
+                    <thead class="table-light">
+                        <tr><th>Category</th><th class="text-end">Spend</th><th class="text-end">tCO<sub>2</sub>e</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for row in footprint.procurement_rows %}
+                        <tr>
+                            <td>{{ row.label }}</td>
+                            <td class="text-end">${{ row.spend|floatformat:0|intcomma }}</td>
+                            <td class="text-end">{{ row.tco2e|floatformat:1 }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Allocation basis: the auditable record -->
+        <div class="card mt-3">
+            <div class="card-header"><strong>Allocation basis &amp; audit record</strong></div>
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="update_note">
+                    <div class="mb-2">
+                        <label class="form-label small fw-semibold">Basis</label>
+                        <select name="allocation_basis" class="form-select form-select-sm">
+                            {% for value, label in basis_choices %}
+                            <option value="{{ value }}" {% if value == project.allocation_basis %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small fw-semibold">Auditable record</label>
+                        <textarea name="allocation_note" rows="4" class="form-control form-control-sm"
+                                  placeholder="e.g. 3.2 FTE of 41.0 FTE at the Bara laboratory, from the 2024 timesheet return.">{{ project.allocation_note }}</textarea>
+                        <div class="form-text" style="font-size:.7rem;">
+                            Wellcome requires an auditable record of staff time where people work
+                            across more than one award. This text is reproduced on the printed report.
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-sm btn-outline-primary">Save</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── Statement of method ── -->
+<div class="card mt-4" style="border-left:4px solid var(--hh-blue);">
+    <div class="card-header"><i class="fas fa-scale-balanced me-2"></i>Statement of method</div>
+    <div class="card-body small text-muted">
+        <p>
+            This award's footprint is reported on the GHG Protocol Corporate Standard
+            category structure. It combines <strong>direct attribution</strong> of purchases
+            charged to the award with an <strong>apportioned share</strong> of each
+            participating site's shared running emissions, allocated on the basis of
+            <strong>{{ project.get_allocation_basis_display|lower }}</strong>.
+        </p>
+        {% if project.allocation_note %}
+        <p class="mb-2"><strong>Audit record.</strong> {{ project.allocation_note }}</p>
+        {% endif %}
+        <p class="mb-2">
+            Conversion factors, grid intensities, procurement spend factors and their
+            sources are set out in full on the
+            <a href="{% url 'methodology' %}">methodology page</a>, which is public and
+            needs no login.
+        </p>
+        <p class="mb-0">
+            <strong>Limitations.</strong> Apportionment assumes the declared basis is a
+            reasonable proxy for a site's shared resource use; it is not a metered
+            measurement of the award's own consumption. Travel is currently apportioned
+            rather than attributed per trip, so an award with unusually heavy or light
+            travel will be over- or under-stated on that line. Procurement uses
+            spend-based factors, which assume price tracks carbon.
+            {% if footprint.sites_missing_data %}
+            <br><strong class="text-danger">
+                {{ footprint.sites_missing_data|length }} site(s) on this award have no emission
+                data, so their contribution is currently counted as zero.
+            </strong>
+            {% endif %}
+        </p>
+    </div>
+</div>
+{% endblock %}

@@ -18,6 +18,7 @@ from io import StringIO
 from appname.models import (
     Facility, EmissionData, EmissionSource,
     Intervention, FacilityIntervention, Organisation, ProcurementLine,
+    Project, ProjectSite,
 )
 from appname.modeling import (
     INTERVENTION_LIBRARY,
@@ -25,6 +26,7 @@ from appname.modeling import (
     compute_tco2e, sum_tco2e,
     CarbomicaOptimizer,
     PROCUREMENT_CATEGORIES, procurement_breakdown, match_procurement_category,
+    project_footprint,
 )
 
 
@@ -1530,3 +1532,156 @@ class ProcurementImportPreservesBaselineTest(TestCase):
                 date=date(2023, 12, 31)).exists(),
             'Importing into an unreported period should create the record',
         )
+
+
+class ProjectAttributionTest(TestCase):
+    """An award's footprint is direct spend charged to it plus its stated share
+    of shared site emissions. Two awards at the same site must never see each
+    other's purchases, and the apportioned pool must shrink as spend is claimed."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create_user('proj', 'proj@example.com', 'pw')
+        cls.facility = Facility.objects.create(
+            code_name='PRJ_SITE', display_name='Shared Lab', country='ZA',
+            sector='research', created_by=cls.user,
+        )
+        source = EmissionSource.objects.create(
+            facility=cls.facility, code_name='PRJ_SRC', display_name='baseline',
+        )
+        cls.record = EmissionData.objects.create(
+            emission_source=source, date=date(2024, 12, 31),
+            grid_electricity=Decimal('1000000'),
+        )
+        cls.alpha = Project.objects.create(name='Award Alpha', created_by=cls.user)
+        cls.beta = Project.objects.create(name='Award Beta', created_by=cls.user)
+        ProjectSite.objects.create(
+            project=cls.alpha, facility=cls.facility,
+            share_pct=Decimal('25'), basis_note='10 of 40 FTE')
+        ProjectSite.objects.create(
+            project=cls.beta, facility=cls.facility,
+            share_pct=Decimal('25'), basis_note='10 of 40 FTE')
+
+    def _line(self, project, spend, category='LAB_REAGENTS'):
+        return ProcurementLine.objects.create(
+            emission_data=self.record, category=category,
+            spend_usd=Decimal(str(spend)), project=project, source='CSV',
+        )
+
+    def test_shared_emissions_split_by_declared_share(self):
+        site_total = compute_tco2e(self.record, 'ZA', 'research')['grid_electricity']
+        alpha = project_footprint(self.alpha)
+        self.assertEqual(
+            alpha['by_category']['grid_electricity'], site_total * Decimal('0.25'))
+
+    def test_direct_spend_is_not_visible_to_another_award(self):
+        self._line(self.alpha, 100000)
+        beta = project_footprint(self.beta)
+        self.assertEqual(beta['direct_total'], Decimal('0'),
+                         "Beta picked up Alpha's directly charged spend")
+        self.assertEqual(beta['by_category']['lab_consumables'], Decimal('0'),
+                         "Alpha's tagged spend leaked into Beta's apportioned pool")
+
+    def test_untagged_spend_is_apportioned_but_tagged_spend_is_not(self):
+        self._line(None, 100000)          # shared, untagged
+        self._line(self.alpha, 100000)    # charged to Alpha
+
+        alpha = project_footprint(self.alpha)
+        beta = project_footprint(self.beta)
+        untagged_tco2e = Decimal('100000') * PROCUREMENT_CATEGORIES['LAB_REAGENTS']['factor']
+
+        # Beta only ever sees its share of the untagged pool.
+        self.assertEqual(beta['by_category']['lab_consumables'],
+                         untagged_tco2e * Decimal('0.25'))
+        # Alpha sees its own line in full, plus its share of the untagged pool.
+        self.assertEqual(
+            alpha['by_category']['lab_consumables'],
+            untagged_tco2e + untagged_tco2e * Decimal('0.25'),
+        )
+
+    def test_awards_together_never_exceed_the_site_footprint(self):
+        self._line(None, 100000)
+        self._line(self.alpha, 60000)
+        self._line(self.beta, 40000)
+
+        site_total = compute_tco2e(self.record, 'ZA', 'research')['total']
+        combined = (project_footprint(self.alpha)['total']
+                    + project_footprint(self.beta)['total'])
+        self.assertLessEqual(
+            combined, site_total,
+            'Two awards together attribute more than the site actually emitted',
+        )
+
+    def test_blended_procurement_is_apportioned_when_site_is_not_itemised(self):
+        self.record.lab_consumables = Decimal('500000')
+        self.record.save(update_fields=['lab_consumables'])
+        blended = Decimal('500000') * EMISSION_FACTORS['lab_consumables']
+        alpha = project_footprint(self.alpha)
+        self.assertEqual(alpha['by_category']['lab_consumables'],
+                         blended * Decimal('0.25'))
+
+    def test_site_without_emission_data_is_surfaced_not_silently_zero(self):
+        empty = Facility.objects.create(
+            code_name='PRJ_EMPTY', display_name='Unreported Site', country='ZA',
+            sector='research', created_by=self.user,
+        )
+        ProjectSite.objects.create(
+            project=self.alpha, facility=empty, share_pct=Decimal('50'))
+        alpha = project_footprint(self.alpha)
+        self.assertEqual(len(alpha['sites_missing_data']), 1)
+        self.assertTrue(alpha['sites_missing_data'][0]['missing_data'])
+
+
+class ProjectAccessTest(TestCase):
+    """Awards follow the same visibility rules as facilities."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.lead = User.objects.create_user('plead', 'pl@example.com', 'pw')
+        cls.outsider = User.objects.create_user('pout', 'po@example.com', 'pw')
+
+        cls.consortium = Organisation.objects.create(
+            name='P Consortium', org_type='consortium', created_by=cls.lead)
+        cls.consortium.members.add(cls.lead)
+        cls.entity = Organisation.objects.create(
+            name='P Entity', org_type='entity',
+            parent=cls.consortium, created_by=cls.lead)
+
+        cls.facility = Facility.objects.create(
+            code_name='P_SITE', display_name='P Site', country='ZA',
+            sector='research', organisation=cls.entity)
+        cls.project = Project.objects.create(
+            name='Consortium Award', organisation=cls.entity, created_by=cls.lead)
+        ProjectSite.objects.create(
+            project=cls.project, facility=cls.facility, share_pct=Decimal('20'))
+
+    def test_consortium_lead_sees_the_award(self):
+        self.client.force_login(self.lead)
+        self.assertEqual(
+            self.client.get(f'/projects/{self.project.id}/').status_code, 200)
+
+    def test_outsider_cannot_open_the_award(self):
+        self.client.force_login(self.outsider)
+        self.assertEqual(
+            self.client.get(f'/projects/{self.project.id}/').status_code, 404)
+
+    def test_cannot_attach_a_facility_you_cannot_see(self):
+        theirs = Facility.objects.create(
+            code_name='THEIR_SITE', display_name='Their Site', country='ZA',
+            sector='research', created_by=self.outsider)
+        self.client.force_login(self.lead)
+        self.client.post(f'/projects/{self.project.id}/', {
+            'action': 'add_site', 'facility': theirs.id, 'share_pct': '50',
+        })
+        self.assertFalse(
+            ProjectSite.objects.filter(project=self.project, facility=theirs).exists(),
+            'An award absorbed a site its owner cannot see',
+        )
+
+    def test_report_page_carries_the_audit_record(self):
+        self.project.allocation_note = '3.2 of 41.0 FTE, 2024 timesheet return.'
+        self.project.save(update_fields=['allocation_note'])
+        self.client.force_login(self.lead)
+        response = self.client.get(f'/projects/{self.project.id}/')
+        self.assertContains(response, 'Statement of method')
+        self.assertContains(response, '3.2 of 41.0 FTE')
