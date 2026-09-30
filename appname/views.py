@@ -1214,6 +1214,15 @@ def facility_detail(request, facility_id):
     # Latest record category breakdown for charts
     latest_breakdown = records_with_tco2e[0] if records_with_tco2e else None
 
+    # Change between each historical period and the latest one. The template
+    # used to print the row's own absolute total in the "vs. latest" column, so
+    # an unchanged period rendered as a reduction the size of the whole
+    # footprint. Positive means emissions have fallen since that period.
+    if latest_breakdown:
+        latest_total = latest_breakdown['total_tco2e']
+        for rec in records_with_tco2e:
+            rec['delta_vs_latest'] = rec['total_tco2e'] - latest_total
+
     # Per-category chart data (latest record)
     # Table rows with GHG Protocol scope labels + per-scope subtotals
     category_rows, scope_totals = [], {1: Decimal('0'), 2: Decimal('0'), 3: Decimal('0')}

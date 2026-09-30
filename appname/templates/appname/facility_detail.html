@@ -212,16 +212,17 @@
                                 <td>
                                     {% if forloop.first %}
                                     <span class="badge bg-secondary">latest</span>
-                                    {% elif baseline_tco2e > 0 %}
-                                        {% if rec.total_tco2e > baseline_tco2e %}
-                                        <span class="badge" style="background:var(--hh-red);">
-                                            ▲ {{ rec.total_tco2e|floatformat:1 }}
-                                        </span>
-                                        {% else %}
+                                    {% elif rec.delta_vs_latest > 0 %}
+                                        {# This period was higher than now — emissions have fallen since. #}
                                         <span class="badge" style="background:var(--hh-success);">
-                                            ▼ {{ rec.total_tco2e|floatformat:1 }}
+                                            ▼ {{ rec.delta_vs_latest|floatformat:1 }} since
                                         </span>
-                                        {% endif %}
+                                    {% elif rec.delta_vs_latest < 0 %}
+                                        <span class="badge" style="background:var(--hh-red);">
+                                            ▲ {{ rec.delta_vs_latest|floatformat:1|cut:"-" }} since
+                                        </span>
+                                    {% else %}
+                                        <span class="badge bg-light text-muted">no change</span>
                                     {% endif %}
                                 </td>
                             </tr>

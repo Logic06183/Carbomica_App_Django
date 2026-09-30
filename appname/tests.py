@@ -1040,3 +1040,53 @@ class FootprintTrendCoverageTest(TestCase):
             first_total, expected_first,
             'The 2023 point includes a facility that had not started reporting yet',
         )
+
+
+class EmissionHistoryDeltaTest(TestCase):
+    """Regression: the 'vs. latest' column printed each row's own absolute total
+    instead of its difference from the latest period, so an unchanged period
+    rendered as a reduction the size of the entire footprint."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create_user('delta', 'd@example.com', 'pw')
+
+    def _facility_with_periods(self, values):
+        facility = Facility.objects.create(
+            code_name='DELTA_FAC', display_name='Delta Facility', country='ZA',
+            sector='research', created_by=self.user,
+        )
+        source = EmissionSource.objects.create(
+            facility=facility, code_name='DELTA_SRC', display_name='baseline',
+        )
+        for when, kwh in values:
+            EmissionData.objects.create(
+                emission_source=source, date=when, grid_electricity=Decimal(str(kwh)),
+            )
+        return facility
+
+    def test_unchanged_period_reports_zero_delta(self):
+        facility = self._facility_with_periods([
+            (date(2023, 12, 31), 100000),
+            (date(2024, 12, 31), 100000),
+        ])
+        self.client.force_login(self.user)
+        response = self.client.get(f'/facilities/{facility.id}/')
+        records = response.context['records_with_tco2e']
+        self.assertEqual(records[1]['delta_vs_latest'], Decimal('0'))
+        self.assertContains(response, 'no change')
+
+    def test_delta_is_difference_not_absolute_total(self):
+        facility = self._facility_with_periods([
+            (date(2023, 12, 31), 200000),   # older, higher
+            (date(2024, 12, 31), 100000),   # latest
+        ])
+        self.client.force_login(self.user)
+        records = self.client.get(
+            f'/facilities/{facility.id}/'
+        ).context['records_with_tco2e']
+
+        older = records[1]
+        expected = Decimal('100000') * ELECTRICITY_EF['ZA']    # the drop, not the total
+        self.assertEqual(older['delta_vs_latest'], expected)
+        self.assertNotEqual(older['delta_vs_latest'], older['total_tco2e'])
