@@ -7,6 +7,7 @@ Covers:
   3. compute_tco2e / sum_tco2e emission calculations
   4. CarbomicaOptimizer — three-scenario analysis
 """
+from datetime import date
 from decimal import Decimal
 
 from django.contrib.auth.models import User
@@ -980,3 +981,62 @@ class PotentialSavingsKPITest(TestCase):
 
         self.assertEqual(kpi, expected,
                          'Facility KPI diverges from the optimiser full-coverage scenario')
+
+
+class FootprintTrendCoverageTest(TestCase):
+    """Regression: the dashboard trend summed only the facilities that reported
+    in a given month. With clinical sites on a Dec-2023 baseline and research
+    sites on Dec-2024, the line fell ~43% purely because a different set of
+    facilities was counted. Each point must cover the whole portfolio, with
+    facilities carried forward at their last reported baseline."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create_user('trend', 't@example.com', 'pw')
+
+    def _facility_with_record(self, code, kwh, when):
+        facility = Facility.objects.create(
+            code_name=code, display_name=code, country='ZA',
+            sector='research', created_by=self.user,
+        )
+        source = EmissionSource.objects.create(
+            facility=facility, code_name=f'{code}_SRC', display_name=f'{code} baseline',
+        )
+        EmissionData.objects.create(
+            emission_source=source, date=when, grid_electricity=Decimal(str(kwh)),
+        )
+        return facility
+
+    def test_later_period_includes_earlier_reporting_facilities(self):
+        from appname.views import _aggregate_tco2e_all
+
+        # Site A reports only in 2023; site B only in 2024.
+        self._facility_with_record('TREND_A', 100000, date(2023, 12, 31))
+        self._facility_with_record('TREND_B', 100000, date(2024, 12, 31))
+
+        _, _, monthly, _ = _aggregate_tco2e_all(self.user)
+        self.assertEqual(len(monthly), 2)
+        (first_month, first_total), (second_month, second_total) = monthly
+        self.assertLess(first_month, second_month)
+
+        # The 2024 point must carry site A forward, so it covers both sites and
+        # cannot drop below the 2023 point just because A did not re-report.
+        self.assertGreater(
+            second_total, first_total,
+            'Later period lost a facility — trend is tracking reporting coverage, not emissions',
+        )
+        self.assertEqual(second_total, first_total * 2)
+
+    def test_facility_not_backfilled_before_it_started_reporting(self):
+        from appname.views import _aggregate_tco2e_all
+
+        self._facility_with_record('TREND_EARLY', 100000, date(2023, 12, 31))
+        self._facility_with_record('TREND_LATE', 500000, date(2024, 12, 31))
+
+        _, _, monthly, _ = _aggregate_tco2e_all(self.user)
+        (_, first_total), _ = monthly
+        expected_first = Decimal('100000') * ELECTRICITY_EF['ZA']
+        self.assertEqual(
+            first_total, expected_first,
+            'The 2023 point includes a facility that had not started reporting yet',
+        )

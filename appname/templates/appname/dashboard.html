@@ -39,8 +39,9 @@
     </div>
     <div class="col-6 col-md-3">
         <div class="card text-center py-3">
-            <div class="text-muted small mb-1">Linked interventions</div>
+            <div class="text-muted small mb-1">Interventions in progress</div>
             <div class="fw-bold" style="font-size:1.8rem;color:var(--hh-success);">{{ active_interventions }}</div>
+            <div class="text-muted" style="font-size:.75rem;">of {{ linked_interventions }} linked</div>
         </div>
     </div>
     <div class="col-6 col-md-3">
@@ -77,6 +78,11 @@
             <div class="card-header">Footprint trend</div>
             <div class="card-body d-flex align-items-center justify-content-center">
                 <div id="emissionTrendChart" style="width:100%;min-height:280px;"></div>
+            </div>
+            <div class="card-footer text-muted" style="font-size:.75rem;">
+                Whole-portfolio total at each reporting period. Facilities are carried
+                forward at their most recently reported baseline, so the line tracks
+                emissions rather than which sites happened to report that period.
             </div>
         </div>
     </div>

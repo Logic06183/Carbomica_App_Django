@@ -166,10 +166,29 @@ def _aggregate_tco2e_all(user):
         current = latest_per_fac_month.get(key)
         if current is None or (ed.date, ed.id) > (current.date, current.id):
             latest_per_fac_month[key] = ed
+
+    # Carry each facility forward at its most recent reported baseline.
+    #
+    # Summing only the facilities that happen to report in a given month makes
+    # the portfolio line track reporting coverage rather than emissions: with
+    # clinical sites on a Dec-2023 baseline and research sites on Dec-2024, the
+    # chart showed a 43% "reduction" that was purely a change of which
+    # facilities were counted. Each point is now the whole portfolio as last
+    # reported at that date, and a facility only enters the line from its first
+    # reporting period (no back-filling before it existed).
+    per_facility_months = defaultdict(dict)   # facility_id → {month: tCO₂e}
     for (fid, month_key), ed in latest_per_fac_month.items():
         tco2e = compute_tco2e(ed, ed.emission_source.facility.country,
                               ed.emission_source.facility.sector)
-        monthly_tco2e_map[month_key] += tco2e['total']
+        per_facility_months[fid][month_key] = tco2e['total']
+
+    all_months = sorted({m for months in per_facility_months.values() for m in months})
+    for month_key in all_months:
+        for months in per_facility_months.values():
+            reported = [m for m in months if m <= month_key]
+            if not reported:
+                continue    # facility had not started reporting yet
+            monthly_tco2e_map[month_key] += months[max(reported)]
 
     monthly_tco2e = sorted(monthly_tco2e_map.items())  # [(date, Decimal), ...]
     return category_tco2e, dict(facility_tco2e), monthly_tco2e, total_tco2e
@@ -328,9 +347,17 @@ def dashboard(request):
 
     user_facility_ids = facilities_qs.values_list('id', flat=True)
 
+    # Two distinct counts: the KPI headline is how many are actually underway,
+    # with the total attached shown underneath. The card previously said
+    # "Linked interventions" while counting only 'In Progress', so a dashboard
+    # with hundreds of catalogued interventions read as 0.
     active_interventions = FacilityIntervention.objects.filter(
         facility_id__in=user_facility_ids,
         intervention__status='In Progress',
+    ).count()
+
+    linked_interventions = FacilityIntervention.objects.filter(
+        facility_id__in=user_facility_ids,
     ).count()
 
     total_investment = (
@@ -403,6 +430,7 @@ def dashboard(request):
         'facilities': facility_emissions,
         'total_emissions': total_tco2e,
         'active_interventions': active_interventions,
+        'linked_interventions': linked_interventions,
         'total_investment': total_investment,
         'source_breakdown': source_breakdown,
         'optimization_scenarios': optimization_scenarios,
