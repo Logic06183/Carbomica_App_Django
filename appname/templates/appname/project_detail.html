@@ -25,6 +25,32 @@
     </div>
 </div>
 
+<!-- ── Section navigation ── -->
+<nav class="d-flex flex-wrap gap-1 my-2 small no-print" aria-label="Sections of this award">
+    <span class="text-muted me-1">Jump to:</span>
+    <a href="#alignment" class="badge rounded-pill text-bg-light border text-decoration-none">Alignment</a>
+    <a href="#sites" class="badge rounded-pill text-bg-light border text-decoration-none">Sites</a>
+    <a href="#estimate" class="badge rounded-pill text-bg-light border text-decoration-none">Application estimate</a>
+    <a href="#application-text" class="badge rounded-pill text-bg-light border text-decoration-none">Draft text</a>
+    <a href="#travel" class="badge rounded-pill text-bg-light border text-decoration-none">Travel log</a>
+    <a href="#computing" class="badge rounded-pill text-bg-light border text-decoration-none">Computing</a>
+    <a href="#credits" class="badge rounded-pill text-bg-light border text-decoration-none">Credits</a>
+    <a href="#reduction-plan" class="badge rounded-pill text-bg-light border text-decoration-none">Reduction plan</a>
+    <a href="#method" class="badge rounded-pill text-bg-light border text-decoration-none">Method</a>
+</nav>
+
+{% if footprint.total == 0 and not estimate.has_plan %}
+<div class="alert alert-info small no-print" id="getting-started">
+    <strong>Getting started with this award</strong>
+    <ol class="mb-0 mt-1 ps-3">
+        <li><a href="#sites">Add the sites</a> the award runs at, with its share of each and the evidence for that share.</li>
+        <li>In the <a href="#estimate">application estimate</a>, plan trips, purchases and computing, and pick the reduction measures you will commit to.</li>
+        <li>Copy the <a href="#application-text">draft application text</a> into your Wellcome application and edit it into your own words.</li>
+        <li>Once the award runs, log journeys and credits here, then send the funder report.</li>
+    </ol>
+</div>
+{% endif %}
+
 <!-- ── Headline ── -->
 <div class="row g-3 my-2">
     <div class="col-6 col-md-3">
@@ -67,7 +93,7 @@
 {% if messages %}{% endif %}
 
 <!-- ── Wellcome alignment ── -->
-<div class="card mb-4">
+<div class="card mb-4" id="alignment">
     <div class="card-header d-flex justify-content-between align-items-center">
         <strong>Wellcome alignment</strong>
         <a href="{{ wellcome_policy_url }}" target="_blank" rel="noopener" class="small">
@@ -124,7 +150,7 @@
 <div class="row g-4">
     <!-- ── Sites and allocation ── -->
     <div class="col-lg-7">
-        <div class="card">
+        <div class="card" id="sites">
             <div class="card-header"><strong>Sites and apportionment</strong></div>
             <div class="table-responsive">
                 <table class="table table-sm align-middle mb-0">
@@ -591,7 +617,7 @@
 </div>
 
 <!-- ── Travel log ── -->
-<div class="card mt-4">
+<div class="card mt-4" id="travel">
     <div class="card-header d-flex justify-content-between align-items-center">
         <strong>Travel log</strong>
         <span class="text-muted small">
@@ -819,7 +845,7 @@
 </div>
 
 <!-- ── Carbon credits for travel ── -->
-<div class="card mt-4">
+<div class="card mt-4" id="credits">
     <div class="card-header"><strong>Carbon credits for travel</strong></div>
     <div class="card-body">
         <div class="row g-3 text-center mb-3">
@@ -1054,7 +1080,7 @@
 </div>
 
 <!-- ── Statement of method ── -->
-<div class="card mt-4" style="border-left:4px solid var(--hh-blue);">
+<div class="card mt-4" id="method" style="border-left:4px solid var(--hh-blue);">
     <div class="card-header"><i class="fas fa-scale-balanced me-2"></i>Statement of method</div>
     <div class="card-body small text-muted">
         <p>

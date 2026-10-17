@@ -3149,3 +3149,31 @@ class FutureDatedActualsTest(TestCase):
             'purpose': 'x'})
         self.assertFalse(TravelJourney.objects.exists())
 
+
+class AwardPageNavigationTest(TestCase):
+    """Regression: QA ISSUE-3 — a new award opened on a nine-row checklist with
+    no way to reach the sites form or the estimate. Every jump link must land on
+    a real section, and an empty award shows the getting-started steps."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create_user('nav', 'nav@example.com', 'pw')
+
+    def test_every_jump_link_has_a_target(self):
+        import re
+        project = Project.objects.create(name='Nav Award', created_by=self.user)
+        self.client.force_login(self.user)
+        html = self.client.get(f'/projects/{project.id}/').content.decode()
+        nav = re.search(r'aria-label="Sections of this award">(.*?)</nav>', html, re.S).group(1)
+        anchors = re.findall(r'href="#([\w-]+)"', nav)
+        self.assertGreaterEqual(len(anchors), 8)
+        for anchor in anchors:
+            self.assertIn(f'id="{anchor}"', html, anchor)
+
+    def test_getting_started_only_while_empty(self):
+        project = Project.objects.create(name='Fresh Award', created_by=self.user)
+        self.client.force_login(self.user)
+        self.assertContains(self.client.get(f'/projects/{project.id}/'), 'Getting started with this award')
+        PlannedSpend.objects.create(project=project, category='LAB_GLASS', spend_usd=Decimal('100'))
+        self.assertNotContains(self.client.get(f'/projects/{project.id}/'), 'Getting started with this award')
+
