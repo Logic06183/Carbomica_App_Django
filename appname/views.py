@@ -34,6 +34,7 @@ from .forms import (
     EmissionDataUpdateForm,
     TravelJourneyForm,
     CreditPurchaseForm,
+    LabAccreditationForm,
 )
 from .models import (
     Facility,
@@ -50,13 +51,14 @@ from .models import (
     ProjectSite,
     TravelJourney,
     CreditPurchase,
+    LabAccreditation,
 )
 from .modeling import (
     CarbomicaOptimizer, calculate_npv, compute_tco2e, sum_tco2e,
     PROCUREMENT_CATEGORIES, match_procurement_category, procurement_breakdown,
     project_footprint, AIR_FACTORS, SURFACE_FACTORS, TRAVEL_FACTOR_SOURCE,
     TRAVEL_FACTOR_URL, WELLCOME_POLICY_URL, credit_position, VERRA_VCU_URL,
-    award_checklist,
+    award_checklist, lab_status,
 )
 
 # ---------------------------------------------------------------------------
@@ -1589,6 +1591,33 @@ def facility_detail(request, facility_id):
         id=facility_id,
     )
 
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        if action == 'set_laboratory':
+            facility.has_laboratory = request.POST.get('has_laboratory') == 'on'
+            facility.save(update_fields=['has_laboratory'])
+            messages.success(request, 'Laboratory setting saved.')
+        elif action == 'add_accreditation':
+            form = LabAccreditationForm(request.POST)
+            if form.is_valid():
+                accreditation = form.save(commit=False)
+                accreditation.facility = facility
+                accreditation.created_by = request.user
+                accreditation.save()
+                messages.success(request, f'{accreditation} recorded.')
+            else:
+                problems = [
+                    f'{form.fields[f].label}: {msg}' if f in form.fields else msg
+                    for f, msgs in form.errors.items() for msg in msgs
+                ]
+                messages.error(request, 'Accreditation not saved. ' + ' '.join(problems))
+        elif action == 'remove_accreditation':
+            LabAccreditation.objects.filter(
+                facility=facility, id=request.POST.get('accreditation_id')
+            ).delete()
+            messages.success(request, 'Accreditation removed.')
+        return redirect('facility_detail', facility_id=facility.id)
+
     # All emission records for this facility, newest first
     emission_records = list(
         EmissionData.objects
@@ -1723,6 +1752,10 @@ def facility_detail(request, facility_id):
         'category_labels': CATEGORY_LABELS,
         'category_rows': category_rows,
         'scope_totals': scope_totals,
+        'lab': lab_status(facility, date.today()),
+        'accreditations': facility.lab_accreditations.all(),
+        'scheme_choices': LabAccreditation.SCHEME_CHOICES,
+        'level_choices': LabAccreditation.LEVEL_CHOICES,
     })
 
 

@@ -60,11 +60,11 @@ https://wellcome.org/research-funding/guidance/policies-grant-conditions/environ
   level: required whole credits for the award's travel, purchases (registry, reference,
   cost, retired), net position, accredited-registry check. Accept: net position correct
   for over/under/zero purchases; unaccredited purchase fails the check.
-- [x] 4. **Wellcome alignment checklist per award.** Pass/warn/fail rows for each policy
+- [x] 4. (`15570d0`) **Wellcome alignment checklist per award.** Pass/warn/fail rows for each policy
   requirement the app can evidence (impact assessed, travel justified, rail rule, no
   business class, travel credits covered and retired, lab accreditation, reduction plan).
   Each row quotes the policy line it tests. Accept: every row has a test for each state.
-- [ ] 5. **Lab accreditation tracker.** Per site: scheme (LEAF / My Green Lab / other),
+- [x] 5. **Lab accreditation tracker.** Per site: scheme (LEAF / My Green Lab / other),
   level, date awarded, evidence link, and a flag against the end-of-2025 deadline.
   Accept: feeds checklist row; tests cover missing, achieved, and overdue.
 - [ ] 6. **Application-stage estimate.** Before an award starts: planned trips, planned
@@ -105,3 +105,4 @@ https://wellcome.org/research-funding/guidance/policies-grant-conditions/environ
 - 2026-10-17 Item 1 done (`100d5cf`): award travel log, DEFRA 2026 factors, journeys replace apportioned site travel. 114 tests.
 - 2026-10-17 Item 2 done (`3b1aecd`): per-journey Wellcome travel flags with verbatim policy quotes; 10 h edge tested. 125 tests.
 - 2026-10-17 Item 3 done (`0b86f27`): award credit register; only accredited credits count as cover. 138 tests.
+- 2026-10-17 Item 4 done (`15570d0`): per-award checklist, verbatim quotes; retirement labelled good practice (policy silent). 148 tests.

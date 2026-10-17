@@ -9,6 +9,7 @@ and the HIGH Horizons D3.7 intervention catalogue
 Three-scenario optimisation: full coverage, fixed budget, optimised
 (greedy knapsack ranking by tCO₂e reduced per USD).
 """
+from datetime import date
 from decimal import Decimal, ROUND_CEILING
 
 # ---------------------------------------------------------------------------
@@ -1621,7 +1622,26 @@ POLICY_QUOTES = {
     'mitigate': ('Mitigate the remaining carbon emissions of all journeys using '
                  'accredited carbon credits'),
     'accredited': 'Have arrangements to purchase third party accredited carbon credits',
+    'lab': ('Laboratories should achieve the minimum level of accreditation offered by '
+            'LEAF, My Green Lab or equivalent by the end of 2025.'),
 }
+LAB_ACCREDITATION_DEADLINE = date(2025, 12, 31)
+
+
+def lab_status(facility, today):
+    """
+    Accreditation state of one laboratory site on a given date:
+    'accredited' (current LEAF or My Green Lab), 'equivalent' (only a current
+    other-scheme award, which Wellcome may or may not accept), or 'none'.
+    """
+    current = [a for a in facility.lab_accreditations.all() if a.is_current(today)]
+    if any(a.scheme in ('leaf', 'my_green_lab') for a in current):
+        state = 'accredited'
+    elif current:
+        state = 'equivalent'
+    else:
+        state = 'none'
+    return {'state': state, 'current': current}
 
 
 TRAVEL_FLAG_LABELS = {
@@ -1721,7 +1741,7 @@ def credit_position(project, footprint):
     }
 
 
-def award_checklist(project, footprint, credits):
+def award_checklist(project, footprint, credits, today=None):
     """
     Wellcome alignment checks for one award. Each row: key, label, state
     ('pass' | 'warn' | 'fail' | 'na'), detail, and the verbatim policy line it
@@ -1815,6 +1835,32 @@ def award_checklist(project, footprint, credits):
     else:
         row('accredited', 'Credits third-party accredited', 'pass',
             'All purchases are from an accredited standard.', POLICY_QUOTES['accredited'])
+
+    # Laboratory accreditation for lab sites on the award
+    today = today or date.today()
+    labs = [r['facility'] for r in footprint['site_rows'] if r['facility'].is_laboratory]
+    statuses = [(f, lab_status(f, today)) for f in labs]
+    missing = [f for f, st in statuses if st['state'] == 'none']
+    equivalent = [f for f, st in statuses if st['state'] == 'equivalent']
+    if not labs:
+        row('lab', 'Laboratories accredited', 'na',
+            'No site on this award is marked as having laboratories.', POLICY_QUOTES['lab'])
+    elif missing:
+        overdue = today > LAB_ACCREDITATION_DEADLINE
+        names = ', '.join(f.display_name for f in missing)
+        row('lab', 'Laboratories accredited', 'fail' if overdue else 'warn',
+            f"No current accreditation: {names}."
+            + (' The end-of-2025 deadline has passed.' if overdue else ''),
+            POLICY_QUOTES['lab'])
+    elif equivalent:
+        names = ', '.join(f.display_name for f in equivalent)
+        row('lab', 'Laboratories accredited', 'warn',
+            f'Only an "equivalent" scheme recorded for {names}; confirm Wellcome accepts it.',
+            POLICY_QUOTES['lab'])
+    else:
+        row('lab', 'Laboratories accredited', 'pass',
+            f'All {len(labs)} lab site(s) hold current LEAF or My Green Lab accreditation.',
+            POLICY_QUOTES['lab'])
 
     # Retirement: good practice, not stated in the policy
     if not credits['purchases']:

@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from django import forms
 from django.forms import inlineformset_factory
-from .models import Facility, EmissionData, FacilityIntervention, Intervention, EmissionSource, Policy, OptimizationScenario, Organisation, TravelJourney, CreditPurchase
+from .models import Facility, EmissionData, FacilityIntervention, Intervention, EmissionSource, Policy, OptimizationScenario, Organisation, TravelJourney, CreditPurchase, LabAccreditation
 
 class FacilityForm(forms.ModelForm):
     class Meta:
@@ -204,4 +204,12 @@ class CreditPurchaseForm(forms.ModelForm):
             'credits_tco2e', 'provider', 'registry', 'registry_reference',
             'cost_usd', 'purchase_date',
         ]
+
+
+class LabAccreditationForm(forms.ModelForm):
+    """A LEAF / My Green Lab / equivalent award held by a site."""
+
+    class Meta:
+        model = LabAccreditation
+        fields = ['lab_name', 'scheme', 'level', 'awarded_on', 'expires_on', 'evidence_url']
 

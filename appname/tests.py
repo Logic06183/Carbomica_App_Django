@@ -18,7 +18,7 @@ from io import StringIO
 from appname.models import (
     Facility, EmissionData, EmissionSource,
     Intervention, FacilityIntervention, Organisation, ProcurementLine,
-    Project, ProjectSite, TravelJourney, CreditPurchase,
+    Project, ProjectSite, TravelJourney, CreditPurchase, LabAccreditation,
 )
 from appname.modeling import (
     INTERVENTION_LIBRARY,
@@ -27,7 +27,7 @@ from appname.modeling import (
     CarbomicaOptimizer,
     PROCUREMENT_CATEGORIES, procurement_breakdown, match_procurement_category,
     project_footprint, AIR_FACTORS, SURFACE_FACTORS, journey_tco2e,
-    journey_policy_flags, credit_position, award_checklist,
+    journey_policy_flags, credit_position, award_checklist, lab_status,
 )
 
 
@@ -2170,4 +2170,134 @@ class AwardChecklistTest(TestCase):
         response = self.client.get(f'/projects/{self.project.id}/')
         self.assertContains(response, 'Wellcome alignment')
         self.assertContains(response, 'Good practice; the policy does not mention this.')
+
+
+class LabAccreditationTest(TestCase):
+    """Labs should hold the minimum LEAF / My Green Lab (or equivalent) level by
+    the end of 2025. My Green Lab recertifies after 2 years; LEAF lapses only on
+    an entered expiry date."""
+
+    TODAY = date(2026, 10, 17)
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create_user('lab', 'lab@example.com', 'pw')
+        cls.outsider = User.objects.create_user('labout', 'lo@example.com', 'pw')
+
+    def setUp(self):
+        self.lab = Facility.objects.create(
+            code_name='LAB_SITE', display_name='Wet Lab', country='ZA',
+            sector='research', facility_type='research_office',
+            has_laboratory=True, created_by=self.user)
+        self.project = Project.objects.create(name='Lab Award', created_by=self.user)
+        ProjectSite.objects.create(project=self.project, facility=self.lab,
+                                   share_pct=Decimal('20'))
+
+    def _award(self, scheme='leaf', level='bronze', awarded=date(2025, 3, 1), expires=None):
+        a = LabAccreditation(facility=self.lab, scheme=scheme, level=level,
+                             awarded_on=awarded, expires_on=expires)
+        a.full_clean()
+        a.save()
+        return a
+
+    def _lab_row(self, today=None):
+        fp = project_footprint(self.project)
+        rows = award_checklist(self.project, fp, credit_position(self.project, fp),
+                               today=today or self.TODAY)
+        return next(r for r in rows if r['key'] == 'lab')
+
+    def test_scheme_levels_are_validated(self):
+        from django.core.exceptions import ValidationError
+        with self.assertRaises(ValidationError):
+            self._award(scheme='leaf', level='platinum')
+        self._award(scheme='my_green_lab', level='green')   # valid
+        self._award(scheme='other', level='other')          # any level for equivalents
+
+    def test_expiry_before_award_is_rejected(self):
+        from django.core.exceptions import ValidationError
+        with self.assertRaises(ValidationError):
+            self._award(awarded=date(2025, 3, 1), expires=date(2025, 1, 1))
+
+    def test_my_green_lab_defaults_to_two_year_recertification(self):
+        a = self._award(scheme='my_green_lab', level='gold', awarded=date(2024, 2, 29))
+        self.assertEqual(a.valid_until, date(2026, 2, 28))
+        self.assertFalse(a.is_current(self.TODAY))
+
+    def test_leaf_without_expiry_stays_current(self):
+        a = self._award(awarded=date(2023, 1, 1))
+        self.assertIsNone(a.valid_until)
+        self.assertTrue(a.is_current(self.TODAY))
+        self.assertFalse(a.is_current(date(2022, 12, 31)))   # not yet awarded
+
+    def test_lab_status_states(self):
+        self.assertEqual(lab_status(self.lab, self.TODAY)['state'], 'none')
+        self._award(scheme='other', level='other')
+        self.assertEqual(lab_status(self.lab, self.TODAY)['state'], 'equivalent')
+        self._award(scheme='leaf', level='silver')
+        self.assertEqual(lab_status(self.lab, self.TODAY)['state'], 'accredited')
+
+    def test_university_lab_type_counts_as_laboratory(self):
+        uni = Facility.objects.create(
+            code_name='UNI_LAB', display_name='Uni Lab', country='ZA',
+            sector='research', facility_type='university_lab', created_by=self.user)
+        self.assertTrue(uni.is_laboratory)
+
+    def test_checklist_row_not_applicable_without_lab_sites(self):
+        self.lab.has_laboratory = False
+        self.lab.save(update_fields=['has_laboratory'])
+        self.assertEqual(self._lab_row()['state'], 'na')
+
+    def test_missing_accreditation_fails_after_deadline_warns_before(self):
+        self.assertEqual(self._lab_row(today=date(2026, 1, 1))['state'], 'fail')
+        self.assertEqual(self._lab_row(today=date(2025, 12, 31))['state'], 'warn')
+
+    def test_lapsed_accreditation_counts_as_missing(self):
+        self._award(awarded=date(2023, 1, 1), expires=date(2025, 12, 1))
+        self.assertEqual(self._lab_row()['state'], 'fail')
+
+    def test_equivalent_scheme_warns_and_accredited_passes(self):
+        self._award(scheme='other', level='other')
+        self.assertEqual(self._lab_row()['state'], 'warn')
+        self._award(scheme='my_green_lab', level='bronze', awarded=date(2026, 1, 10))
+        row = self._lab_row()
+        self.assertEqual(row['state'], 'pass')
+        self.assertIn('LEAF, My Green Lab or equivalent', row['quote'])
+
+    def test_facility_page_records_and_toggles(self):
+        self.client.force_login(self.user)
+        url = f'/facilities/{self.lab.id}/'
+        self.client.post(url, {'action': 'add_accreditation', 'scheme': 'leaf',
+                               'level': 'gold', 'awarded_on': '2025-11-01'})
+        self.assertEqual(self.lab.lab_accreditations.count(), 1)
+        self.client.post(url, {'action': 'set_laboratory'})       # checkbox unticked
+        self.lab.refresh_from_db()
+        self.assertFalse(self.lab.has_laboratory)
+        response = self.client.get(url)
+        self.assertContains(response, 'Laboratory accreditation')
+
+    def test_invalid_level_is_not_saved_from_page(self):
+        self.client.force_login(self.user)
+        self.client.post(f'/facilities/{self.lab.id}/', {
+            'action': 'add_accreditation', 'scheme': 'leaf', 'level': 'green',
+            'awarded_on': '2025-11-01'})
+        self.assertFalse(self.lab.lab_accreditations.exists())
+
+    def test_outsider_cannot_record_accreditation(self):
+        self.client.force_login(self.outsider)
+        response = self.client.post(f'/facilities/{self.lab.id}/', {
+            'action': 'add_accreditation', 'scheme': 'leaf', 'level': 'gold',
+            'awarded_on': '2025-11-01'})
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(LabAccreditation.objects.exists())
+
+    def test_cannot_remove_another_sites_accreditation(self):
+        other = Facility.objects.create(
+            code_name='OTHER_LAB', display_name='Other', country='ZA',
+            sector='research', created_by=self.user)
+        theirs = LabAccreditation.objects.create(
+            facility=other, scheme='leaf', level='bronze', awarded_on=date(2025, 1, 1))
+        self.client.force_login(self.user)
+        self.client.post(f'/facilities/{self.lab.id}/', {
+            'action': 'remove_accreditation', 'accreditation_id': theirs.id})
+        self.assertTrue(LabAccreditation.objects.filter(id=theirs.id).exists())
 

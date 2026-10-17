@@ -199,6 +199,11 @@ class Facility(models.Model):
         related_name='facilities',
         help_text='Organisation this facility belongs to. All org members can access it.'
     )
+    has_laboratory = models.BooleanField(
+        default=False,
+        help_text='The site has laboratories. Wellcome expects labs to hold LEAF, '
+                  'My Green Lab or equivalent accreditation.'
+    )
 
     class Meta:
         verbose_name = _('Facility')
@@ -207,6 +212,10 @@ class Facility(models.Model):
 
     def __str__(self):
         return self.display_name
+
+    @property
+    def is_laboratory(self):
+        return self.has_laboratory or self.facility_type == 'university_lab'
 
 class EmissionSource(models.Model):
     facility = models.ForeignKey(Facility, related_name='emission_sources', on_delete=models.CASCADE)
@@ -516,6 +525,96 @@ class TravelJourney(models.Model):
     def policy_flags(self):
         from appname.modeling import journey_policy_flags
         return journey_policy_flags(self)
+
+
+class LabAccreditation(models.Model):
+    """
+    A green-lab accreditation held by a site.
+
+    Wellcome: labs should "achieve the minimum level of accreditation offered by
+    LEAF, My Green Lab or equivalent by the end of 2025", so any level counts.
+    Levels: LEAF awards Bronze, Silver and Gold (UCL LEAF programme page); My
+    Green Lab awards "Bronze, Silver, Gold, Platinum, or Green" and
+    "Recertification occurs 2 years after certification date" (mygreenlab.org
+    green-lab-certification, read 2026-10-17). LEAF validity is not stated on
+    its primary page, so a LEAF award lapses only on an expiry date the user
+    enters.
+    """
+
+    SCHEME_CHOICES = [
+        ('leaf', 'LEAF'),
+        ('my_green_lab', 'My Green Lab'),
+        ('other', 'Other (equivalent scheme)'),
+    ]
+    LEVEL_CHOICES = [
+        ('bronze', 'Bronze'),
+        ('silver', 'Silver'),
+        ('gold', 'Gold'),
+        ('platinum', 'Platinum'),
+        ('green', 'Green'),
+        ('other', 'Other / not graded'),
+    ]
+    SCHEME_LEVELS = {
+        'leaf': {'bronze', 'silver', 'gold'},
+        'my_green_lab': {'bronze', 'silver', 'gold', 'platinum', 'green'},
+    }
+    MGL_RECERTIFY_YEARS = 2
+
+    facility = models.ForeignKey(
+        Facility, related_name='lab_accreditations', on_delete=models.CASCADE,
+    )
+    lab_name = models.CharField(
+        max_length=200, blank=True, help_text='Which lab, if the site has several.'
+    )
+    scheme = models.CharField(max_length=20, choices=SCHEME_CHOICES)
+    level = models.CharField(max_length=20, choices=LEVEL_CHOICES)
+    awarded_on = models.DateField()
+    expires_on = models.DateField(
+        null=True, blank=True,
+        help_text='Leave blank for My Green Lab to use its 2-year recertification date.'
+    )
+    evidence_url = models.URLField(blank=True, help_text='Certificate or listing.')
+    created_by = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='lab_accreditations',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _('Lab Accreditation')
+        verbose_name_plural = _('Lab Accreditations')
+        ordering = ['-awarded_on', '-id']
+
+    def __str__(self):
+        return f'{self.get_scheme_display()} {self.get_level_display()} — {self.facility}'
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        allowed = self.SCHEME_LEVELS.get(self.scheme)
+        if allowed is not None and self.level not in allowed:
+            raise ValidationError({'level': (
+                f'{self.get_scheme_display()} does not award '
+                f'{self.get_level_display()}.'
+            )})
+        if self.expires_on and self.awarded_on and self.expires_on < self.awarded_on:
+            raise ValidationError({'expires_on': 'Expiry is before the award date.'})
+
+    @property
+    def valid_until(self):
+        if self.expires_on:
+            return self.expires_on
+        if self.scheme == 'my_green_lab' and self.awarded_on:
+            try:
+                return self.awarded_on.replace(
+                    year=self.awarded_on.year + self.MGL_RECERTIFY_YEARS)
+            except ValueError:  # 29 February
+                return self.awarded_on.replace(
+                    year=self.awarded_on.year + self.MGL_RECERTIFY_YEARS, day=28)
+        return None
+
+    def is_current(self, on_date):
+        until = self.valid_until
+        return self.awarded_on <= on_date and (until is None or until >= on_date)
 
 
 class CreditPurchase(models.Model):
