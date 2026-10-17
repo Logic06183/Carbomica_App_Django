@@ -92,7 +92,7 @@ https://wellcome.org/research-funding/guidance/policies-grant-conditions/environ
 - [x] 13. (`de064cc`) **Factor currency audit.** Check every factor in `modeling.py` against its source
   and the latest published edition. Update where a newer official value exists and record
   the edition used. Accept: methodology page lists each factor with edition and URL.
-- [x] 14. **QA pass.** Run the app, click through applicant and holder journeys end to end,
+- [x] 14. (`7efc221`) **QA pass.** Run the app, click through applicant and holder journeys end to end,
   fix what breaks. Accept: QA notes in `docs/qa/` and fixes committed one per issue.
 
 ## Open questions for Craig
@@ -124,3 +124,4 @@ https://wellcome.org/research-funding/guidance/policies-grant-conditions/environ
 - 2026-10-17 Item 11 done (`837829d`): org duties self-declared with evidence; HIC scope declared not inferred; shown on awards, report, CSV. 213 tests.
 - 2026-10-17 Item 12 done (`5b97ede`): Green Algorithms compute jobs, constants verified in the paper via PMC. 223 tests.
 - 2026-10-17 Item 13 done (`de064cc`): DEFRA 2026 site factors, audit table on methodology page, 3 open questions logged. 226 tests.
+- 2026-10-17 Item 14 done (`7efc221`): QA of both journeys, 5 findings fixed (75e16a5, 8cc45eb, 0ae6f4e, 0e46ea8, 04e6483). 234 tests. All items done; loop stopped.
