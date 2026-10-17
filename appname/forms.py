@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from django import forms
 from django.forms import inlineformset_factory
-from .models import Facility, EmissionData, FacilityIntervention, Intervention, EmissionSource, Policy, OptimizationScenario, Organisation, TravelJourney, CreditPurchase, LabAccreditation, PlannedSpend
+from .models import Facility, EmissionData, FacilityIntervention, Intervention, EmissionSource, Policy, OptimizationScenario, Organisation, TravelJourney, CreditPurchase, LabAccreditation, PlannedSpend, SustainabilityCost
 
 class FacilityForm(forms.ModelForm):
     class Meta:
@@ -221,4 +221,12 @@ class PlannedSpendForm(forms.ModelForm):
     class Meta:
         model = PlannedSpend
         fields = ['category', 'description', 'spend_usd']
+
+
+class SustainabilityCostForm(forms.ModelForm):
+    """A sustainability cost line under one of Wellcome's eligible headings."""
+
+    class Meta:
+        model = SustainabilityCost
+        fields = ['kind', 'description', 'amount_usd']
 

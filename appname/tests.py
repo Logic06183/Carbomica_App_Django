@@ -19,7 +19,7 @@ from appname.models import (
     Facility, EmissionData, EmissionSource,
     Intervention, FacilityIntervention, Organisation, ProcurementLine,
     Project, ProjectSite, TravelJourney, CreditPurchase, LabAccreditation,
-    PlannedSpend,
+    PlannedSpend, SustainabilityCost,
 )
 from appname.modeling import (
     INTERVENTION_LIBRARY,
@@ -30,6 +30,7 @@ from appname.modeling import (
     project_footprint, AIR_FACTORS, SURFACE_FACTORS, journey_tco2e,
     journey_policy_flags, credit_position, award_checklist, lab_status,
     project_estimate, REDUCTION_MEASURES, application_statement, MEASURE_COMMITMENTS,
+    ELIGIBLE_COSTS,
 )
 
 
@@ -2522,4 +2523,85 @@ class ApplicationStatementTest(TestCase):
         response = self.client.get(f'/projects/{self.project.id}/')
         self.assertContains(response, 'Draft application text')
         self.assertContains(response, 'id="statement-text"')
+
+
+class SustainabilityCostTest(TestCase):
+    """Eligible sustainability costs: only Wellcome's listed headings, totals in
+    the estimate and the draft text, and a one-click credit line."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create_user('cost', 'cost@example.com', 'pw')
+        cls.outsider = User.objects.create_user('costout', 'cto@example.com', 'pw')
+
+    def setUp(self):
+        self.project = Project.objects.create(name='Cost Award', created_by=self.user)
+        self.url = f'/projects/{self.project.id}/'
+
+    def _estimate(self):
+        fp = project_footprint(self.project)
+        est = project_estimate(self.project, fp, credit_position(self.project, fp))
+        return fp, est
+
+    def test_every_heading_has_label_and_policy_quote(self):
+        for key, (label, heading, quote) in ELIGIBLE_COSTS.items():
+            self.assertTrue(label and heading and len(quote) > 30, key)
+
+    def test_costs_total_in_estimate(self):
+        SustainabilityCost.objects.create(project=self.project, kind='staff_measurement',
+                                          amount_usd=Decimal('4000'))
+        SustainabilityCost.objects.create(project=self.project, kind='lab_accreditation',
+                                          amount_usd=Decimal('750.50'))
+        _, est = self._estimate()
+        self.assertEqual(est['costs_total'], Decimal('4750.50'))
+
+    def test_unknown_heading_is_rejected(self):
+        self.client.force_login(self.user)
+        self.client.post(self.url, {'action': 'add_cost', 'kind': 'business_class_upgrade',
+                                    'amount_usd': '900'})
+        self.assertFalse(SustainabilityCost.objects.exists())
+
+    def test_zero_amount_is_rejected(self):
+        self.client.force_login(self.user)
+        self.client.post(self.url, {'action': 'add_cost', 'kind': 'hybrid_tools',
+                                    'amount_usd': '0'})
+        self.assertFalse(SustainabilityCost.objects.exists())
+
+    def test_credit_budget_prompt_until_costed(self):
+        TravelJourney.objects.create(
+            project=self.project, date=date(2026, 11, 1), origin='JNB', destination='LHR',
+            mode='air', air_haul='long_haul_uk', cabin_class='economy',
+            distance_km=Decimal('10000'), purpose='Review', is_planned=True)
+        self.project.credit_price_usd = Decimal('20')
+        self.project.save(update_fields=['credit_price_usd'])
+        self.client.force_login(self.user)
+        self.assertContains(self.client.get(self.url), 'Add to budget')
+        self.client.post(self.url, {'action': 'add_cost', 'kind': 'travel_credits',
+                                    'amount_usd': '40.00'})
+        _, est = self._estimate()
+        self.assertTrue(est['credit_cost_budgeted'])
+        self.assertNotContains(self.client.get(self.url), 'Add to budget')
+
+    def test_costs_appear_in_draft_text(self):
+        SustainabilityCost.objects.create(project=self.project, kind='hybrid_tools',
+                                          amount_usd=Decimal('1200'))
+        fp, est = self._estimate()
+        st = application_statement(self.project, est, fp)
+        self.assertIn('The budget includes $1,200 of sustainability costs', st['text'])
+        self.assertIn('hybrid meeting hardware and software ($1,200)', st['text'])
+
+    def test_cannot_remove_another_awards_cost(self):
+        other = Project.objects.create(name='Other', created_by=self.user)
+        theirs = SustainabilityCost.objects.create(project=other, kind='lca',
+                                                   amount_usd=Decimal('100'))
+        self.client.force_login(self.user)
+        self.client.post(self.url, {'action': 'remove_cost', 'cost_id': theirs.id})
+        self.assertTrue(SustainabilityCost.objects.filter(id=theirs.id).exists())
+
+    def test_outsider_cannot_add_costs(self):
+        self.client.force_login(self.outsider)
+        response = self.client.post(self.url, {'action': 'add_cost', 'kind': 'lca',
+                                               'amount_usd': '100'})
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(SustainabilityCost.objects.exists())
 

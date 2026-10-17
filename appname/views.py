@@ -36,6 +36,7 @@ from .forms import (
     CreditPurchaseForm,
     LabAccreditationForm,
     PlannedSpendForm,
+    SustainabilityCostForm,
 )
 from .models import (
     Facility,
@@ -54,6 +55,7 @@ from .models import (
     CreditPurchase,
     LabAccreditation,
     PlannedSpend,
+    SustainabilityCost,
 )
 from .modeling import (
     CarbomicaOptimizer, calculate_npv, compute_tco2e, sum_tco2e,
@@ -61,7 +63,7 @@ from .modeling import (
     project_footprint, AIR_FACTORS, SURFACE_FACTORS, TRAVEL_FACTOR_SOURCE,
     TRAVEL_FACTOR_URL, WELLCOME_POLICY_URL, credit_position, VERRA_VCU_URL,
     award_checklist, lab_status, project_estimate, REDUCTION_MEASURES,
-    application_statement,
+    application_statement, ELIGIBLE_COSTS,
 )
 
 # ---------------------------------------------------------------------------
@@ -1946,6 +1948,26 @@ def project_detail(request, project_id):
             ).delete()
             messages.success(request, 'Planned spend removed.')
 
+        elif action == 'add_cost':
+            form = SustainabilityCostForm(request.POST)
+            if form.is_valid():
+                line = form.save(commit=False)
+                line.project = project
+                line.save()
+                messages.success(request, f'Cost added: {line.label}.')
+            else:
+                problems = [
+                    f'{form.fields[f].label}: {msg}' if f in form.fields else msg
+                    for f, msgs in form.errors.items() for msg in msgs
+                ]
+                messages.error(request, 'Cost not saved. ' + ' '.join(problems))
+
+        elif action == 'remove_cost':
+            SustainabilityCost.objects.filter(
+                project=project, id=request.POST.get('cost_id')
+            ).delete()
+            messages.success(request, 'Cost removed.')
+
         elif action == 'update_estimate':
             try:
                 price = request.POST.get('credit_price_usd', '').strip()
@@ -2010,6 +2032,10 @@ def project_detail(request, project_id):
         'estimate': estimate,
         'statement': application_statement(project, estimate, footprint),
         'measure_groups': _measure_groups(project),
+        'eligible_costs': [
+            {'key': k, 'label': label, 'heading': heading, 'quote': quote}
+            for k, (label, heading, quote) in ELIGIBLE_COSTS.items()
+        ],
         'procurement_choices': [
             (key, spec['display_name']) for key, spec in PROCUREMENT_CATEGORIES.items()
         ],

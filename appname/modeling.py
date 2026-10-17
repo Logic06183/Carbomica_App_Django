@@ -1922,6 +1922,54 @@ REDUCTION_MEASURES = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Sustainability costs Wellcome says it will pay for, each with the verbatim
+# line from the policy's "Wellcome will pay for" list (read 2026-10-17).
+# ---------------------------------------------------------------------------
+ELIGIBLE_COSTS = {
+    # key: (label, policy heading, quote)
+    'staff_measurement': (
+        'Staff time to measure and report emissions', 'Project staff',
+        'Time for technical experts to advise, assess, measure and report on the '
+        'award\u2019s emissions and resource usage.'),
+    'travel_credits': (
+        'Carbon credits for remaining travel', 'Travel',
+        'The cost to mitigate the carbon from remaining essential travel related to '
+        'Wellcome grants through third-party accredited carbon credits.'),
+    'low_carbon_travel': (
+        'Lower-carbon travel', 'Travel',
+        'Essential travel by the most carbon efficient mode and class of transport, even '
+        'if cheaper less sustainable options are available.'),
+    'hybrid_tools': (
+        'Hybrid meeting hardware and software', 'Travel',
+        'Computer hardware and software to enable hybrid meetings (for example business '
+        'Zoom or Teams subscriptions where a collaborator does not already have these and '
+        'where free versions are unsuitable).'),
+    'lab_accreditation': (
+        'Lead applicant\u2019s lab accreditation', 'Measuring and monitoring',
+        'The cost of adding the lead applicants\u2019 laboratory to LEAF, My Green Lab or '
+        'equivalent accreditation programme (we won\u2019t pay for an entire '
+        'organisation\u2019s membership).'),
+    'sustainable_materials': (
+        'Sustainable materials and consumables', 'Materials and consumables',
+        'Sustainable versions of the materials and consumables required for research.'),
+    'efficient_equipment': (
+        'Second-hand, efficient or maintained equipment', 'Equipment',
+        'Second hand or reconditioned equipment. New efficient equipment where it is the '
+        'more sustainable option (taking into account embodied carbon of manufacture). '
+        'Maintenance of existing equipment where it is viable as an alternative to '
+        'purchasing new equipment.'),
+    'cpd_training': (
+        'Sustainability training (CPD)', 'Continuing Professional Development',
+        'our CPD policy allows up to \u00a3500 per person per year for career-based training '
+        '... This funding can be used for training on how environmental sustainability '
+        'relates to research and how to use tools to assess the sustainability of the research.'),
+    'lca': (
+        'Life cycle assessment of research outputs', 'Innovation',
+        'Life cycle assessments for any products, tools or therapy developed as an output '
+        'of research can be costed into outputs management plans.'),
+}
+
 # First-person wording for each measure in the draft application text. These
 # are drafting aids for the applicant to edit, not policy quotations.
 MEASURE_COMMITMENTS = {
@@ -2008,6 +2056,15 @@ def application_statement(project, estimate, footprint):
         if text:
             paragraphs.append(text)
 
+    if estimate['cost_lines']:
+        items = [f'{c.label.lower()} (${c.amount_usd:,.0f})' for c in estimate['cost_lines']]
+        paragraphs.append(
+            f'The budget includes ${estimate["costs_total"]:,.0f} of sustainability costs that '
+            f'Wellcome lists as eligible: {_join_phrases(items)}.'
+        )
+        sources.append(f'Sustainability costs ${estimate["costs_total"]:,.2f}: '
+                       f'{len(estimate["cost_lines"])} budget lines entered.')
+
     if project.reduction_notes:
         paragraphs.append(project.reduction_notes.strip())
 
@@ -2058,6 +2115,8 @@ def project_estimate(project, footprint, credits):
     estimate_total = site_share + planned_travel + planned_spend
     actual_total = site_share + actual_travel + actual_spend
 
+    cost_lines = list(project.sustainability_costs.all())
+
     credits_for_plan = (planned_travel.to_integral_value(rounding=ROUND_CEILING)
                         if planned_travel > 0 else Decimal('0'))
     price = project.credit_price_usd
@@ -2076,6 +2135,9 @@ def project_estimate(project, footprint, credits):
             if k in (project.reduction_measures or [])
         ],
         'has_plan': bool(planned_trips or planned_lines),
+        'cost_lines': cost_lines,
+        'costs_total': sum((c.amount_usd for c in cost_lines), Decimal('0')),
+        'credit_cost_budgeted': any(c.kind == 'travel_credits' for c in cost_lines),
     }
 
 

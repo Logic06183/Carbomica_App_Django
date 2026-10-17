@@ -587,6 +587,42 @@ class PlannedSpend(models.Model):
         return self.spend_usd * PROCUREMENT_CATEGORIES[self.category]['factor']
 
 
+class SustainabilityCost(models.Model):
+    """
+    A sustainability cost budgeted on the award, under one of the headings
+    Wellcome's policy lists as fundable (modeling.ELIGIBLE_COSTS).
+    """
+
+    project = models.ForeignKey(
+        Project, related_name='sustainability_costs', on_delete=models.CASCADE,
+    )
+    kind = models.CharField(max_length=40, help_text='Key into modeling.ELIGIBLE_COSTS.')
+    description = models.CharField(max_length=255, blank=True)
+    amount_usd = models.DecimalField(
+        max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal('0.01'))],
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _('Sustainability Cost')
+        verbose_name_plural = _('Sustainability Costs')
+        ordering = ['kind', '-amount_usd']
+
+    def __str__(self):
+        return f'{self.kind} — {self.amount_usd}'
+
+    def clean(self):
+        from appname.modeling import ELIGIBLE_COSTS
+        from django.core.exceptions import ValidationError
+        if self.kind not in ELIGIBLE_COSTS:
+            raise ValidationError({'kind': 'Not a cost heading Wellcome lists.'})
+
+    @property
+    def label(self):
+        from appname.modeling import ELIGIBLE_COSTS
+        return ELIGIBLE_COSTS[self.kind][0]
+
+
 class LabAccreditation(models.Model):
     """
     A green-lab accreditation held by a site.
