@@ -3100,3 +3100,52 @@ class FactorAuditTest(TestCase):
                 stale.append(path.name)
         self.assertEqual(stale, [])
 
+
+class FutureDatedActualsTest(TestCase):
+    """Regression: QA ISSUE-2 — an actual journey dated seven months ahead was
+    accepted and counted in the reported footprint. Actual journeys and
+    computing must have happened; future work belongs in the estimate."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create_user('fut', 'fut@example.com', 'pw')
+
+    def setUp(self):
+        from django.utils import timezone
+        from datetime import timedelta
+        self.project = Project.objects.create(name='Future Award', created_by=self.user)
+        self.tomorrow = timezone.localdate() + timedelta(days=1)
+        self.today = timezone.localdate()
+
+    def _journey(self, when, planned):
+        return TravelJourney(project=self.project, date=when, origin='A', destination='B',
+                             mode='coach', distance_km=Decimal('50'), purpose='x',
+                             is_planned=planned)
+
+    def test_future_actual_journey_is_rejected(self):
+        from django.core.exceptions import ValidationError
+        with self.assertRaises(ValidationError):
+            self._journey(self.tomorrow, planned=False).full_clean()
+
+    def test_today_and_future_planned_journeys_are_fine(self):
+        self._journey(self.today, planned=False).full_clean()
+        self._journey(self.tomorrow, planned=True).full_clean()
+
+    def test_future_actual_computing_is_rejected(self):
+        from django.core.exceptions import ValidationError
+        job = ComputeJob(project=self.project, description='x', date=self.tomorrow,
+                         runtime_hours=Decimal('1'), cores=1, watts_per_core=Decimal('5'),
+                         grid_country='GB')
+        with self.assertRaises(ValidationError):
+            job.full_clean()
+        job.is_planned = True
+        job.full_clean()
+
+    def test_page_refuses_future_actual_journey(self):
+        self.client.force_login(self.user)
+        self.client.post(f'/projects/{self.project.id}/', {
+            'action': 'add_journey', 'date': self.tomorrow.isoformat(), 'origin': 'A',
+            'destination': 'B', 'mode': 'coach', 'distance_km': '50', 'passengers': '1',
+            'purpose': 'x'})
+        self.assertFalse(TravelJourney.objects.exists())
+

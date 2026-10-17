@@ -527,6 +527,11 @@ class TravelJourney(models.Model):
         from appname.modeling import journey_factor
         from django.core.exceptions import ValidationError
 
+        if not self.is_planned and self.date and self.date > timezone.localdate():
+            raise ValidationError({'date': (
+                'This journey is dated in the future. Add it as a planned trip in the '
+                'application estimate, or correct the date.'
+            )})
         if self.mode == 'air':
             if not self.air_haul:
                 raise ValidationError({'air_haul': 'Choose the flight type.'})
@@ -683,6 +688,10 @@ class ComputeJob(models.Model):
         from django.core.exceptions import ValidationError
         if self.grid_country not in ELECTRICITY_EF:
             raise ValidationError({'grid_country': 'Unknown grid.'})
+        if not self.is_planned and self.date and self.date > timezone.localdate():
+            raise ValidationError({'date': (
+                'This computing is dated in the future. Tick "Planned", or correct the date.'
+            )})
 
     def kwh(self):
         from appname.modeling import compute_job_kwh
