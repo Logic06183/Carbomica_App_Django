@@ -2238,6 +2238,13 @@ def application_statement(project, estimate, footprint):
         parts.append(f'planned purchases of ${spend_usd:,.0f} ({spend_t:.1f} tCO₂e)')
         sources.append(f'Purchases {spend_t:.2f} t: {len(estimate["planned_lines"])} planned lines '
                        'at spend-based factors.')
+    if estimate['planned_jobs']:
+        compute_t = rows["Computing outside the award's sites"]['estimate']
+        n_jobs = len(estimate['planned_jobs'])
+        parts.append(f'{n_jobs} planned computing job{"s" if n_jobs != 1 else ""} '
+                     f'({compute_t:.1f} tCO₂e)')
+        sources.append(f'Computing {compute_t:.2f} t: {n_jobs} planned jobs by the Green '
+                       'Algorithms method.')
     if n_sites:
         parts.append(f'the project\'s share of running emissions at {n_sites} '
                      f'site{"s" if n_sites != 1 else ""} ({site_t:.1f} tCO₂e)')
@@ -2247,7 +2254,8 @@ def application_statement(project, estimate, footprint):
         paragraphs.append(
             f'We estimate the project\'s carbon footprint at {estimate["estimate_total"]:.1f} tCO₂e, '
             f'made up of {_join_phrases(parts)}. Travel uses the UK Government 2026 '
-            'business-travel conversion factors; purchases use spend-based factors.'
+            'business-travel conversion factors; purchases use spend-based factors'
+            + ('; computing uses the Green Algorithms method.' if estimate['planned_jobs'] else '.')
         )
 
     chosen = [k for k in REDUCTION_MEASURES if k in (project.reduction_measures or [])]

@@ -2510,6 +2510,23 @@ class ApplicationStatementTest(TestCase):
         self.assertIn('Business class is not fundable by Wellcome.', joined)
         self.assertIn('within the 10-hour limit', joined)
 
+    def test_overview_parts_add_up_to_the_stated_total(self):
+        # Regression: QA ISSUE-1 — planned computing was in the total but missing
+        # from the "made up of" list, so the draft's numbers did not add up.
+        self._plan_trip()
+        PlannedSpend.objects.create(project=self.project, category='LAB_PLASTICS',
+                                    spend_usd=Decimal('15000'))
+        ComputeJob.objects.create(
+            project=self.project, description='Models', date=date(2027, 3, 1),
+            runtime_hours=Decimal('200'), cores=32, watts_per_core=Decimal('8'),
+            memory_gb=Decimal('128'), runs=5, grid_country='ZA', is_planned=True)
+        est, st = self._statement()
+        overview = st['paragraphs'][0]
+        self.assertIn('1 planned computing job', overview)
+        parts = sum(r['estimate'] for r in est['rows'])
+        self.assertEqual(parts, est['estimate_total'])
+        self.assertIn(f'{est["estimate_total"]:.1f} tCO₂e', overview)
+
     def test_lists_read_naturally(self):
         from appname.modeling import _join_phrases
         self.assertEqual(_join_phrases(['a']), 'a')
