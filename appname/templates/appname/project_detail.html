@@ -477,6 +477,38 @@
             </div>
         </form>
     </div>
+
+    <!-- Draft application text -->
+    <div class="card-body border-top" id="application-text">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="mb-0">Draft application text</h6>
+            {% if statement.paragraphs %}
+            <button type="button" class="btn btn-sm btn-outline-secondary no-print"
+                    onclick="navigator.clipboard.writeText(document.getElementById('statement-text').value); this.textContent='Copied';">
+                <i class="far fa-copy me-1"></i>Copy
+            </button>
+            {% endif %}
+        </div>
+        {% if statement.warnings %}
+        <div class="alert alert-warning py-2 small mb-2">
+            <strong>Fix before submitting:</strong>
+            <ul class="mb-0 ps-3">{% for w in statement.warnings %}<li>{{ w }}</li>{% endfor %}</ul>
+        </div>
+        {% endif %}
+        {% if statement.paragraphs %}
+        <textarea id="statement-text" class="form-control form-control-sm mb-2" rows="8" readonly>{{ statement.text }}</textarea>
+        <details class="small text-muted">
+            <summary>Where each number comes from</summary>
+            <ul class="mb-0 mt-1">{% for src in statement.sources %}<li>{{ src }}</li>{% endfor %}</ul>
+        </details>
+        <p class="text-muted mt-2 mb-0" style="font-size:.7rem;">
+            A starting draft from your own inputs. Edit it into your application's voice; it makes no
+            claim the estimate above does not support.
+        </p>
+        {% else %}
+        <p class="text-muted small mb-0">Add planned trips, purchases or sites, and choose measures, to draft this text.</p>
+        {% endif %}
+    </div>
 </div>
 
 <!-- ── Travel log ── -->

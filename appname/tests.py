@@ -29,7 +29,7 @@ from appname.modeling import (
     PROCUREMENT_CATEGORIES, procurement_breakdown, match_procurement_category,
     project_footprint, AIR_FACTORS, SURFACE_FACTORS, journey_tco2e,
     journey_policy_flags, credit_position, award_checklist, lab_status,
-    project_estimate, REDUCTION_MEASURES,
+    project_estimate, REDUCTION_MEASURES, application_statement, MEASURE_COMMITMENTS,
 )
 
 
@@ -2431,4 +2431,95 @@ class ProjectEstimateTest(TestCase):
             'action': 'add_planned_spend', 'category': 'LAB_GLASS', 'spend_usd': '100'})
         self.assertEqual(response.status_code, 404)
         self.assertFalse(PlannedSpend.objects.exists())
+
+
+class ApplicationStatementTest(TestCase):
+    """Draft application text: built only from the applicant's inputs, every
+    number traceable, and problems surfaced rather than written around."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create_user('stmt', 'stmt@example.com', 'pw')
+
+    def setUp(self):
+        self.project = Project.objects.create(name='Statement Award', created_by=self.user)
+
+    def _statement(self):
+        fp = project_footprint(self.project)
+        est = project_estimate(self.project, fp, credit_position(self.project, fp))
+        return est, application_statement(self.project, est, fp)
+
+    def _plan_trip(self, **kw):
+        fields = dict(project=self.project, date=date(2026, 11, 1), origin='JNB',
+                      destination='LHR', mode='air', air_haul='long_haul_uk',
+                      cabin_class='economy', distance_km=Decimal('10000'),
+                      rail_hours=Decimal('60'), purpose='Review', is_planned=True)
+        fields.update(kw)
+        return TravelJourney.objects.create(**fields)
+
+    def test_every_measure_has_commitment_wording(self):
+        self.assertEqual(set(MEASURE_COMMITMENTS), set(REDUCTION_MEASURES))
+
+    def test_empty_award_drafts_nothing_and_says_why(self):
+        _, st = self._statement()
+        self.assertEqual(st['paragraphs'], [])
+        self.assertIn('No reduction measures chosen yet.', st['warnings'])
+
+    def test_numbers_in_text_match_the_estimate(self):
+        self._plan_trip()                         # 1.1704 t -> 2 credits
+        PlannedSpend.objects.create(project=self.project, category='LAB_PLASTICS',
+                                    spend_usd=Decimal('40000'))
+        self.project.credit_price_usd = Decimal('18')
+        self.project.reduction_measures = ['economy']
+        self.project.save()
+        est, st = self._statement()
+        text = st['text']
+        self.assertIn(f'{est["estimate_total"]:.1f} tCO₂e', text)
+        self.assertIn('1 planned trip (1.2 tCO₂e)', text)
+        self.assertIn('planned purchases of $40,000', text)
+        self.assertIn('2 third-party accredited carbon credits', text)
+        self.assertIn('budgeted at $36 ($18.00 per credit)', text)
+        self.assertTrue(any('2 credits × $18.00' in src for src in st['sources']))
+
+    def test_no_price_means_no_budget_claim(self):
+        self._plan_trip()
+        _, st = self._statement()
+        self.assertIn('2 third-party accredited carbon credits', st['text'])
+        self.assertNotIn('budgeted', st['text'])
+
+    def test_only_chosen_measures_appear(self):
+        self.project.reduction_measures = ['freezers', 'reusable']
+        self.project.save()
+        _, st = self._statement()
+        self.assertIn(MEASURE_COMMITMENTS['freezers'], st['text'])
+        self.assertIn(MEASURE_COMMITMENTS['reusable'], st['text'])
+        self.assertNotIn(MEASURE_COMMITMENTS['virtual'], st['text'])
+        self.assertNotIn('To reduce travel emissions', st['text'])
+
+    def test_planned_policy_breaches_become_warnings(self):
+        self._plan_trip(cabin_class='business')
+        self._plan_trip(air_haul='domestic_uk', cabin_class='average', rail_hours=Decimal('5'))
+        _, st = self._statement()
+        joined = ' '.join(st['warnings'])
+        self.assertIn('Business class is not fundable by Wellcome.', joined)
+        self.assertIn('within the 10-hour limit', joined)
+
+    def test_lists_read_naturally(self):
+        from appname.modeling import _join_phrases
+        self.assertEqual(_join_phrases(['a']), 'a')
+        self.assertEqual(_join_phrases(['a', 'b']), 'a and b')
+        self.assertEqual(_join_phrases(['a', 'b', 'c']), 'a; b; and c')
+
+    def test_own_words_are_kept_verbatim(self):
+        self.project.reduction_notes = 'We will share the sequencer with the Bara group.'
+        self.project.save()
+        _, st = self._statement()
+        self.assertIn('We will share the sequencer with the Bara group.', st['paragraphs'])
+
+    def test_award_page_shows_copyable_text(self):
+        self._plan_trip()
+        self.client.force_login(self.user)
+        response = self.client.get(f'/projects/{self.project.id}/')
+        self.assertContains(response, 'Draft application text')
+        self.assertContains(response, 'id="statement-text"')
 

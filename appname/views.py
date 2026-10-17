@@ -61,6 +61,7 @@ from .modeling import (
     project_footprint, AIR_FACTORS, SURFACE_FACTORS, TRAVEL_FACTOR_SOURCE,
     TRAVEL_FACTOR_URL, WELLCOME_POLICY_URL, credit_position, VERRA_VCU_URL,
     award_checklist, lab_status, project_estimate, REDUCTION_MEASURES,
+    application_statement,
 )
 
 # ---------------------------------------------------------------------------
@@ -1972,6 +1973,7 @@ def project_detail(request, project_id):
 
     footprint = project_footprint(project)
     credits = credit_position(project, footprint)
+    estimate = project_estimate(project, footprint, credits)
 
     scope_totals = {1: Decimal('0'), 2: Decimal('0'), 3: Decimal('0')}
     for field, value in footprint['by_category'].items():
@@ -2005,7 +2007,8 @@ def project_detail(request, project_id):
         'wellcome_policy_url': WELLCOME_POLICY_URL,
         'credits': credits,
         'checklist': award_checklist(project, footprint, credits),
-        'estimate': project_estimate(project, footprint, credits),
+        'estimate': estimate,
+        'statement': application_statement(project, estimate, footprint),
         'measure_groups': _measure_groups(project),
         'procurement_choices': [
             (key, spec['display_name']) for key, spec in PROCUREMENT_CATEGORIES.items()

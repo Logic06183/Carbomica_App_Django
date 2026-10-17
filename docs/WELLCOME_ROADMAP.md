@@ -67,11 +67,11 @@ https://wellcome.org/research-funding/guidance/policies-grant-conditions/environ
 - [x] 5. (`d49060b`) **Lab accreditation tracker.** Per site: scheme (LEAF / My Green Lab / other),
   level, date awarded, evidence link, and a flag against the end-of-2025 deadline.
   Accept: feeds checklist row; tests cover missing, achieved, and overdue.
-- [x] 6. **Application-stage estimate.** Before an award starts: planned trips, planned
+- [x] 6. (`9871422`) **Application-stage estimate.** Before an award starts: planned trips, planned
   equipment and consumables spend, planned sites and FTE share. Produce an estimated
   footprint, the credit cost for travel to put in the budget, and the reduction measures
   chosen. Accept: estimate and actuals sit side by side on the award page once the award runs.
-- [ ] 7. **Application text helper.** From the estimate, draft the "how this project uses
+- [x] 7. **Application text helper.** From the estimate, draft the "how this project uses
   the most sustainable approach" section: energy, reuse of equipment, waste, travel. Plain
   template text filled from the user's own numbers, no generated claims. Accept: copyable
   text, every number traceable to an input.
@@ -107,3 +107,4 @@ https://wellcome.org/research-funding/guidance/policies-grant-conditions/environ
 - 2026-10-17 Item 3 done (`0b86f27`): award credit register; only accredited credits count as cover. 138 tests.
 - 2026-10-17 Item 4 done (`15570d0`): per-award checklist, verbatim quotes; retirement labelled good practice (policy silent). 148 tests.
 - 2026-10-17 Item 5 done (`d49060b`): lab accreditation per site, MGL 2-yr recertification, checklist row with end-2025 deadline. 162 tests.
+- 2026-10-17 Item 6 done (`9871422`): planned trips/purchases, estimate vs actual (reconciles), credit budget at user price, 15 policy-quoted measures. 172 tests.

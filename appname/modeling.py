@@ -1922,6 +1922,107 @@ REDUCTION_MEASURES = {
 }
 
 
+# First-person wording for each measure in the draft application text. These
+# are drafting aids for the applicant to edit, not policy quotations.
+MEASURE_COMMITMENTS = {
+    'virtual': 'hold meetings and attend conferences virtually where possible',
+    'local_skills': 'use local skills for fieldwork, and upskill staff already in the field, instead of travelling to site',
+    'rail': 'take the train for journeys of up to 10 hours door to door',
+    'economy': 'fly economy class when flying is unavoidable',
+    'equipment_off': 'switch equipment, including laminar flow cabinets, off when not in use',
+    'fume_hoods': 'close fume hoods when not in use',
+    'freezers': 'set ultra-low freezers no lower than -70 °C',
+    'asset_check': 'check institutional inventories and asset registries before buying equipment or consumables',
+    'second_hand': 'use second-hand or reconditioned equipment where viable',
+    'share_equipment': 'share equipment with other groups instead of buying duplicates',
+    'maintenance': 'use maintenance contracts so equipment is repaired rather than replaced',
+    'reusable': 'replace single-use plastics with reusable alternatives where viable',
+    'min_size': 'use the smallest plastic consumables the work needs',
+    'recycling': 'use institutional recycling, keeping general and hazardous waste bins for what cannot be recycled',
+    'recycled_materials': 'choose materials and equipment made from recycled content or recyclable at end of life',
+}
+
+MEASURE_GROUP_INTROS = {
+    'Travel': 'To reduce travel emissions, the team will',
+    'Energy': 'To reduce energy use, the team will',
+    'Reuse': 'To reuse equipment and materials, the team will',
+    'Consumables': 'To reduce consumables, the team will',
+    'Waste': 'To reduce and recycle waste, the team will',
+}
+
+
+def _join_phrases(phrases):
+    if len(phrases) <= 2:
+        return ' and '.join(phrases)
+    return '; '.join(phrases[:-1]) + '; and ' + phrases[-1]
+
+
+def application_statement(project, estimate, footprint):
+    """
+    Draft text for the application's environmental sustainability section,
+    built only from the applicant's own inputs. Returns paragraphs, the
+    figures each number came from, and warnings to fix before submitting.
+    """
+    paragraphs, sources, warnings = [], [], []
+    rows = {r['label']: r for r in estimate['rows']}
+    travel = rows['Travel']['estimate']
+    spend_t = rows['Purchases charged to the award']['estimate']
+    site_t = rows['Share of site running emissions']['estimate']
+    trips = [r['journey'] for r in estimate['planned_trips']]
+    spend_usd = sum((line.spend_usd for line in estimate['planned_lines']), Decimal('0'))
+    n_sites = len(footprint['site_rows'])
+
+    parts = []
+    if trips:
+        parts.append(f'{len(trips)} planned trip{"s" if len(trips) != 1 else ""} ({travel:.1f} tCO₂e)')
+        sources.append(f'Travel {travel:.2f} t: sum of {len(trips)} planned trips in the estimate.')
+    if estimate['planned_lines']:
+        parts.append(f'planned purchases of ${spend_usd:,.0f} ({spend_t:.1f} tCO₂e)')
+        sources.append(f'Purchases {spend_t:.2f} t: {len(estimate["planned_lines"])} planned lines '
+                       'at spend-based factors.')
+    if n_sites:
+        parts.append(f'the project\'s share of running emissions at {n_sites} '
+                     f'site{"s" if n_sites != 1 else ""} ({site_t:.1f} tCO₂e)')
+        sources.append(f'Site share {site_t:.2f} t: declared shares of each site\'s latest '
+                       'emission record, excluding site travel.')
+    if parts:
+        paragraphs.append(
+            f'We estimate the project\'s carbon footprint at {estimate["estimate_total"]:.1f} tCO₂e, '
+            f'made up of {_join_phrases(parts)}. Travel uses the UK Government 2026 '
+            'business-travel conversion factors; purchases use spend-based factors.'
+        )
+
+    chosen = [k for k in REDUCTION_MEASURES if k in (project.reduction_measures or [])]
+    for group, intro in MEASURE_GROUP_INTROS.items():
+        phrases = [MEASURE_COMMITMENTS[k] for k in chosen if REDUCTION_MEASURES[k][0] == group]
+        text = f'{intro} {_join_phrases(phrases)}.' if phrases else ''
+        if group == 'Travel' and estimate['credits_for_plan'] > 0:
+            credit_text = (f'Remaining travel emissions of {travel:.1f} tCO₂e will be mitigated with '
+                           f'{estimate["credits_for_plan"]:.0f} third-party accredited carbon credits')
+            if estimate['credit_budget_usd'] is not None:
+                credit_text += (f', budgeted at ${estimate["credit_budget_usd"]:,.0f} '
+                                f'(${project.credit_price_usd:,.2f} per credit)')
+                sources.append(f'Credit budget: {estimate["credits_for_plan"]:.0f} credits × '
+                               f'${project.credit_price_usd:,.2f}, the price entered.')
+            text = (text + ' ' if text else '') + credit_text + '.'
+        if text:
+            paragraphs.append(text)
+
+    if project.reduction_notes:
+        paragraphs.append(project.reduction_notes.strip())
+
+    for row in estimate['planned_trips']:
+        j = row['journey']
+        for flag in row['flags']:
+            if flag['severity'] in ('fail', 'warn'):
+                warnings.append(f'{j.origin} → {j.destination}: {flag["message"]}')
+    if not chosen and not project.reduction_notes:
+        warnings.append('No reduction measures chosen yet.')
+
+    return {'paragraphs': paragraphs, 'sources': sources, 'warnings': warnings,
+            'text': '\n\n'.join(paragraphs)}
+
+
 def project_estimate(project, footprint, credits):
     """
     Application-stage estimate for an award, laid beside the actuals.
