@@ -103,6 +103,24 @@
     </div>
 </div>
 
+{% if org_readiness %}
+<div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <strong>Lead organisation: {{ project.organisation.name }}</strong>
+        <a href="{% url 'org_readiness' project.organisation.id %}" class="small">Organisation readiness</a>
+    </div>
+    <div class="card-body py-2 small">
+        {% for r in org_readiness %}
+        <span class="me-3 text-nowrap">
+            <span class="badge {% if r.state == 'pass' %}bg-success{% elif r.state == 'warn' %}bg-warning text-dark{% elif r.state == 'fail' %}bg-danger{% else %}bg-light text-dark border{% endif %}">{% if r.state == 'na' %}n/a{% else %}{{ r.state }}{% endif %}</span>
+            {{ r.label }}
+        </span>
+        {% endfor %}
+        <div class="text-muted mt-1" style="font-size:.7rem;">Self-declared by the organisation; not verified by the app.</div>
+    </div>
+</div>
+{% endif %}
+
 <div class="row g-4">
     <!-- ── Sites and allocation ── -->
     <div class="col-lg-7">

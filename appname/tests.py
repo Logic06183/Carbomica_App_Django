@@ -19,7 +19,7 @@ from appname.models import (
     Facility, EmissionData, EmissionSource,
     Intervention, FacilityIntervention, Organisation, ProcurementLine,
     Project, ProjectSite, TravelJourney, CreditPurchase, LabAccreditation,
-    PlannedSpend, SustainabilityCost, AwardReductionTarget,
+    PlannedSpend, SustainabilityCost, AwardReductionTarget, ReadinessDeclaration,
 )
 from appname.modeling import (
     INTERVENTION_LIBRARY,
@@ -30,7 +30,7 @@ from appname.modeling import (
     project_footprint, AIR_FACTORS, SURFACE_FACTORS, journey_tco2e,
     journey_policy_flags, credit_position, award_checklist, lab_status,
     project_estimate, REDUCTION_MEASURES, application_statement, MEASURE_COMMITMENTS,
-    ELIGIBLE_COSTS, award_trajectory,
+    ELIGIBLE_COSTS, award_trajectory, org_readiness,
 )
 
 
@@ -2842,4 +2842,113 @@ class FunderReportExportTest(TestCase):
         for suffix in ('report/', 'export.csv'):
             self.assertEqual(
                 self.client.get(f'/projects/{self.project.id}/{suffix}').status_code, 404)
+
+
+class OrgReadinessTest(TestCase):
+    """Organisation-level Wellcome duties: scoped to high-income countries where
+    the policy says so, deadline-aware, self-declared with evidence."""
+
+    TODAY = date(2026, 10, 17)
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.owner = User.objects.create_user('orgown', 'oo@example.com', 'pw')
+        cls.member = User.objects.create_user('orgmem', 'om@example.com', 'pw')
+        cls.outsider = User.objects.create_user('orgout', 'ot@example.com', 'pw')
+
+    def setUp(self):
+        self.org = Organisation.objects.create(name='Ready Org', org_type='entity',
+                                               created_by=self.owner)
+        self.org.members.add(self.owner, self.member)
+        self.url = f'/organisation/{self.org.id}/readiness/'
+
+    def _states(self, today=None):
+        return {r['key']: r['state'] for r in org_readiness(self.org, today or self.TODAY)}
+
+    def _declare(self, item, status, evidence='https://example.org/evidence'):
+        ReadinessDeclaration.objects.create(
+            organisation=self.org, item=item, status=status, evidence_url=evidence,
+            declared_on=self.TODAY)
+
+    def test_high_income_duties_do_not_apply_elsewhere(self):
+        states = self._states()
+        for key in ('concordat', 'net_zero_plan', 'resource_log'):
+            self.assertEqual(states[key], 'na', key)
+        self.assertEqual((states['training'], states['credit_arrangement']), ('warn', 'warn'))
+
+    def test_undeclared_deadline_duties_fail_after_2024_warn_before(self):
+        self.org.high_income_country = True
+        self.org.save()
+        after = self._states()
+        self.assertEqual((after['concordat'], after['net_zero_plan']), ('fail', 'fail'))
+        self.assertEqual(after['resource_log'], 'warn')          # no deadline in the policy
+        before = self._states(today=date(2024, 12, 31))
+        self.assertEqual((before['concordat'], before['net_zero_plan']), ('warn', 'warn'))
+
+    def test_declaration_states(self):
+        self._declare('training', 'yes')
+        self._declare('credit_arrangement', 'yes', evidence='')
+        self.org.high_income_country = True
+        self.org.save()
+        self._declare('resource_log', 'in_progress')
+        self._declare('net_zero_plan', 'no')
+        states = self._states()
+        self.assertEqual(states['training'], 'pass')
+        self.assertEqual(states['credit_arrangement'], 'warn')   # in place, no evidence
+        self.assertEqual(states['resource_log'], 'warn')
+        self.assertEqual(states['net_zero_plan'], 'fail')
+
+    def test_concordat_wording_follows_location(self):
+        self.org.high_income_country = True
+        self.org.save()
+        label = lambda: next(r['label'] for r in org_readiness(self.org, self.TODAY)
+                             if r['key'] == 'concordat')
+        self.assertEqual(label(), 'Follows the Concordat principles')
+        self.org.based_in_uk = True
+        self.org.save()
+        self.assertEqual(label(), 'Concordat signatory')
+
+    def test_manager_declares_and_uk_implies_high_income(self):
+        self.client.force_login(self.owner)
+        self.client.post(self.url, {'action': 'set_scope', 'based_in_uk': 'on'})
+        self.org.refresh_from_db()
+        self.assertTrue(self.org.based_in_uk and self.org.high_income_country)
+        self.client.post(self.url, {'action': 'declare', 'item': 'concordat', 'status': 'yes',
+                                    'evidence_url': 'https://example.org/signatories'})
+        self.client.post(self.url, {'action': 'declare', 'item': 'concordat', 'status': 'yes',
+                                    'evidence_url': 'https://example.org/updated'})
+        d = ReadinessDeclaration.objects.get(organisation=self.org, item='concordat')
+        self.assertEqual((d.evidence_url, d.declared_by), ('https://example.org/updated', self.owner))
+
+    def test_bad_inputs_are_rejected(self):
+        self.client.force_login(self.owner)
+        self.client.post(self.url, {'action': 'declare', 'item': 'training', 'status': 'yes',
+                                    'evidence_url': 'javascript:alert(1)'})
+        self.client.post(self.url, {'action': 'declare', 'item': 'made_up', 'status': 'yes'})
+        self.client.post(self.url, {'action': 'declare', 'item': 'training', 'status': 'maybe'})
+        self.assertFalse(ReadinessDeclaration.objects.exists())
+
+    def test_member_can_view_but_not_declare(self):
+        self.client.force_login(self.member)
+        self.assertEqual(self.client.get(self.url).status_code, 200)
+        response = self.client.post(self.url, {'action': 'declare', 'item': 'training',
+                                               'status': 'yes'})
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(ReadinessDeclaration.objects.exists())
+
+    def test_outsider_cannot_view(self):
+        self.client.force_login(self.outsider)
+        self.assertEqual(self.client.get(self.url).status_code, 404)
+
+    def test_award_page_report_and_csv_show_lead_org_readiness(self):
+        project = Project.objects.create(name='Org Award', organisation=self.org,
+                                         created_by=self.owner)
+        self._declare('training', 'yes')
+        self.client.force_login(self.owner)
+        self.assertContains(self.client.get(f'/projects/{project.id}/'),
+                            'Lead organisation: Ready Org')
+        self.assertContains(self.client.get(f'/projects/{project.id}/report/'),
+                            'Lead organisation readiness')
+        csv_text = self.client.get(f'/projects/{project.id}/export.csv').content.decode()
+        self.assertIn('Lead organisation readiness (self-declared): Ready Org', csv_text)
 

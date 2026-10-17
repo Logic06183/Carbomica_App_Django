@@ -77,6 +77,23 @@
     </table>
 </div>
 
+{% if org_readiness %}
+<div class="card mb-3">
+    <div class="card-header"><strong>Lead organisation readiness: {{ project.organisation.name }}</strong> <span class="text-muted small">· self-declared</span></div>
+    <table class="table table-sm mb-0 report-table">
+        <tbody>
+            {% for r in org_readiness %}
+            <tr>
+                <td style="width:6rem;"><span class="badge {% if r.state == 'pass' %}bg-success{% elif r.state == 'warn' %}bg-warning text-dark{% elif r.state == 'fail' %}bg-danger{% else %}bg-light text-dark border{% endif %}">{% if r.state == 'na' %}n/a{% else %}{{ r.state }}{% endif %}</span></td>
+                <td class="fw-semibold" style="width:28%;">{{ r.label }}</td>
+                <td>{{ r.detail }}{% if r.declaration.evidence_url %} · <a href="{{ r.declaration.evidence_url }}">evidence</a>{% endif %}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
 <div class="row g-3">
     <div class="col-md-6">
         <div class="card mb-3">

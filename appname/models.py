@@ -51,6 +51,16 @@ class Organisation(models.Model):
         help_text='Users who can access all facilities in this organisation '
                   'and every organisation beneath it.'
     )
+    # Self-declared scope for Wellcome's organisation-level duties. The policy
+    # does not define "high-income", so the organisation states it.
+    based_in_uk = models.BooleanField(
+        default=False, help_text='UK-based: Wellcome expects Concordat signatory status.'
+    )
+    high_income_country = models.BooleanField(
+        default=False,
+        help_text='Based in a high-income country, which brings extra duties under '
+                  "Wellcome's policy. The policy does not define high-income."
+    )
 
     class Meta:
         ordering = ['name']
@@ -655,6 +665,43 @@ class AwardReductionTarget(models.Model):
         if (self.baseline_year and self.target_year
                 and self.target_year <= self.baseline_year):
             raise ValidationError({'target_year': 'Target year must be after the baseline year.'})
+
+
+class ReadinessDeclaration(models.Model):
+    """
+    An organisation's self-declared position on one of the organisation-level
+    duties in Wellcome's funding policy (modeling.ORG_READINESS_ITEMS), with
+    evidence. Self-declared: the app records it and does not verify it.
+    """
+
+    STATUS_CHOICES = [
+        ('yes', 'In place'),
+        ('in_progress', 'In progress'),
+        ('no', 'Not in place'),
+    ]
+
+    organisation = models.ForeignKey(
+        'Organisation', related_name='readiness', on_delete=models.CASCADE,
+    )
+    item = models.CharField(max_length=40, help_text='Key into modeling.ORG_READINESS_ITEMS.')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES)
+    evidence_url = models.URLField(blank=True)
+    note = models.CharField(max_length=255, blank=True)
+    declared_on = models.DateField()
+    declared_by = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL, related_name='+',
+    )
+
+    class Meta:
+        verbose_name = _('Readiness Declaration')
+        verbose_name_plural = _('Readiness Declarations')
+        constraints = [
+            models.UniqueConstraint(fields=['organisation', 'item'],
+                                    name='unique_org_readiness_item'),
+        ]
+
+    def __str__(self):
+        return f'{self.organisation}: {self.item} = {self.status}'
 
 
 class LabAccreditation(models.Model):

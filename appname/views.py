@@ -59,6 +59,7 @@ from .models import (
     PlannedSpend,
     SustainabilityCost,
     AwardReductionTarget,
+    ReadinessDeclaration,
 )
 from .modeling import (
     CarbomicaOptimizer, calculate_npv, compute_tco2e, sum_tco2e,
@@ -67,6 +68,7 @@ from .modeling import (
     TRAVEL_FACTOR_URL, WELLCOME_POLICY_URL, credit_position, VERRA_VCU_URL,
     award_checklist, lab_status, project_estimate, REDUCTION_MEASURES,
     application_statement, ELIGIBLE_COSTS, award_trajectory, award_years,
+    org_readiness, ORG_READINESS_ITEMS,
 )
 
 # ---------------------------------------------------------------------------
@@ -2039,6 +2041,59 @@ def project_detail(request, project_id):
 
 
 @login_required
+def org_readiness_page(request, org_id):
+    """
+    An organisation's position on Wellcome's organisation-level duties.
+    Members can view; only those who manage the organisation can declare.
+    """
+    if org_id not in (_visible_org_ids(request.user) | _manageable_org_ids(request.user)):
+        raise Http404
+    org = get_object_or_404(Organisation, id=org_id)
+    can_manage = org_id in _manageable_org_ids(request.user)
+
+    if request.method == 'POST':
+        if not can_manage:
+            raise Http404
+        action = request.POST.get('action')
+        if action == 'set_scope':
+            org.based_in_uk = request.POST.get('based_in_uk') == 'on'
+            org.high_income_country = (request.POST.get('high_income_country') == 'on'
+                                       or org.based_in_uk)
+            org.save(update_fields=['based_in_uk', 'high_income_country'])
+            messages.success(request, 'Scope saved.')
+        elif action == 'declare':
+            item = request.POST.get('item')
+            status = request.POST.get('status')
+            evidence = (request.POST.get('evidence_url') or '').strip()
+            if item not in ORG_READINESS_ITEMS or status not in dict(ReadinessDeclaration.STATUS_CHOICES):
+                messages.error(request, 'Unknown item or status.')
+            elif evidence and not evidence.startswith(('http://', 'https://')):
+                messages.error(request, 'Evidence must be a web link starting http:// or https://.')
+            else:
+                ReadinessDeclaration.objects.update_or_create(
+                    organisation=org, item=item,
+                    defaults={'status': status, 'evidence_url': evidence,
+                              'note': (request.POST.get('note') or '').strip()[:255],
+                              'declared_on': date.today(), 'declared_by': request.user},
+                )
+                messages.success(request, 'Declaration saved.')
+        elif action == 'clear':
+            ReadinessDeclaration.objects.filter(
+                organisation=org, item=request.POST.get('item')).delete()
+            messages.success(request, 'Declaration cleared.')
+        return redirect('org_readiness', org_id=org.id)
+
+    return render(request, 'appname/org_readiness.html', {
+        'org': org,
+        'rows': org_readiness(org),
+        'can_manage': can_manage,
+        'status_choices': ReadinessDeclaration.STATUS_CHOICES,
+        'wellcome_policy_url': WELLCOME_POLICY_URL,
+        'awards': org.projects.order_by('name'),
+    })
+
+
+@login_required
 def project_report(request, project_id):
     """Read-only, printable funder report for one award."""
     project = get_object_or_404(_user_projects(request.user), id=project_id)
@@ -2138,6 +2193,15 @@ def project_export(request, project_id):
                     r['quote'] or 'Good practice; not stated in the policy'])
     w.writerow([])
 
+    if c['org_readiness']:
+        w.writerow([f'Lead organisation readiness (self-declared): {_csv_safe(project.organisation.name)}'])
+        w.writerow(['Duty', 'State', 'Detail', 'Evidence', 'Policy line'])
+        for r in c['org_readiness']:
+            d = r['declaration']
+            w.writerow([r['label'], r['state'], r['detail'],
+                        _csv_safe(d.evidence_url) if d else '', r['quote']])
+        w.writerow([])
+
     tr = c['trajectory']
     if tr and not tr['baseline_missing']:
         t = tr['target']
@@ -2202,6 +2266,7 @@ def _award_report_context(project):
         'estimate': estimate,
         'statement': application_statement(project, estimate, footprint),
         'trajectory': award_trajectory(project),
+        'org_readiness': org_readiness(project.organisation) if project.organisation else None,
         'travel_factor_source': TRAVEL_FACTOR_SOURCE,
         'travel_factor_url': TRAVEL_FACTOR_URL,
         'wellcome_policy_url': WELLCOME_POLICY_URL,

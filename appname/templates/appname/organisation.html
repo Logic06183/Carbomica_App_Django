@@ -61,6 +61,7 @@
                                 {% if row.org.short_name %}
                                 <span class="badge bg-light text-dark ms-1">{{ row.org.short_name }}</span>
                                 {% endif %}
+                                <a href="{% url 'org_readiness' row.org.id %}" class="small fw-normal ms-2">Wellcome readiness</a>
                             </td>
                             <td class="text-muted" style="font-size:.75rem;">
                                 {{ row.org.get_org_type_display }}
@@ -227,6 +228,7 @@
             <div class="card-body">
                 <strong>{{ org.name }}</strong>
                 <span class="text-muted small ms-2">owned by {{ org.created_by.email }}</span>
+                <a href="{% url 'org_readiness' org.id %}" class="small ms-2">Wellcome readiness</a>
                 <div class="mt-2">
                     {% for fac in org.facilities.all %}
                     <a href="{% url 'facility_detail' fac.id %}" class="badge bg-light text-dark text-decoration-none me-1">

@@ -1802,6 +1802,74 @@ def award_trajectory(project):
     return result
 
 
+# ---------------------------------------------------------------------------
+# Organisation-level duties in Wellcome's funding policy, verbatim (read
+# 2026-10-17). "all": "To support researchers reduce their environmental
+# impact, all organisations must:". "hic": "organisations based in
+# high-income countries must:". The policy does not define high-income.
+# ---------------------------------------------------------------------------
+ORG_DUTIES_DEADLINE = date(2024, 12, 31)
+ORG_READINESS_ITEMS = {
+    # key: (scope, label, quote, has the end-2024 deadline)
+    'training': ('all', 'Training, expert advice and tools for measurement',
+                 'Provide training and access to expert advice and tools to support them with the '
+                 'measurement and monitoring requirements of this policy (training costs are '
+                 'allowable under our Continual Professional Development policy).', False),
+    'credit_arrangement': ('all', 'Arrangements to buy accredited carbon credits',
+                           'Have arrangements to purchase third party accredited carbon credits',
+                           False),
+    'concordat': ('hic', 'Concordat for Environmental Sustainability of Research',
+                  'By the end of 2024 be signatories of the Concordat for the Environmental '
+                  'Sustainability of Research and Innovation Practice where they are based in the '
+                  'UK. Organisations in other high-income countries should follow the principles '
+                  'of the concordat.', True),
+    'net_zero_plan': ('hic', 'Science-based net-zero targets and plan (scopes 1 and 2)',
+                      'Have an organisation-wide sustainability policy with science-based targets to '
+                      'reduce scope 1 and 2 carbon emissions to net zero and by the end of 2024 they '
+                      'must have a plan for achieving this.', True),
+    'resource_log': ('hic', 'Logs of existing and left-over resources',
+                     'Maintain logs of existing and left-over resources (for example, equipment, '
+                     'including freezers and other cooling equipment, materials and consumables) '
+                     'that researchers can check before purchasing new items.', False),
+}
+
+
+def org_readiness(organisation, today=None):
+    """
+    Wellcome organisation-level duties for one organisation, with its
+    declarations. Rows: key, label, quote, applies, state, detail, declaration.
+    States: pass (in place, with evidence), warn (in place without evidence,
+    in progress, or not declared before a deadline), fail (declared not in
+    place, or undeclared after the end-2024 deadline), na (does not apply).
+    """
+    today = today or date.today()
+    declared = {d.item: d for d in organisation.readiness.all()}
+    rows = []
+    for key, (scope, label, quote, has_deadline) in ORG_READINESS_ITEMS.items():
+        applies = scope == 'all' or organisation.high_income_country or organisation.based_in_uk
+        d = declared.get(key)
+        overdue = has_deadline and today > ORG_DUTIES_DEADLINE
+        if key == 'concordat' and applies:
+            label = ('Concordat signatory' if organisation.based_in_uk
+                     else 'Follows the Concordat principles')
+        if not applies:
+            state, detail = 'na', 'Applies to organisations in high-income countries.'
+        elif d is None:
+            state = 'fail' if overdue else 'warn'
+            detail = 'Not declared.' + (' The end-of-2024 deadline has passed.' if overdue else '')
+        elif d.status == 'yes':
+            state = 'pass' if d.evidence_url else 'warn'
+            detail = 'In place.' if d.evidence_url else 'Declared in place, but no evidence linked.'
+        elif d.status == 'in_progress':
+            state = 'warn'
+            detail = 'In progress.' + (' The end-of-2024 deadline has passed.' if overdue else '')
+        else:
+            state, detail = 'fail', 'Declared not in place.'
+        rows.append({'key': key, 'label': label, 'quote': quote, 'applies': applies,
+                     'state': state, 'detail': detail, 'declaration': d})
+    return rows
+
+
 def award_checklist(project, footprint, credits, today=None):
     """
     Wellcome alignment checks for one award. Each row: key, label, state

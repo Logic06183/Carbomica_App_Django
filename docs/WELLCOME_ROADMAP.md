@@ -80,10 +80,10 @@ https://wellcome.org/research-funding/guidance/policies-grant-conditions/environ
   lines the user can fill in. Accept: totals appear in the estimate and the export.
 - [x] 9. (`02250f2`) **Reduction plan per award.** Port consortium reduction planning: baseline,
   target, straight-line trajectory, actuals. Accept: trajectory maths tested.
-- [x] 10. **Funder report export.** CSV and print view of the award: footprint by scope and
+- [x] 10. (`867a599`) **Funder report export.** CSV and print view of the award: footprint by scope and
   category, travel log with flags, credits, checklist, statement of method with sources.
   Accept: export numbers equal the page numbers in a test.
-- [ ] 11. **Organisation readiness page.** Org-level policy items: Concordat signatory,
+- [x] 11. **Organisation readiness page.** Org-level policy items: Concordat signatory,
   science-based net-zero plan for scope 1 and 2, credit-purchase arrangement, resource log.
   Accept: self-declared with evidence link and date; shown on every award of that org.
 - [ ] 12. **Computing emissions.** HPC / cloud compute for desk-based research using a
@@ -111,3 +111,4 @@ https://wellcome.org/research-funding/guidance/policies-grant-conditions/environ
 - 2026-10-17 Item 7 done (`a2b8fd2`): draft application text from estimate and chosen measures; breaches surfaced as warnings. 181 tests.
 - 2026-10-17 Item 8 done (`0bac869`): eligible sustainability cost lines with verbatim headings; totals in estimate and draft text. 189 tests. Note for item 14: award page is now long; consider splitting applicant vs holder views.
 - 2026-10-17 Item 9 done (`02250f2`): per-year award footprints, straight-line target, incomplete years never judged. 198 tests.
+- 2026-10-17 Item 10 done (`867a599`): printable funder report + CSV from one shared context; export equals page in tests. 204 tests.

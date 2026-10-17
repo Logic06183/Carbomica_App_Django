@@ -1,0 +1,105 @@
+{% extends 'appname/base.html' %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+        <p class="section-label mb-1">Organisation readiness</p>
+        <h2 class="mb-1">{{ org.name }}</h2>
+        <p class="text-muted mb-0">
+            Wellcome's duties for organisations that hold its awards, as the organisation declares them.
+            <a href="{{ wellcome_policy_url }}" target="_blank" rel="noopener">Funding policy</a>
+        </p>
+    </div>
+    <a href="{% url 'my_organisation' %}" class="btn btn-outline-secondary btn-sm"><i class="fas fa-arrow-left me-1"></i> Organisations</a>
+</div>
+
+<div class="card mb-4">
+    <div class="card-header"><strong>Where the organisation is based</strong></div>
+    <div class="card-body small">
+        {% if can_manage %}
+        <form method="post" class="d-flex flex-wrap gap-4 align-items-center">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="set_scope">
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="based_in_uk" id="uk" {% if org.based_in_uk %}checked{% endif %}>
+                <label class="form-check-label" for="uk">Based in the UK</label>
+            </div>
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="high_income_country" id="hic" {% if org.high_income_country %}checked{% endif %}>
+                <label class="form-check-label" for="hic">Based in a high-income country</label>
+            </div>
+            <button type="submit" class="btn btn-sm btn-outline-primary">Save</button>
+        </form>
+        {% else %}
+        {% if org.based_in_uk %}Based in the UK.{% elif org.high_income_country %}Based in a high-income country.{% else %}Not declared as high-income.{% endif %}
+        {% endif %}
+        <p class="text-muted mt-2 mb-0" style="font-size:.75rem;">
+            Some duties apply only to "organisations based in high-income countries". Wellcome's policy does not
+            define high-income, so this is the organisation's own declaration. UK organisations are counted as
+            high-income, since the policy lists the UK Concordat duty under that heading.
+        </p>
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-header"><strong>Wellcome organisation duties</strong></div>
+    <div class="table-responsive">
+        <table class="table align-middle mb-0">
+            <tbody>
+                {% for r in rows %}
+                <tr>
+                    <td style="width:5rem;">
+                        <span class="badge {% if r.state == 'pass' %}bg-success{% elif r.state == 'warn' %}bg-warning text-dark{% elif r.state == 'fail' %}bg-danger{% else %}bg-light text-dark border{% endif %}">
+                            {% if r.state == 'na' %}n/a{% else %}{{ r.state }}{% endif %}
+                        </span>
+                    </td>
+                    <td>
+                        <div class="fw-semibold small">{{ r.label }}</div>
+                        <div class="small">{{ r.detail }}
+                            {% if r.declaration %}
+                            <span class="text-muted">· {{ r.declaration.get_status_display }}, declared {{ r.declaration.declared_on|date:"j M Y" }}</span>
+                            {% if r.declaration.evidence_url %}· <a href="{{ r.declaration.evidence_url }}" target="_blank" rel="noopener">evidence</a>{% endif %}
+                            {% if r.declaration.note %}<span class="text-muted">· {{ r.declaration.note }}</span>{% endif %}
+                            {% endif %}
+                        </div>
+                        <div class="text-muted fst-italic" style="font-size:.7rem;">Policy: &ldquo;{{ r.quote }}&rdquo;</div>
+                        {% if can_manage and r.applies %}
+                        <form method="post" class="row g-2 mt-1 align-items-end">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="declare">
+                            <input type="hidden" name="item" value="{{ r.key }}">
+                            <div class="col-md-3">
+                                <select name="status" class="form-select form-select-sm">
+                                    {% for value, label in status_choices %}
+                                    <option value="{{ value }}" {% if r.declaration.status == value %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-4"><input type="url" name="evidence_url" class="form-control form-control-sm" placeholder="Evidence link" value="{{ r.declaration.evidence_url|default:'' }}"></div>
+                            <div class="col-md-3"><input type="text" name="note" class="form-control form-control-sm" placeholder="Note" value="{{ r.declaration.note|default:'' }}"></div>
+                            <div class="col-md-2"><button type="submit" class="btn btn-sm btn-outline-primary w-100">Declare</button></div>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="card-footer text-muted" style="font-size:.75rem;">
+        Self-declared: the app records these with evidence links but does not verify them. Lab accreditation
+        is tracked per site on each facility page.
+    </div>
+</div>
+
+{% if awards %}
+<div class="card mb-4">
+    <div class="card-header"><strong>Awards led by this organisation</strong></div>
+    <ul class="list-group list-group-flush">
+        {% for a in awards %}
+        <li class="list-group-item small"><a href="{% url 'project_detail' a.id %}">{{ a.name }}</a> <span class="text-muted">· {{ a.reference_label }}</span></li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+{% endblock %}
