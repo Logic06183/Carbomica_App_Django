@@ -32,6 +32,7 @@ from .forms import (
     FacilityInterventionFormSet,
     OptimizationScenarioForm,
     EmissionDataUpdateForm,
+    TravelJourneyForm,
 )
 from .models import (
     Facility,
@@ -46,11 +47,13 @@ from .models import (
     ProcurementLine,
     Project,
     ProjectSite,
+    TravelJourney,
 )
 from .modeling import (
     CarbomicaOptimizer, calculate_npv, compute_tco2e, sum_tco2e,
     PROCUREMENT_CATEGORIES, match_procurement_category, procurement_breakdown,
-    project_footprint,
+    project_footprint, AIR_FACTORS, SURFACE_FACTORS, TRAVEL_FACTOR_SOURCE,
+    TRAVEL_FACTOR_URL,
 )
 
 # ---------------------------------------------------------------------------
@@ -78,6 +81,7 @@ CATEGORY_LABELS = {
     'contractor_logistics': 'Contractor Logistics',
     'flights':             'Flights',
     'lab_consumables':     'Lab Consumables & Procurement',
+    'award_travel':        'Award Travel (logged journeys)',
 }
 
 # GHG Protocol Corporate Standard scope per emission category.
@@ -97,6 +101,7 @@ CATEGORY_SCOPES = {
     'contractor_logistics': 3,
     'flights':             3,
     'lab_consumables':     3,
+    'award_travel':        3,
 }
 
 # Default intervention cost guidance (USD) — shown in the upload form to help users
@@ -484,7 +489,36 @@ def methodology(request):
         'carbon_price': CARBON_CREDIT_PRICE_USD,
         'procurement_rows': procurement_rows,
         'procurement_excluded_note': PROCUREMENT_EXCLUDED_NOTE,
+        'travel_rows': _travel_factor_rows(),
+        'travel_factor_source': TRAVEL_FACTOR_SOURCE,
+        'travel_factor_url': TRAVEL_FACTOR_URL,
     })
+
+
+def _travel_factor_rows():
+    """The award travel-log factors as methodology-table rows."""
+    haul = dict(TravelJourney.HAUL_CHOICES)
+    cabin = dict(TravelJourney.CABIN_CHOICES)
+    mode = dict(TravelJourney.MODE_CHOICES)
+    rows = [
+        {
+            'mode': 'Flight',
+            'detail': f'{haul[h]} · {cabin[c]}',
+            'factor': factor,
+            'unit': 'passenger-km',
+        }
+        for (h, c), factor in AIR_FACTORS.items()
+    ]
+    rows += [
+        {
+            'mode': mode[m],
+            'detail': '',
+            'factor': factor,
+            'unit': 'passenger-km' if per_passenger else 'vehicle-km',
+        }
+        for m, (factor, per_passenger) in SURFACE_FACTORS.items()
+    ]
+    return rows
 
 
 # ---------------------------------------------------------------------------
@@ -1797,6 +1831,31 @@ def project_detail(request, project_id):
             project.save(update_fields=['allocation_basis', 'allocation_note'])
             messages.success(request, 'Allocation basis updated.')
 
+        elif action == 'add_journey':
+            form = TravelJourneyForm(request.POST)
+            if form.is_valid():
+                journey = form.save(commit=False)
+                journey.project = project
+                journey.created_by = request.user
+                journey.save()
+                messages.success(
+                    request,
+                    f'{journey.origin} → {journey.destination} logged: '
+                    f'{journey.tco2e():.3f} tCO₂e.',
+                )
+            else:
+                problems = [
+                    f'{form.fields[f].label}: {msg}' if f in form.fields else msg
+                    for f, msgs in form.errors.items() for msg in msgs
+                ]
+                messages.error(request, 'Journey not saved. ' + ' '.join(problems))
+
+        elif action == 'remove_journey':
+            TravelJourney.objects.filter(
+                project=project, id=request.POST.get('journey_id')
+            ).delete()
+            messages.success(request, 'Journey removed.')
+
         return redirect('project_detail', project_id=project.id)
 
     footprint = project_footprint(project)
@@ -1826,4 +1885,8 @@ def project_detail(request, project_id):
         'basis_choices': Project.ALLOCATION_BASIS_CHOICES,
         'available_facilities': _user_facilities(request.user)
             .exclude(id__in=assigned_ids).order_by('display_name'),
+        'mode_choices': TravelJourney.MODE_CHOICES,
+        'haul_choices': TravelJourney.HAUL_CHOICES,
+        'cabin_choices': TravelJourney.CABIN_CHOICES,
+        'travel_factor_source': TRAVEL_FACTOR_SOURCE,
     })

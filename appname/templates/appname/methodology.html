@@ -193,6 +193,42 @@
     </div>
 </div>
 
+<!-- ── Award travel log factors ── -->
+<div class="card mb-4" id="travel-factors">
+    <div class="card-header"><i class="fas fa-plane me-2"></i>Award travel log — per-journey factors</div>
+    <div class="card-body small text-muted">
+        <p class="mb-2">
+            Journeys logged on an award are converted with the UK Government's business-travel
+            factors: <a href="{{ travel_factor_url }}" target="_blank" rel="noopener">{{ travel_factor_source }}</a>
+            (read 17 October 2026). Flight factors include radiative forcing. DEFRA publishes only an
+            average-passenger factor for UK domestic flights and no first or premium-economy factor for
+            short-haul, so those combinations are not accepted. Car is per vehicle-km; every other
+            mode is per passenger-km.
+        </p>
+        <p class="mb-0">
+            Once an award logs its journeys, they replace its apportioned share of site flights and
+            road travel, so a trip is never counted in both.
+        </p>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-sm mb-0">
+            <thead class="table-light">
+                <tr><th>Mode</th><th>Detail</th><th class="text-end">kg CO<sub>2</sub>e per unit</th><th>Unit</th></tr>
+            </thead>
+            <tbody>
+                {% for row in travel_rows %}
+                <tr>
+                    <td>{{ row.mode }}</td>
+                    <td class="text-muted">{{ row.detail }}</td>
+                    <td class="text-end">{{ row.factor }}</td>
+                    <td class="text-muted">{{ row.unit }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
 <!-- ── Limitations & roadmap ── -->
 <div class="card mb-4" style="border-left:4px solid var(--hh-red);">
     <div class="card-header"><i class="fas fa-exclamation-triangle me-2" style="color:var(--hh-red);"></i>Known limitations — read before citing results</div>

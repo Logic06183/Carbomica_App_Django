@@ -398,6 +398,122 @@ class ProjectSite(models.Model):
         return f'{self.project} @ {self.facility} ({self.share_pct}%)'
 
 
+class TravelJourney(models.Model):
+    """
+    One journey made for an award.
+
+    Logged journeys are attributed to the award directly. Once an award has any,
+    they replace its apportioned share of the site's flights and road travel
+    (modeling.SITE_TRAVEL_FIELDS), so the same trip is never counted twice.
+    Factors come from DEFRA's 2026 business-travel tables (modeling.AIR_FACTORS,
+    modeling.SURFACE_FACTORS); combinations DEFRA does not publish are rejected.
+    """
+
+    MODE_CHOICES = [
+        ('air', 'Flight'),
+        ('rail_national', 'Rail (national)'),
+        ('rail_international', 'Rail (international)'),
+        ('light_rail', 'Light rail / tram'),
+        ('underground', 'Underground / metro'),
+        ('bus', 'Local bus'),
+        ('coach', 'Coach'),
+        ('taxi', 'Taxi'),
+        ('car', 'Car (per vehicle)'),
+    ]
+    HAUL_CHOICES = [
+        ('domestic_uk', 'Domestic, within the UK'),
+        ('short_haul_uk', 'Short-haul, to/from the UK'),
+        ('long_haul_uk', 'Long-haul, to/from the UK'),
+        ('international_non_uk', 'International, not touching the UK'),
+    ]
+    CABIN_CHOICES = [
+        ('average', 'Unknown / average'),
+        ('economy', 'Economy'),
+        ('premium_economy', 'Premium economy'),
+        ('business', 'Business'),
+        ('first', 'First'),
+    ]
+
+    project = models.ForeignKey(Project, related_name='journeys', on_delete=models.CASCADE)
+    date = models.DateField()
+    traveller = models.CharField(
+        max_length=120, blank=True,
+        help_text='Role or name, e.g. "PI" or "field coordinator".'
+    )
+    origin = models.CharField(max_length=120)
+    destination = models.CharField(max_length=120)
+    mode = models.CharField(max_length=20, choices=MODE_CHOICES)
+    air_haul = models.CharField(
+        max_length=24, choices=HAUL_CHOICES, blank=True,
+        help_text='Flights only. DEFRA factors differ by haul and by whether the '
+                  'flight starts or ends in the UK.'
+    )
+    cabin_class = models.CharField(
+        max_length=20, choices=CABIN_CHOICES, blank=True,
+        help_text='Flights only.'
+    )
+    distance_km = models.DecimalField(
+        max_digits=10, decimal_places=1, validators=[MinValueValidator(0.1)],
+        help_text='Distance of this journey. Log a return trip as two journeys.'
+    )
+    passengers = models.PositiveIntegerField(
+        default=1, validators=[MinValueValidator(1)],
+        help_text='People travelling together on this journey. Ignored for car, '
+                  'whose factor is per vehicle.'
+    )
+    rail_hours = models.DecimalField(
+        max_digits=5, decimal_places=1, null=True, blank=True,
+        validators=[MinValueValidator(0.0)],
+        help_text='Flights only: door-to-door time the same trip would take by rail, '
+                  'including connections. Wellcome expects rail for trips up to 10 hours.'
+    )
+    purpose = models.TextField(
+        blank=True,
+        help_text='Why the trip was needed. Wellcome asks that all travel be justified.'
+    )
+    created_by = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='journeys',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _('Travel Journey')
+        verbose_name_plural = _('Travel Journeys')
+        ordering = ['-date', '-id']
+
+    def __str__(self):
+        return f'{self.origin} → {self.destination} ({self.get_mode_display()}, {self.date})'
+
+    def clean(self):
+        from appname.modeling import journey_factor
+        from django.core.exceptions import ValidationError
+
+        if self.mode == 'air':
+            if not self.air_haul:
+                raise ValidationError({'air_haul': 'Choose the flight type.'})
+            self.cabin_class = self.cabin_class or 'average'
+            if journey_factor('air', self.air_haul, self.cabin_class) is None:
+                raise ValidationError({
+                    'cabin_class': (
+                        f'DEFRA publishes no factor for {self.get_cabin_class_display()} '
+                        f'on a {self.get_air_haul_display().lower()} flight. '
+                        'Choose the nearest class it does publish.'
+                    ),
+                })
+        else:
+            self.air_haul = ''
+            self.cabin_class = ''
+            self.rail_hours = None
+
+    def tco2e(self):
+        from appname.modeling import journey_tco2e
+        return journey_tco2e(
+            self.mode, self.distance_km, self.passengers,
+            self.air_haul, self.cabin_class,
+        )
+
+
 class ProcurementLine(models.Model):
     """
     One line of purchased goods or services for a reporting period.

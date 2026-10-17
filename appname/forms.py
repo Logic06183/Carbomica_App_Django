@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from django import forms
 from django.forms import inlineformset_factory
-from .models import Facility, EmissionData, FacilityIntervention, Intervention, EmissionSource, Policy, OptimizationScenario, Organisation
+from .models import Facility, EmissionData, FacilityIntervention, Intervention, EmissionSource, Policy, OptimizationScenario, Organisation, TravelJourney
 
 class FacilityForm(forms.ModelForm):
     class Meta:
@@ -181,3 +181,15 @@ class EmissionDataUpdateForm(forms.ModelForm):
     def has_any_value(self):
         """True if at least one category was given a non-zero figure."""
         return any(self.cleaned_data.get(name) for name in self.Meta.fields)
+
+
+class TravelJourneyForm(forms.ModelForm):
+    """One journey on an award's travel log. Model.clean() rejects factor
+    combinations DEFRA does not publish."""
+
+    class Meta:
+        model = TravelJourney
+        fields = [
+            'date', 'traveller', 'origin', 'destination', 'mode', 'air_haul',
+            'cabin_class', 'distance_km', 'passengers', 'rail_hours', 'purpose',
+        ]

@@ -48,7 +48,7 @@ https://wellcome.org/research-funding/guidance/policies-grant-conditions/environ
 
 ## Items
 
-- [ ] 1. **Award travel log.** Per-project journeys: date, traveller role, origin,
+- [x] 1. **Award travel log.** Per-project journeys: date, traveller role, origin,
   destination, mode (air/rail/car/bus), cabin class, distance km, door-to-door hours by
   rail, purpose. tCO2e from existing verified factors (add class-specific air factors only
   from DEFRA's published table). Accept: journeys roll into the award report; tests cover

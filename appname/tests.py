@@ -18,7 +18,7 @@ from io import StringIO
 from appname.models import (
     Facility, EmissionData, EmissionSource,
     Intervention, FacilityIntervention, Organisation, ProcurementLine,
-    Project, ProjectSite,
+    Project, ProjectSite, TravelJourney,
 )
 from appname.modeling import (
     INTERVENTION_LIBRARY,
@@ -26,7 +26,7 @@ from appname.modeling import (
     compute_tco2e, sum_tco2e,
     CarbomicaOptimizer,
     PROCUREMENT_CATEGORIES, procurement_breakdown, match_procurement_category,
-    project_footprint,
+    project_footprint, AIR_FACTORS, SURFACE_FACTORS, journey_tco2e,
 )
 
 
@@ -1685,3 +1685,161 @@ class ProjectAccessTest(TestCase):
         response = self.client.get(f'/projects/{self.project.id}/')
         self.assertContains(response, 'Statement of method')
         self.assertContains(response, '3.2 of 41.0 FTE')
+
+
+class TravelJourneyTest(TestCase):
+    """Award travel log: each journey uses the DEFRA 2026 factor for its mode,
+    and logged journeys replace the award's apportioned share of site travel so
+    no trip is counted twice."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create_user('trav', 'trav@example.com', 'pw')
+        cls.outsider = User.objects.create_user('trout', 'tro@example.com', 'pw')
+        cls.facility = Facility.objects.create(
+            code_name='TRV_SITE', display_name='Travel Lab', country='ZA',
+            sector='research', created_by=cls.user,
+        )
+        source = EmissionSource.objects.create(
+            facility=cls.facility, code_name='TRV_SRC', display_name='baseline',
+        )
+        cls.record = EmissionData.objects.create(
+            emission_source=source, date=date(2025, 12, 31),
+            grid_electricity=Decimal('100000'),
+            flights=Decimal('400000'),
+            business_travel=Decimal('50000'),
+        )
+        cls.project = Project.objects.create(name='Travel Award', created_by=cls.user)
+        ProjectSite.objects.create(
+            project=cls.project, facility=cls.facility, share_pct=Decimal('25'))
+
+    def _journey(self, **kw):
+        fields = dict(
+            project=self.project, date=date(2026, 3, 1), origin='A',
+            destination='B', mode='rail_national', distance_km=Decimal('100'),
+        )
+        fields.update(kw)
+        journey = TravelJourney(**fields)
+        journey.full_clean()
+        journey.save()
+        return journey
+
+    def test_every_surface_mode_uses_its_defra_factor(self):
+        for mode, (factor, per_passenger) in SURFACE_FACTORS.items():
+            people = 3 if per_passenger else 1
+            expected = Decimal('100') * people * factor / Decimal('1000')
+            self.assertEqual(journey_tco2e(mode, Decimal('100'), 3), expected, mode)
+
+    def test_every_published_air_combination_uses_its_factor(self):
+        for (haul, cabin), factor in AIR_FACTORS.items():
+            self.assertEqual(
+                journey_tco2e('air', Decimal('1000'), 2, haul, cabin),
+                Decimal('2000') * factor / Decimal('1000'),
+                f'{haul}/{cabin}',
+            )
+
+    def test_spot_check_against_published_value(self):
+        # DEFRA 2026, Long-haul to/from UK, Economy, With RF: 0.11704 kg/pkm.
+        self.assertEqual(
+            journey_tco2e('air', Decimal('10000'), 1, 'long_haul_uk', 'economy'),
+            Decimal('1.17040'),
+        )
+
+    def test_car_is_per_vehicle_not_per_passenger(self):
+        self.assertEqual(
+            journey_tco2e('car', Decimal('100'), 4),
+            journey_tco2e('car', Decimal('100'), 1),
+        )
+
+    def test_blank_cabin_falls_back_to_average_passenger(self):
+        journey = self._journey(mode='air', air_haul='domestic_uk', cabin_class='')
+        self.assertEqual(journey.cabin_class, 'average')
+
+    def test_unpublished_air_combinations_are_rejected(self):
+        from django.core.exceptions import ValidationError
+        for haul, cabin in [('short_haul_uk', 'first'),
+                            ('short_haul_uk', 'premium_economy'),
+                            ('domestic_uk', 'business')]:
+            with self.assertRaises(ValidationError, msg=f'{haul}/{cabin}'):
+                self._journey(mode='air', air_haul=haul, cabin_class=cabin)
+
+    def test_flight_without_haul_is_rejected(self):
+        from django.core.exceptions import ValidationError
+        with self.assertRaises(ValidationError):
+            self._journey(mode='air', air_haul='')
+
+    def test_surface_journey_drops_flight_only_fields(self):
+        journey = self._journey(
+            mode='coach', air_haul='long_haul_uk', cabin_class='business',
+            rail_hours=Decimal('4'))
+        self.assertEqual((journey.air_haul, journey.cabin_class, journey.rail_hours),
+                         ('', '', None))
+
+    def test_without_journeys_site_travel_is_still_apportioned(self):
+        full = compute_tco2e(self.record, 'ZA', 'research')
+        fp = project_footprint(self.project)
+        self.assertEqual(fp['by_category']['flights'], full['flights'] * Decimal('0.25'))
+        self.assertFalse(fp['travel_logged'])
+
+    def test_logged_journeys_replace_apportioned_site_travel(self):
+        journey = self._journey(mode='air', air_haul='international_non_uk',
+                                cabin_class='economy', distance_km=Decimal('2900'))
+        full = compute_tco2e(self.record, 'ZA', 'research')
+        fp = project_footprint(self.project)
+
+        self.assertEqual(fp['by_category']['flights'], Decimal('0'))
+        self.assertEqual(fp['by_category']['business_travel'], Decimal('0'))
+        self.assertEqual(fp['by_category']['award_travel'], journey.tco2e())
+        # Non-travel overheads are still apportioned as before.
+        self.assertEqual(fp['by_category']['grid_electricity'],
+                         full['grid_electricity'] * Decimal('0.25'))
+        # Travel counts as direct, and the total is the sum of its parts.
+        self.assertEqual(fp['direct_total'], journey.tco2e())
+        self.assertEqual(fp['total'], fp['direct_total'] + fp['apportioned_total'])
+
+    def test_award_page_logs_and_shows_a_journey(self):
+        self.client.force_login(self.user)
+        self.client.post(f'/projects/{self.project.id}/', {
+            'action': 'add_journey', 'date': '2026-04-02', 'origin': 'Johannesburg',
+            'destination': 'Nairobi', 'mode': 'air', 'air_haul': 'international_non_uk',
+            'cabin_class': 'economy', 'distance_km': '2900', 'passengers': '2',
+            'purpose': 'Consortium meeting',
+        })
+        journey = TravelJourney.objects.get(project=self.project)
+        self.assertEqual(journey.created_by, self.user)
+        response = self.client.get(f'/projects/{self.project.id}/')
+        self.assertContains(response, 'Johannesburg → Nairobi')
+        self.assertContains(response, 'Travel is attributed per journey')
+
+    def test_invalid_journey_is_not_saved(self):
+        self.client.force_login(self.user)
+        self.client.post(f'/projects/{self.project.id}/', {
+            'action': 'add_journey', 'date': '2026-04-02', 'origin': 'A',
+            'destination': 'B', 'mode': 'air', 'air_haul': 'short_haul_uk',
+            'cabin_class': 'first', 'distance_km': '900', 'passengers': '1',
+        })
+        self.assertFalse(TravelJourney.objects.filter(project=self.project).exists())
+
+    def test_outsider_cannot_log_travel_on_the_award(self):
+        self.client.force_login(self.outsider)
+        response = self.client.post(f'/projects/{self.project.id}/', {
+            'action': 'add_journey', 'date': '2026-04-02', 'origin': 'A',
+            'destination': 'B', 'mode': 'coach', 'distance_km': '50', 'passengers': '1',
+        })
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(TravelJourney.objects.exists())
+
+    def test_cannot_remove_a_journey_from_another_award(self):
+        other = Project.objects.create(name='Other Award', created_by=self.user)
+        journey = self._journey(project=other)
+        self.client.force_login(self.user)
+        self.client.post(f'/projects/{self.project.id}/', {
+            'action': 'remove_journey', 'journey_id': journey.id,
+        })
+        self.assertTrue(TravelJourney.objects.filter(id=journey.id).exists())
+
+    def test_methodology_page_lists_travel_factors_and_source(self):
+        response = self.client.get('/methodology/')
+        self.assertContains(response, 'Conversion Factors for Company Reporting 2026')
+        self.assertContains(response, '0.11704')
+

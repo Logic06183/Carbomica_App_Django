@@ -121,7 +121,8 @@
                 </table>
             </div>
             <div class="card-footer text-muted" style="font-size:.75rem;">
-                <strong>Direct</strong> is spend charged to this award, counted in full.
+                <strong>Direct</strong> is spend charged to this award, counted in full;
+                logged journeys are added to the award's direct total, not to any site.
                 <strong>Apportioned</strong> is the award's share of that site's shared
                 running emissions. Purchases charged to a different award are excluded
                 from the pool entirely, so two awards at the same site never double-count
@@ -243,6 +244,143 @@
     </div>
 </div>
 
+<!-- ── Travel log ── -->
+<div class="card mt-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <strong>Travel log</strong>
+        <span class="text-muted small">
+            {{ footprint.journeys|length }} journey{{ footprint.journeys|length|pluralize }}
+            · {{ footprint.travel_total|floatformat:2 }} tCO<sub>2</sub>e
+        </span>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Date</th>
+                    <th>Journey</th>
+                    <th>Mode</th>
+                    <th>Traveller</th>
+                    <th class="text-end">km</th>
+                    <th class="text-end">People</th>
+                    <th class="text-end">tCO<sub>2</sub>e</th>
+                    <th>Purpose</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for j in footprint.journeys %}
+                <tr>
+                    <td class="text-nowrap">{{ j.date|date:"j M Y" }}</td>
+                    <td>{{ j.origin }} → {{ j.destination }}</td>
+                    <td>
+                        {{ j.get_mode_display }}
+                        {% if j.mode == 'air' %}
+                        <div class="text-muted" style="font-size:.7rem;">
+                            {{ j.get_air_haul_display }} · {{ j.get_cabin_class_display }}
+                        </div>
+                        {% endif %}
+                    </td>
+                    <td class="text-muted small">{{ j.traveller|default:"—" }}</td>
+                    <td class="text-end">{{ j.distance_km|floatformat:0|intcomma }}</td>
+                    <td class="text-end">{{ j.passengers }}</td>
+                    <td class="text-end fw-semibold">{{ j.tco2e|floatformat:3 }}</td>
+                    <td class="text-muted" style="font-size:.75rem;">{{ j.purpose|default:"—" }}</td>
+                    <td class="text-end">
+                        <form method="post" class="d-inline">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="remove_journey">
+                            <input type="hidden" name="journey_id" value="{{ j.id }}">
+                            <button type="submit" class="btn btn-sm btn-outline-danger"
+                                    onclick="return confirm('Remove this journey?')">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="9" class="text-muted p-3">
+                    No journeys logged. Until you log them, this award carries its share of
+                    each site's flights and road travel. Once you log its journeys, they
+                    replace that share.
+                </td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="card-body border-top">
+        <h6 class="mb-3">Log a journey</h6>
+        <form method="post" class="row g-2 align-items-end">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="add_journey">
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Date</label>
+                <input type="date" name="date" class="form-control form-control-sm" required>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">From</label>
+                <input type="text" name="origin" class="form-control form-control-sm" required placeholder="Johannesburg">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">To</label>
+                <input type="text" name="destination" class="form-control form-control-sm" required placeholder="Nairobi">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Mode</label>
+                <select name="mode" class="form-select form-select-sm" required>
+                    {% for value, label in mode_choices %}
+                    <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Distance (km)</label>
+                <input type="number" step="0.1" min="0.1" name="distance_km" class="form-control form-control-sm" required placeholder="2900">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">People</label>
+                <input type="number" min="1" name="passengers" value="1" class="form-control form-control-sm" required>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold">Flight type <span class="text-muted fw-normal">(flights only)</span></label>
+                <select name="air_haul" class="form-select form-select-sm">
+                    <option value="">—</option>
+                    {% for value, label in haul_choices %}
+                    <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Cabin <span class="text-muted fw-normal">(flights)</span></label>
+                <select name="cabin_class" class="form-select form-select-sm">
+                    {% for value, label in cabin_choices %}
+                    <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Rail hours <span class="text-muted fw-normal">(flights)</span></label>
+                <input type="number" step="0.5" min="0" name="rail_hours" class="form-control form-control-sm" placeholder="door to door">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Traveller</label>
+                <input type="text" name="traveller" class="form-control form-control-sm" placeholder="PI">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold">Purpose</label>
+                <input type="text" name="purpose" class="form-control form-control-sm" placeholder="Why the trip was needed">
+            </div>
+            <div class="col-12 d-flex justify-content-between align-items-center">
+                <span class="form-text" style="font-size:.7rem;">
+                    Log a return trip as two journeys. Car distance is per vehicle, so people
+                    sharing a car are not multiplied. Factors: {{ travel_factor_source }}.
+                </span>
+                <button type="submit" class="btn btn-sm btn-success">Log journey</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <!-- ── Statement of method ── -->
 <div class="card mt-4" style="border-left:4px solid var(--hh-blue);">
     <div class="card-header"><i class="fas fa-scale-balanced me-2"></i>Statement of method</div>
@@ -266,9 +404,17 @@
         <p class="mb-0">
             <strong>Limitations.</strong> Apportionment assumes the declared basis is a
             reasonable proxy for a site's shared resource use; it is not a metered
-            measurement of the award's own consumption. Travel is currently apportioned
-            rather than attributed per trip, so an award with unusually heavy or light
-            travel will be over- or under-stated on that line. Procurement uses
+            measurement of the award's own consumption.
+            {% if footprint.travel_logged %}
+            Travel is attributed per journey from the award's travel log, using
+            {{ travel_factor_source }}; it replaces the award's share of site flights and
+            road travel, so journeys missing from the log are not counted.
+            {% else %}
+            No journeys are logged, so travel is apportioned from site figures rather than
+            attributed per trip; an award with unusually heavy or light travel will be over-
+            or under-stated on that line.
+            {% endif %}
+            Procurement uses
             spend-based factors, which assume price tracks carbon.
             {% if footprint.sites_missing_data %}
             <br><strong class="text-danger">

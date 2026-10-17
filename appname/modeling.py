@@ -1515,6 +1515,81 @@ APPORTIONABLE_FIELDS = [
 ]
 
 
+# Site travel figures an award's own travel log replaces. Once an award logs its
+# journeys, apportioning it a share of the site's flights and road travel as
+# well would count the same trips twice.
+SITE_TRAVEL_FIELDS = ('flights', 'business_travel')
+
+# ---------------------------------------------------------------------------
+# Per-journey factors for the award travel log, kg CO₂e per unit.
+#
+# Source: UK Government GHG Conversion Factors for Company Reporting 2026
+# (DESNZ / DEFRA), flat file v1.2, revised July 2026, sheets "Business travel-
+# air" and "Business travel- land":
+# https://www.gov.uk/government/publications/greenhouse-gas-reporting-conversion-factors-2026
+# (read 2026-10-17). Air factors are the "With RF" rows, matching the site-level
+# flights factor. DEFRA gives only "average passenger" for UK domestic flights
+# and no first or premium-economy factor for short-haul, so those combinations
+# are rejected rather than estimated.
+# ---------------------------------------------------------------------------
+TRAVEL_FACTOR_SOURCE = (
+    'UK Government GHG Conversion Factors for Company Reporting 2026 '
+    '(DESNZ/DEFRA), flat file v1.2, July 2026'
+)
+TRAVEL_FACTOR_URL = (
+    'https://www.gov.uk/government/publications/'
+    'greenhouse-gas-reporting-conversion-factors-2026'
+)
+
+AIR_FACTORS = {  # (haul, cabin) → kg CO₂e per passenger-km, incl. radiative forcing
+    ('domestic_uk', 'average'):                  Decimal('0.22928'),
+    ('short_haul_uk', 'average'):                Decimal('0.12786'),
+    ('short_haul_uk', 'economy'):                Decimal('0.12576'),
+    ('short_haul_uk', 'business'):               Decimal('0.18863'),
+    ('long_haul_uk', 'average'):                 Decimal('0.15282'),
+    ('long_haul_uk', 'economy'):                 Decimal('0.11704'),
+    ('long_haul_uk', 'premium_economy'):         Decimal('0.18726'),
+    ('long_haul_uk', 'business'):                Decimal('0.33940'),
+    ('long_haul_uk', 'first'):                   Decimal('0.46814'),
+    ('international_non_uk', 'average'):         Decimal('0.14253'),
+    ('international_non_uk', 'economy'):         Decimal('0.10916'),
+    ('international_non_uk', 'premium_economy'): Decimal('0.17465'),
+    ('international_non_uk', 'business'):        Decimal('0.31656'),
+    ('international_non_uk', 'first'):           Decimal('0.43663'),
+}
+
+# mode → (kg CO₂e per unit, per passenger?). Car is per vehicle-km, so people
+# sharing one car do not multiply it; every other mode is per passenger-km.
+SURFACE_FACTORS = {
+    'rail_national':      (Decimal('0.03092'), True),   # National rail
+    'rail_international': (Decimal('0.01135'), True),   # International rail
+    'light_rail':         (Decimal('0.02121'), True),   # Light rail and tram
+    'underground':        (Decimal('0.01549'), True),   # London Underground
+    'bus':                (Decimal('0.10151'), True),   # Average local bus
+    'coach':              (Decimal('0.03948'), True),   # Coach
+    'taxi':               (Decimal('0.14861'), True),   # Regular taxi
+    'car':                (Decimal('0.16591'), False),  # Average car, unknown fuel
+}
+
+
+def journey_factor(mode, air_haul='', cabin_class=''):
+    """kg CO₂e per unit for one journey, or None if DEFRA publishes no factor."""
+    if mode == 'air':
+        return AIR_FACTORS.get((air_haul, cabin_class or 'average'))
+    spec = SURFACE_FACTORS.get(mode)
+    return spec[0] if spec else None
+
+
+def journey_tco2e(mode, distance_km, passengers=1, air_haul='', cabin_class=''):
+    """tCO₂e for one logged journey."""
+    factor = journey_factor(mode, air_haul, cabin_class)
+    if factor is None:
+        raise ValueError(f'No DEFRA factor for {mode} / {air_haul} / {cabin_class}')
+    per_passenger = mode == 'air' or SURFACE_FACTORS[mode][1]
+    people = Decimal(passengers or 1) if per_passenger else Decimal('1')
+    return Decimal(str(distance_km or 0)) * people * factor / Decimal('1000')
+
+
 def _latest_record(facility):
     from appname.models import EmissionData
     return (
@@ -1532,16 +1607,25 @@ def project_footprint(project):
     Returns a dict with per-site rows, the direct/apportioned split, a category
     breakdown, scope totals, and the procurement hot spots for spend charged to
     the award. Sites with no emission record are reported so the gap is visible
-    rather than silently reducing the total.
+    rather than silently reducing the total. Logged journeys are direct, and once
+    any exist they replace the award's share of SITE_TRAVEL_FIELDS.
     """
     from appname.models import ProcurementLine
 
     site_rows = []
     by_category = {field: Decimal('0') for field in APPORTIONABLE_FIELDS}
     by_category['lab_consumables'] = Decimal('0')
+    by_category['award_travel'] = Decimal('0')
     direct_total = Decimal('0')
     apportioned_total = Decimal('0')
     direct_lines = []
+
+    journeys = list(project.journeys.all())
+    travel_logged = bool(journeys)
+    apportioned_fields = [
+        field for field in APPORTIONABLE_FIELDS
+        if not (travel_logged and field in SITE_TRAVEL_FIELDS)
+    ]
 
     for project_site in project.sites.select_related('facility').all():
         facility = project_site.facility
@@ -1564,7 +1648,7 @@ def project_footprint(project):
         full = compute_tco2e(record, facility.country, facility.sector)
 
         site_apportioned = Decimal('0')
-        for field in APPORTIONABLE_FIELDS:
+        for field in apportioned_fields:
             value = full.get(field, Decimal('0')) * share
             by_category[field] += value
             site_apportioned += value
@@ -1608,6 +1692,10 @@ def project_footprint(project):
             'missing_data': False,
         })
 
+    travel_total = sum((j.tco2e() for j in journeys), Decimal('0'))
+    by_category['award_travel'] = travel_total
+    direct_total += travel_total
+
     total = direct_total + apportioned_total
     category_rows = sorted(
         (
@@ -1627,6 +1715,9 @@ def project_footprint(project):
         'direct_share_pct': (direct_total / total * 100) if total else Decimal('0'),
         'procurement_rows': _project_procurement_rows(direct_lines),
         'sites_missing_data': [r for r in site_rows if r['missing_data']],
+        'journeys': journeys,
+        'travel_total': travel_total,
+        'travel_logged': travel_logged,
     }
 
 
