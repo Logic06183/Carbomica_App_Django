@@ -27,6 +27,7 @@ from appname.modeling import (
     CarbomicaOptimizer,
     PROCUREMENT_CATEGORIES, procurement_breakdown, match_procurement_category,
     project_footprint, AIR_FACTORS, SURFACE_FACTORS, journey_tco2e,
+    journey_policy_flags,
 )
 
 
@@ -1842,4 +1843,92 @@ class TravelJourneyTest(TestCase):
         response = self.client.get('/methodology/')
         self.assertContains(response, 'Conversion Factors for Company Reporting 2026')
         self.assertContains(response, '0.11704')
+
+
+class JourneyPolicyFlagsTest(TestCase):
+    """Wellcome travel rules: train for trips up to 10 h door to door, economy by
+    default, no business class, and every journey justified."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create_user('flag', 'flag@example.com', 'pw')
+        cls.project = Project.objects.create(name='Flag Award', created_by=cls.user)
+
+    def _flight(self, **kw):
+        fields = dict(
+            project=self.project, date=date(2026, 5, 1), origin='London',
+            destination='Edinburgh', mode='air', air_haul='domestic_uk',
+            cabin_class='average', distance_km=Decimal('530'),
+            rail_hours=Decimal('12'), purpose='Advisory board meeting',
+        )
+        fields.update(kw)
+        journey = TravelJourney(**fields)
+        journey.full_clean()
+        journey.save()
+        return journey
+
+    def _codes(self, journey):
+        return [f['code'] for f in journey_policy_flags(journey)]
+
+    def test_compliant_flight_has_no_flags(self):
+        self.assertEqual(self._codes(self._flight()), [])
+
+    def test_rail_at_exactly_ten_hours_is_flagged(self):
+        self.assertIn('rail_feasible', self._codes(self._flight(rail_hours=Decimal('10.0'))))
+
+    def test_rail_just_over_ten_hours_is_not_flagged(self):
+        self.assertNotIn('rail_feasible', self._codes(self._flight(rail_hours=Decimal('10.1'))))
+
+    def test_missing_rail_time_is_info_not_a_breach(self):
+        flags = journey_policy_flags(self._flight(rail_hours=None))
+        self.assertEqual([(f['code'], f['severity']) for f in flags],
+                         [('rail_unknown', 'info')])
+
+    def test_business_class_fails_and_quotes_the_policy(self):
+        flags = journey_policy_flags(self._flight(
+            air_haul='long_haul_uk', cabin_class='business'))
+        business = [f for f in flags if f['code'] == 'business_class']
+        self.assertEqual(business[0]['severity'], 'fail')
+        self.assertEqual(business[0]['quote'],
+                         'Wellcome does not fund business class flights.')
+
+    def test_first_and_premium_economy_are_warned_not_failed(self):
+        for cabin in ('first', 'premium_economy'):
+            flags = journey_policy_flags(self._flight(
+                air_haul='long_haul_uk', cabin_class=cabin))
+            self.assertEqual([(f['code'], f['severity']) for f in flags],
+                             [('not_economy', 'warn')], cabin)
+
+    def test_economy_and_unknown_cabin_are_not_flagged(self):
+        for cabin in ('economy', 'average'):
+            journey = self._flight(air_haul='long_haul_uk', cabin_class=cabin)
+            self.assertNotIn('not_economy', self._codes(journey))
+            self.assertNotIn('business_class', self._codes(journey))
+
+    def test_unjustified_journey_is_flagged_for_any_mode(self):
+        coach = TravelJourney.objects.create(
+            project=self.project, date=date(2026, 5, 2), origin='A', destination='B',
+            mode='coach', distance_km=Decimal('80'), purpose='   ')
+        self.assertEqual(self._codes(coach), ['no_justification'])
+
+    def test_surface_journeys_never_get_flight_flags(self):
+        rail = TravelJourney.objects.create(
+            project=self.project, date=date(2026, 5, 2), origin='A', destination='B',
+            mode='rail_national', distance_km=Decimal('600'), purpose='Fieldwork')
+        self.assertEqual(self._codes(rail), [])
+
+    def test_report_summarises_flags_worst_first(self):
+        self._flight(air_haul='long_haul_uk', cabin_class='business', purpose='')
+        self._flight(rail_hours=Decimal('6'))
+        summary = project_footprint(self.project)['travel_flag_summary']
+        self.assertEqual([e['code'] for e in summary],
+                         ['business_class', 'no_justification', 'rail_feasible'])
+        self.assertTrue(all(e['count'] == 1 for e in summary))
+
+    def test_award_page_shows_flags(self):
+        self._flight(air_haul='long_haul_uk', cabin_class='business')
+        self.client.force_login(self.user)
+        response = self.client.get(f'/projects/{self.project.id}/')
+        self.assertContains(response, 'Wellcome travel checks')
+        self.assertContains(response, 'Business class is not fundable by Wellcome.')
 

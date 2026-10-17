@@ -53,7 +53,7 @@ from .modeling import (
     CarbomicaOptimizer, calculate_npv, compute_tco2e, sum_tco2e,
     PROCUREMENT_CATEGORIES, match_procurement_category, procurement_breakdown,
     project_footprint, AIR_FACTORS, SURFACE_FACTORS, TRAVEL_FACTOR_SOURCE,
-    TRAVEL_FACTOR_URL,
+    TRAVEL_FACTOR_URL, WELLCOME_POLICY_URL,
 )
 
 # ---------------------------------------------------------------------------
@@ -1889,4 +1889,5 @@ def project_detail(request, project_id):
         'haul_choices': TravelJourney.HAUL_CHOICES,
         'cabin_choices': TravelJourney.CABIN_CHOICES,
         'travel_factor_source': TRAVEL_FACTOR_SOURCE,
+        'wellcome_policy_url': WELLCOME_POLICY_URL,
     })

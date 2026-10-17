@@ -1590,6 +1590,86 @@ def journey_tco2e(mode, distance_km, passengers=1, air_haul='', cabin_class=''):
     return Decimal(str(distance_km or 0)) * people * factor / Decimal('1000')
 
 
+# ---------------------------------------------------------------------------
+# Wellcome travel rules, checked per journey.
+#
+# Source: Wellcome, Environmental sustainability funding policy, travel section
+# (page last updated 1 July 2025, read 2026-10-17). Quotes are verbatim. The
+# policy names economy (the default) and business (not funded) only; it is
+# silent on premium economy and first, so those are flagged as "not economy"
+# without claiming a rule the policy does not state. It does not say whether
+# the 10 hours is one way, so the check applies per logged journey.
+# ---------------------------------------------------------------------------
+WELLCOME_POLICY_URL = (
+    'https://wellcome.org/research-funding/guidance/policies-grant-conditions/'
+    'environmental-sustainability-funding-policy'
+)
+RAIL_HOURS_LIMIT = Decimal('10')
+
+POLICY_QUOTES = {
+    'rail': ('This includes taking the train for journeys of up to 10 hours '
+             '(total travel time including connections).'),
+    'rail_exceptions': ('Exceptions may include lack of availability, safety, or '
+                        'visa/permit reasons, or in exceptional circumstances such as a '
+                        'disability, long-term health condition or caring requirements '
+                        'necessitating faster travel.'),
+    'economy': 'If flying is unavoidable, using economy class as a default.',
+    'business': 'Wellcome does not fund business class flights.',
+    'justified': 'All travel requested in grant applications must be justified.',
+}
+
+
+TRAVEL_FLAG_LABELS = {
+    'business_class':   'Business-class flights',
+    'not_economy':      'Flights above economy (premium economy or first)',
+    'rail_feasible':    'Flights where rail is within 10 hours',
+    'no_justification': 'Journeys with no justification',
+    'rail_unknown':     'Flights with no rail time recorded',
+}
+
+
+def journey_policy_flags(journey):
+    """
+    Wellcome travel-rule flags for one journey, as a list of dicts with
+    code, severity ('fail' | 'warn' | 'info'), message and the policy quote.
+    """
+    flags = []
+    if journey.mode == 'air':
+        if journey.rail_hours is None:
+            flags.append({
+                'code': 'rail_unknown', 'severity': 'info',
+                'message': 'Rail time not recorded, so the 10-hour rule cannot be shown to be met.',
+                'quote': POLICY_QUOTES['rail'],
+            })
+        elif journey.rail_hours <= RAIL_HOURS_LIMIT:
+            flags.append({
+                'code': 'rail_feasible', 'severity': 'warn',
+                'message': (f'Rail takes {journey.rail_hours} h door to door, within the '
+                            '10-hour limit. Record the exception that applies, or take the train.'),
+                'quote': f"{POLICY_QUOTES['rail']} {POLICY_QUOTES['rail_exceptions']}",
+            })
+        if journey.cabin_class == 'business':
+            flags.append({
+                'code': 'business_class', 'severity': 'fail',
+                'message': 'Business class is not fundable by Wellcome.',
+                'quote': POLICY_QUOTES['business'],
+            })
+        elif journey.cabin_class in ('premium_economy', 'first'):
+            flags.append({
+                'code': 'not_economy', 'severity': 'warn',
+                'message': (f'{journey.get_cabin_class_display()} is not economy, the '
+                            "policy's default. The policy does not name this class."),
+                'quote': POLICY_QUOTES['economy'],
+            })
+    if not (journey.purpose or '').strip():
+        flags.append({
+            'code': 'no_justification', 'severity': 'warn',
+            'message': 'No justification recorded for this journey.',
+            'quote': POLICY_QUOTES['justified'],
+        })
+    return flags
+
+
 def _latest_record(facility):
     from appname.models import EmissionData
     return (
@@ -1694,6 +1774,18 @@ def project_footprint(project):
 
     travel_total = sum((j.tco2e() for j in journeys), Decimal('0'))
     by_category['award_travel'] = travel_total
+    journey_rows = [{'journey': j, 'flags': journey_policy_flags(j)} for j in journeys]
+    flag_counts = {}
+    for row in journey_rows:
+        for flag in row['flags']:
+            entry = flag_counts.setdefault(flag['code'], {
+                'code': flag['code'], 'label': TRAVEL_FLAG_LABELS[flag['code']],
+                'severity': flag['severity'], 'count': 0,
+            })
+            entry['count'] += 1
+    severity_order = {'fail': 0, 'warn': 1, 'info': 2}
+    travel_flag_summary = sorted(
+        flag_counts.values(), key=lambda e: (severity_order[e['severity']], e['code']))
     direct_total += travel_total
 
     total = direct_total + apportioned_total
@@ -1716,6 +1808,8 @@ def project_footprint(project):
         'procurement_rows': _project_procurement_rows(direct_lines),
         'sites_missing_data': [r for r in site_rows if r['missing_data']],
         'journeys': journeys,
+        'journey_rows': journey_rows,
+        'travel_flag_summary': travel_flag_summary,
         'travel_total': travel_total,
         'travel_logged': travel_logged,
     }

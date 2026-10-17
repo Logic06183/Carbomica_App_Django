@@ -513,6 +513,10 @@ class TravelJourney(models.Model):
             self.air_haul, self.cabin_class,
         )
 
+    def policy_flags(self):
+        from appname.modeling import journey_policy_flags
+        return journey_policy_flags(self)
+
 
 class ProcurementLine(models.Model):
     """

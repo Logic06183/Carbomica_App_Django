@@ -48,12 +48,12 @@ https://wellcome.org/research-funding/guidance/policies-grant-conditions/environ
 
 ## Items
 
-- [x] 1. **Award travel log.** Per-project journeys: date, traveller role, origin,
+- [x] 1. (`100d5cf`) **Award travel log.** Per-project journeys: date, traveller role, origin,
   destination, mode (air/rail/car/bus), cabin class, distance km, door-to-door hours by
   rail, purpose. tCO2e from existing verified factors (add class-specific air factors only
   from DEFRA's published table). Accept: journeys roll into the award report; tests cover
   each mode.
-- [ ] 2. **Travel policy checks.** Flag flights where rail would take ≤10 h door to door,
+- [x] 2. **Travel policy checks.** Flag flights where rail would take ≤10 h door to door,
   any business/first class ("not funded"), and journeys with no justification. Accept:
   flags show on the journey list and the award report; tests pin each rule at the 10 h edge.
 - [ ] 3. **Credits for travel emissions.** Port the consortium offset register to award
@@ -102,3 +102,4 @@ https://wellcome.org/research-funding/guidance/policies-grant-conditions/environ
 ## Log
 
 - 2026-10-17 Loop set up on `wellcome-loop` from `origin/verdex` (49af791). Baseline 99 tests pass.
+- 2026-10-17 Item 1 done (`100d5cf`): award travel log, DEFRA 2026 factors, journeys replace apportioned site travel. 114 tests.
