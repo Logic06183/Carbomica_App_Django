@@ -3177,3 +3177,20 @@ class AwardPageNavigationTest(TestCase):
         PlannedSpend.objects.create(project=project, category='LAB_GLASS', spend_usd=Decimal('100'))
         self.assertNotContains(self.client.get(f'/projects/{project.id}/'), 'Getting started with this award')
 
+
+class PlannedTripMessageTest(TestCase):
+    """Regression: QA ISSUE-5 — adding a planned trip said it was "logged"."""
+
+    def test_message_says_planned_or_logged(self):
+        user = User.objects.create_user('msg', 'msg@example.com', 'pw')
+        project = Project.objects.create(name='Msg Award', created_by=user)
+        self.client.force_login(user)
+        base = {'action': 'add_journey', 'date': '2026-01-05', 'origin': 'A',
+                'destination': 'B', 'mode': 'coach', 'distance_km': '50',
+                'passengers': '1', 'purpose': 'x'}
+        planned = self.client.post(f'/projects/{project.id}/', {**base, 'is_planned': 'on'},
+                                   follow=True)
+        self.assertContains(planned, 'A → B planned:')
+        logged = self.client.post(f'/projects/{project.id}/', base, follow=True)
+        self.assertContains(logged, 'A → B logged:')
+

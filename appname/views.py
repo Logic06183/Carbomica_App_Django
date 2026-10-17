@@ -1906,7 +1906,8 @@ def project_detail(request, project_id):
                 journey.save()
                 messages.success(
                     request,
-                    f'{journey.origin} → {journey.destination} logged: '
+                    f'{journey.origin} → {journey.destination} '
+                    f'{"planned" if journey.is_planned else "logged"}: '
                     f'{journey.tco2e():.3f} tCO₂e.',
                 )
             else:
