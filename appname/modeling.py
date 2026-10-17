@@ -48,13 +48,14 @@ DISCOUNT_RATE = Decimal('0.08')
 #   Electricity  — IEA World Energy Outlook 2022 country emission factors
 #   Combustion   — GHG Protocol / UK BEIS 2023 conversion factors
 #   Gases        — IPCC AR6 GWP₁₀₀ values (CH₄ = 29.8, N₂O = 273)
-#   Travel       — UK DEFRA 2022 (average medium car, diesel)
+#   Travel       — UK DEFRA 2026 (average car, unknown fuel; long-haul economy flights incl. RF)
 #   Inhalers     — NHS England / BEIS 2023 (pMDI HFC-134a propellant)
 #   Anaesthetics — weighted average: isoflurane (GWP 510, 50 %), sevoflurane
 #                  (GWP 130, 30 %), desflurane (GWP 2540, 20 %)
 #   Refrigerants — average HFC blend (R-410A GWP 2088, R-134a 1430, R-22 1810)
-#   Waste        — DEFRA 2022 mixed clinical-waste treatment (landfill/incineration)
-#   Contractor   — DEFRA 2022 average diesel logistics vehicle
+#   Waste        — clinical: Rizan et al. 2021 incineration; other: DEFRA 2026 household residual landfill
+#   Contractor   — DEFRA 2026 average van (up to 3.5 t), diesel
+#   (DEFRA 2026 = UK Government GHG Conversion Factors 2026, flat file v1.2, read 2026-10-17)
 # ---------------------------------------------------------------------------
 
 ELECTRICITY_EF = {          # tCO₂e per kWh of grid electricity consumed
@@ -72,7 +73,7 @@ ELECTRICITY_EF = {          # tCO₂e per kWh of grid electricity consumed
     'IN':    Decimal('0.000810'),   # India     — coal-heavy (CEA 2023)
     'BD':    Decimal('0.000620'),   # Bangladesh — gas-dominated
     # Donor / OECD
-    'GB':    Decimal('0.000200'),   # UK        — renewables + gas (DEFRA 2023)
+    'GB':    Decimal('0.00013096'), # UK        — DEFRA 2026 'Electricity: UK' generated, kWh
     'US':    Decimal('0.000390'),   # US        — mixed grid (EPA eGRID 2023)
     'EU':    Decimal('0.000235'),   # EU avg    — renewables-heavy (EEA 2024)
     'OTHER': Decimal('0.000400'),   # Catch-all SSA-leaning default
@@ -81,12 +82,12 @@ ELECTRICITY_EF = {          # tCO₂e per kWh of grid electricity consumed
 EMISSION_FACTORS = {
     # field_name: tCO₂e per unit (unit shown in parentheses)
     'grid_electricity':    None,                  # country-specific — see ELECTRICITY_EF
-    'grid_gas':            Decimal('0.00202'),    # per m³ natural gas (DEFRA 2023: 2.02633 kg/m³)
-    'bottled_gas':         Decimal('0.00294'),    # per kg LPG (DEFRA 2023: 2.93921 kg/kg)
-    'liquid_fuel':         Decimal('0.00268'),    # per litre mineral diesel (DEFRA 2023: 2.68779 kg/L
+    'grid_gas':            Decimal('0.00202633'), # per m³ natural gas (DEFRA 2026: 2.02633 kg/m³)
+    'bottled_gas':         Decimal('0.00293936'), # per kg LPG (DEFRA 2026: 2,939.36095 kg/tonne)
+    'liquid_fuel':         Decimal('0.00266155'), # per litre mineral diesel (DEFRA 2026: 2.66155 kg/L
                                                  # — mineral, not B7 blend; LMIC pump diesel)
-    'vehicle_fuel_owned':  Decimal('0.00268'),    # per litre (owned fleet, mineral diesel)
-    'business_travel':     Decimal('0.000171'),   # per km (DEFRA 2023 average car, unknown fuel)
+    'vehicle_fuel_owned':  Decimal('0.00266155'), # per litre (owned fleet, mineral diesel, DEFRA 2026)
+    'business_travel':     Decimal('0.00016591'), # per km (DEFRA 2026 average car, unknown fuel)
     'anaesthetic_gases':   Decimal('0.802'),      # per kg agent (GWP₁₀₀ mix: 50% isoflurane 510,
                                                  # 30% sevoflurane 130, 20% desflurane 2540 —
                                                  # Sulbaek Andersen et al. 2010 / IPCC)
@@ -95,9 +96,9 @@ EMISSION_FACTORS = {
     'waste_management':    None,                  # sector-specific — see WASTE_EF
     'medical_inhalers':    Decimal('0.0189'),     # per pMDI unit (NHS England ~10–37 kg/unit,
                                                  # salbutamol-weighted average)
-    'contractor_logistics': Decimal('0.000267'), # per km contracted vehicle (DEFRA 2023 avg van)
-    'flights':             Decimal('0.00015'),   # per passenger-km (DEFRA 2023 long-haul
-                                                 # economy incl. radiative forcing: 0.14993 kg/pkm)
+    'contractor_logistics': Decimal('0.00025716'), # per km (DEFRA 2026 average van up to 3.5 t, diesel)
+    'flights':             Decimal('0.00011704'), # per passenger-km (DEFRA 2026 long-haul
+                                                 # economy incl. radiative forcing: 0.11704 kg/pkm)
     'lab_consumables':     Decimal('0.0005'),    # per USD spend (EEIO spend-based, HESCET v2
                                                  # / DEFRA 2023 ~0.5 kgCO₂e per USD)
 }
@@ -107,8 +108,8 @@ EMISSION_FACTORS = {
 # infectious/anatomical waste, and the dominant route in LMIC facilities);
 # general organisational waste goes to mixed municipal landfill.
 # Sources: Rizan et al. 2021, J. Cleaner Production (high-temp incineration
-# 1,074 kg CO₂e/t; range 21–1,074 across routes); DEFRA 2023 municipal
-# residual waste to landfill 497 kg CO₂e/t.
+# 1,074 kg CO₂e/t; range 21–1,074 across routes); DEFRA 2026 household
+# residual waste to landfill 497.29 kg CO₂e/t (unchanged from 2023 at 3 s.f.).
 WASTE_EF = {
     'clinical': Decimal('1.074'),   # tCO₂e per tonne — high-temp incineration
     'default':  Decimal('0.497'),   # tCO₂e per tonne — municipal landfill
@@ -2141,6 +2142,43 @@ def compute_job_kwh(runtime_hours, cores, watts_per_core, usage, memory_gb, pue,
                + Decimal(memory_gb) * MEMORY_W_PER_GB)
     return Decimal(runtime_hours) * power_w * Decimal(pue) / Decimal('1000') * Decimal(runs)
 
+
+# ---------------------------------------------------------------------------
+# Factor currency audit, 17 October 2026. Each factor checked against its
+# source and the latest edition where the source is openly available.
+# ---------------------------------------------------------------------------
+FACTOR_AUDIT_DATE = date(2026, 10, 17)
+FACTOR_AUDIT = [
+    # (factor, status, note)
+    ('Natural gas, LPG, mineral diesel (stationary and fleet)', 'updated',
+     'Checked against DEFRA 2026 flat file v1.2. LPG 2.93921 → 2.93936 kg/kg; diesel 2.68779 → '
+     '2.66155 kg/L; natural gas unchanged at 2.02633 kg/m³.'),
+    ('Average car (road business travel)', 'updated',
+     'DEFRA 2026 average car, unknown fuel: 0.171 → 0.16591 kg/km.'),
+    ('Contracted vehicles', 'updated',
+     'DEFRA 2026 average van up to 3.5 t, diesel: 0.267 → 0.25716 kg/km.'),
+    ('Site flights (passenger-km)', 'updated',
+     'DEFRA 2026 long-haul economy with radiative forcing: 0.14993 → 0.11704 kg/pkm (−22%).'),
+    ('UK grid electricity', 'updated',
+     'DEFRA 2026 "Electricity: UK" generated: 0.200 → 0.13096 kg/kWh. Generation only, '
+     'excluding transmission and distribution losses, as before.'),
+    ('General waste to landfill', 'checked',
+     'DEFRA 2026 household residual waste to landfill 497.29 kg/t; unchanged at the 3 s.f. used.'),
+    ('Award travel log (air, rail, bus, coach, taxi, car)', 'checked',
+     'Taken from DEFRA 2026 when the travel log was built.'),
+    ('Computing (Green Algorithms)', 'checked',
+     'Memory 0.3725 W/GB and average PUE 1.67, from Lannelongue et al. 2021.'),
+    ('Grid electricity outside the UK', 'not re-verified',
+     'Cited to IEA 2023, Climate Transparency and national reports. The IEA emission factors '
+     'dataset is licensed, so the values could not be checked against it in this audit.'),
+    ('Refrigerant gases', 'not re-verified',
+     'The blend uses R-410A 2088, R-134a 1430 and R-22 1810, which are IPCC AR4 GWP100 values, '
+     'while the header cites AR6. Needs reconciling before it is cited.'),
+    ('Anaesthetic gases, medical inhalers, clinical waste incineration', 'not re-verified',
+     'Peer-reviewed and NHS sources as cited; not re-checked in this audit.'),
+    ('Procurement spend factors', 'not re-verified',
+     'Spend-based EEIO factors as cited per category; not re-checked in this audit.'),
+]
 
 # First-person wording for each measure in the draft application text. These
 # are drafting aids for the applicant to edit, not policy quotations.

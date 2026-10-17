@@ -71,7 +71,7 @@ from .modeling import (
     award_checklist, lab_status, project_estimate, REDUCTION_MEASURES,
     application_statement, ELIGIBLE_COSTS, award_trajectory, award_years,
     org_readiness, ORG_READINESS_ITEMS, GREEN_ALGORITHMS_DOI, MEMORY_W_PER_GB,
-    DEFAULT_PUE, ELECTRICITY_EF,
+    DEFAULT_PUE, ELECTRICITY_EF, FACTOR_AUDIT, FACTOR_AUDIT_DATE,
 )
 
 # ---------------------------------------------------------------------------
@@ -435,17 +435,17 @@ CATEGORY_UNITS = {
 
 CATEGORY_SOURCES = {
     'grid_electricity':    'IEA 2023 country grid factors (ZW 0.556, ZA 0.928, KE 0.032 kg/kWh …)',
-    'grid_gas':            'DEFRA 2023 — natural gas, 2.02633 kg CO₂e/m³',
-    'bottled_gas':         'DEFRA 2023 — LPG, 2.93921 kg CO₂e/kg',
-    'liquid_fuel':         'DEFRA 2023 — mineral diesel, 2.68779 kg CO₂e/L (LMIC pump fuel, not B7 blend)',
-    'vehicle_fuel_owned':  'DEFRA 2023 — mineral diesel, 2.68779 kg CO₂e/L',
-    'business_travel':     'DEFRA 2023 — average car, unknown fuel, 0.171 kg CO₂e/km',
+    'grid_gas':            'DEFRA 2026 — natural gas, 2.02633 kg CO₂e/m³',
+    'bottled_gas':         'DEFRA 2026 — LPG, 2.93936 kg CO₂e/kg (2,939.36 kg/tonne)',
+    'liquid_fuel':         'DEFRA 2026 — 100% mineral diesel, 2.66155 kg CO₂e/L (LMIC pump fuel, not biofuel blend)',
+    'vehicle_fuel_owned':  'DEFRA 2026 — 100% mineral diesel, 2.66155 kg CO₂e/L',
+    'business_travel':     'DEFRA 2026 — average car, unknown fuel, 0.16591 kg CO₂e/km',
     'anaesthetic_gases':   'GWP₁₀₀ case-mix: 50% isoflurane (510) · 30% sevoflurane (130) · 20% desflurane (2,540) — Sulbaek Andersen et al. 2010 / IPCC',
     'refrigeration_gases': 'Average in-service HFC blend (R-410A 2,088 · R-134a 1,430 · R-22 1,810) per kg lost or recharged',
-    'waste_management':    'Sector-routed: clinical → high-temp incineration 1,074 kg CO₂e/t (Rizan et al. 2021, J. Cleaner Production); other sectors → municipal landfill 497 kg CO₂e/t (DEFRA 2023)',
+    'waste_management':    'Sector-routed: clinical → high-temp incineration 1,074 kg CO₂e/t (Rizan et al. 2021, J. Cleaner Production); other sectors → household residual waste to landfill 497.29 kg CO₂e/t (DEFRA 2026)',
     'medical_inhalers':    'NHS England / BEIS — pMDI HFC-134a propellant, 18.9 kg CO₂e per salbutamol-weighted unit (range 10–37)',
-    'contractor_logistics': 'DEFRA 2023 — average diesel van, 0.267 kg CO₂e/km',
-    'flights':             'DEFRA 2023 — long-haul economy incl. radiative forcing, 0.14993 kg CO₂e/passenger-km',
+    'contractor_logistics': 'DEFRA 2026 — average van up to 3.5 t, diesel, 0.25716 kg CO₂e/km',
+    'flights':             'DEFRA 2026 — long-haul economy incl. radiative forcing, 0.11704 kg CO₂e/passenger-km',
     'lab_consumables':     'Spend-based EEIO factor ~0.5 kg CO₂e/USD — HESCET v2 (Higher Education Supply Chain Emission Tool) / DEFRA 2023 EEIO tables',
 }
 
@@ -511,6 +511,8 @@ def methodology(request):
         'procurement_excluded_note': PROCUREMENT_EXCLUDED_NOTE,
         'travel_rows': _travel_factor_rows(),
         'green_algorithms_doi': GREEN_ALGORITHMS_DOI,
+        'factor_audit': FACTOR_AUDIT,
+        'factor_audit_date': FACTOR_AUDIT_DATE,
         'memory_w_per_gb': MEMORY_W_PER_GB,
         'default_pue': DEFAULT_PUE,
         'travel_factor_source': TRAVEL_FACTOR_SOURCE,

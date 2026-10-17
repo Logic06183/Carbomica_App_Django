@@ -86,10 +86,10 @@ https://wellcome.org/research-funding/guidance/policies-grant-conditions/environ
 - [x] 11. (`837829d`) **Organisation readiness page.** Org-level policy items: Concordat signatory,
   science-based net-zero plan for scope 1 and 2, credit-purchase arrangement, resource log.
   Accept: self-declared with evidence link and date; shown on every award of that org.
-- [x] 12. **Computing emissions.** HPC / cloud compute for desk-based research using a
+- [x] 12. (`5b97ede`) **Computing emissions.** HPC / cloud compute for desk-based research using a
   published, citable method (e.g. Green Algorithms) only if its factors can be verified.
   Accept: method and factors cited on the methodology page, or item blocked with reason.
-- [ ] 13. **Factor currency audit.** Check every factor in `modeling.py` against its source
+- [x] 13. **Factor currency audit.** Check every factor in `modeling.py` against its source
   and the latest published edition. Update where a newer official value exists and record
   the edition used. Accept: methodology page lists each factor with edition and URL.
 - [ ] 14. **QA pass.** Run the app, click through applicant and holder journeys end to end,
@@ -97,7 +97,16 @@ https://wellcome.org/research-funding/guidance/policies-grant-conditions/environ
 
 ## Open questions for Craig
 
-(none yet)
+1. **Non-UK grid factors (from item 13).** They cite IEA 2023, whose emission-factor dataset is
+   licensed, so the audit could not check them. Options: buy IEA access, or switch to an open
+   source (for example Ember's country data) and record the edition. Your call; nothing changed.
+2. **Refrigerant GWPs (from item 13).** The refrigerant blend uses IPCC AR4 values (R-410A 2088,
+   R-134a 1430, R-22 1810) while the file header says AR6. Which GWP set should the app use
+   throughout? DEFRA's own refrigerant tables are one consistent option.
+3. **Site flight factor definition (from item 13).** Site-level "passenger-km flown" uses DEFRA's
+   long-haul *economy* factor (2026: 0.11704 kg/pkm). When cabin class is unknown, DEFRA's
+   "average passenger" row (0.15282) is the usual choice and is 31% higher. Kept as economy to
+   change only the edition; say if you want average passenger.
 
 ## Log
 
@@ -113,3 +122,4 @@ https://wellcome.org/research-funding/guidance/policies-grant-conditions/environ
 - 2026-10-17 Item 9 done (`02250f2`): per-year award footprints, straight-line target, incomplete years never judged. 198 tests.
 - 2026-10-17 Item 10 done (`867a599`): printable funder report + CSV from one shared context; export equals page in tests. 204 tests.
 - 2026-10-17 Item 11 done (`837829d`): org duties self-declared with evidence; HIC scope declared not inferred; shown on awards, report, CSV. 213 tests.
+- 2026-10-17 Item 12 done (`5b97ede`): Green Algorithms compute jobs, constants verified in the paper via PMC. 223 tests.

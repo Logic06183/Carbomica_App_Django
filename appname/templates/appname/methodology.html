@@ -27,7 +27,7 @@
                 <span class="text-muted">Category structure and Scope 1 / 2 / 3 boundaries for all 13 emission categories.</span>
             </div>
             <div class="col-md-3">
-                <strong class="d-block mb-1">DEFRA 2023 conversion factors</strong>
+                <strong class="d-block mb-1">DEFRA 2026 conversion factors</strong>
                 <span class="text-muted">Fuel combustion, transport, flights (incl. radiative forcing) and waste treatment.</span>
             </div>
             <div class="col-md-3">
@@ -249,6 +249,31 @@
             Only computing outside the award's own sites is logged this way. Computing on a site's own servers is already
             inside that site's electricity and its apportioned share.
         </p>
+    </div>
+</div>
+
+<!-- ── Factor audit ── -->
+<div class="card mb-4" id="factor-audit">
+    <div class="card-header"><i class="fas fa-clipboard-check me-2"></i>Factor audit — {{ factor_audit_date|date:"j F Y" }}</div>
+    <div class="card-body small text-muted pb-0">
+        Every factor checked against its source and the latest published edition where that source is openly
+        available. Factors marked "not re-verified" are used as cited; treat them with more caution.
+    </div>
+    <div class="table-responsive">
+        <table class="table table-sm mb-0 small">
+            <thead class="table-light"><tr><th>Factor</th><th>Status</th><th>What was found</th></tr></thead>
+            <tbody>
+                {% for factor, status, note in factor_audit %}
+                <tr>
+                    <td class="fw-semibold">{{ factor }}</td>
+                    <td class="text-nowrap">
+                        <span class="badge {% if status == 'updated' %}bg-primary{% elif status == 'checked' %}bg-success{% else %}bg-warning text-dark{% endif %}">{{ status }}</span>
+                    </td>
+                    <td class="text-muted">{{ note }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
 </div>
 

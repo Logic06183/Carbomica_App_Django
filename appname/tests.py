@@ -740,9 +740,9 @@ class ResearchCategoriesTest(TestCase):
             lab_consumables=Decimal('200000'),  # $200k spend
         )
         result = compute_tco2e(data, country='ZA')
-        self.assertEqual(result['flights'], Decimal('100000') * Decimal('0.00015'))   # 15 tCO2e
+        self.assertEqual(result['flights'], Decimal('100000') * Decimal('0.00011704'))   # 11.704 tCO2e (DEFRA 2026)
         self.assertEqual(result['lab_consumables'], Decimal('200000') * Decimal('0.0005'))  # 100 tCO2e
-        self.assertEqual(result['total'], Decimal('115'))
+        self.assertEqual(result['total'], Decimal('111.704'))
 
 
 class PageRenderRegressionTest(TestCase):
@@ -859,9 +859,12 @@ class ScienceValidationTest(TestCase):
 
     def test_factors_match_published_sources(self):
         from appname.modeling import EMISSION_FACTORS, WASTE_EF
-        self.assertEqual(EMISSION_FACTORS['bottled_gas'], Decimal('0.00294'))   # DEFRA 2023 LPG/kg
-        self.assertEqual(EMISSION_FACTORS['grid_gas'], Decimal('0.00202'))      # DEFRA 2023 gas/m3
-        self.assertEqual(EMISSION_FACTORS['liquid_fuel'], Decimal('0.00268'))   # DEFRA mineral diesel/L
+        self.assertEqual(EMISSION_FACTORS['bottled_gas'], Decimal('0.00293936'))  # DEFRA 2026 LPG, 2,939.36095 kg/t
+        self.assertEqual(EMISSION_FACTORS['grid_gas'], Decimal('0.00202633'))     # DEFRA 2026 natural gas, 2.02633 kg/m3
+        self.assertEqual(EMISSION_FACTORS['liquid_fuel'], Decimal('0.00266155'))  # DEFRA 2026 mineral diesel, 2.66155 kg/L
+        self.assertEqual(EMISSION_FACTORS['business_travel'], Decimal('0.00016591'))  # DEFRA 2026 average car, unknown fuel
+        self.assertEqual(EMISSION_FACTORS['contractor_logistics'], Decimal('0.00025716'))  # DEFRA 2026 average diesel van
+        self.assertEqual(EMISSION_FACTORS['flights'], Decimal('0.00011704'))      # DEFRA 2026 long-haul economy, with RF
         self.assertEqual(WASTE_EF['clinical'], Decimal('1.074'))                # Rizan 2021 HT incineration
         self.assertEqual(WASTE_EF['default'], Decimal('0.497'))                 # DEFRA municipal landfill
 
@@ -3055,4 +3058,28 @@ class ComputeJobTest(TestCase):
         self.assertContains(response, 'Green Algorithms')
         self.assertContains(response, '10.1002/advs.202100707')
         self.assertContains(response, '0.3725')
+
+
+class FactorAuditTest(TestCase):
+    """The methodology page publishes the factor audit, including what was not
+    re-verified, and no page still cites the superseded DEFRA editions."""
+
+    def test_methodology_page_shows_audit(self):
+        response = self.client.get('/methodology/')
+        self.assertContains(response, 'Factor audit')
+        self.assertContains(response, 'not re-verified')
+        self.assertContains(response, '0.11704')
+
+    def test_uk_grid_is_defra_2026(self):
+        self.assertEqual(ELECTRICITY_EF['GB'], Decimal('0.00013096'))
+
+    def test_no_page_cites_superseded_defra_editions(self):
+        import re
+        from pathlib import Path
+        templates = Path(__file__).parent / 'templates'
+        stale = []
+        for path in templates.rglob('*.html'):
+            if re.search(r'DEFRA 202[23]', path.read_text()):
+                stale.append(path.name)
+        self.assertEqual(stale, [])
 
