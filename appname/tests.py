@@ -2748,3 +2748,98 @@ class AwardReductionPlanTest(TestCase):
         self.assertEqual(response.status_code, 404)
         self.assertFalse(AwardReductionTarget.objects.exists())
 
+
+class FunderReportExportTest(TestCase):
+    """The CSV export and printable report read the same figures as the award
+    page, so the numbers a funder receives are the numbers on screen."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create_user('rep', 'rep@example.com', 'pw')
+        cls.outsider = User.objects.create_user('repout', 'ro@example.com', 'pw')
+        cls.facility = Facility.objects.create(
+            code_name='REP_SITE', display_name='Report Lab', country='ZA',
+            sector='research', created_by=cls.user)
+        source = EmissionSource.objects.create(
+            facility=cls.facility, code_name='REP_SRC', display_name='b')
+        record = EmissionData.objects.create(
+            emission_source=source, date=date(2025, 12, 31),
+            grid_electricity=Decimal('150000'), refrigeration_gases=Decimal('3'))
+        cls.project = Project.objects.create(
+            name='Report Award', grant_reference='999/Z/26/Z', funder='wellcome',
+            created_by=cls.user)
+        ProjectSite.objects.create(project=cls.project, facility=cls.facility,
+                                   share_pct=Decimal('30'), basis_note='3 of 10 FTE')
+        ProcurementLine.objects.create(emission_data=record, category='LAB_PLASTICS',
+                                       spend_usd=Decimal('20000'), project=cls.project)
+        TravelJourney.objects.create(
+            project=cls.project, date=date(2026, 3, 1), origin='JNB', destination='LHR',
+            mode='air', air_haul='long_haul_uk', cabin_class='business',
+            distance_km=Decimal('9000'), purpose='=HYPERLINK("http://x")')
+        CreditPurchase.objects.create(project=cls.project, credits_tco2e=Decimal('2'),
+                                      provider='Verra project', registry='verra')
+
+    def _rows(self):
+        import csv as csvmod
+        self.client.force_login(self.user)
+        response = self.client.get(f'/projects/{self.project.id}/export.csv')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Type'], 'text/csv')
+        return list(csvmod.reader(response.content.decode().splitlines()))
+
+    def _value(self, rows, label):
+        return next(r for r in rows if r and r[0] == label)
+
+    def _figures(self):
+        from appname.views import _award_report_context
+        return _award_report_context(self.project)
+
+    def test_summary_numbers_equal_the_page_figures(self):
+        rows, c = self._rows(), self._figures()
+        fp = c['footprint']
+        self.assertEqual(self._value(rows, 'Award footprint')[1], f"{fp['total']:.3f}")
+        self.assertEqual(self._value(rows, 'Charged directly')[1], f"{fp['direct_total']:.3f}")
+        self.assertEqual(self._value(rows, 'Apportioned from sites')[1],
+                         f"{fp['apportioned_total']:.3f}")
+        for scope in (1, 2, 3):
+            self.assertEqual(self._value(rows, f'Scope {scope}')[1],
+                             f"{c['scope_totals'][scope]:.3f}")
+
+    def test_categories_sum_to_the_total(self):
+        rows, c = self._rows(), self._figures()
+        start = rows.index(['Category', 'Scope', 'tCO2e', 'Share %']) + 1
+        end = rows.index([], start)
+        total = sum(Decimal(r[2]) for r in rows[start:end])
+        self.assertAlmostEqual(float(total), float(c['footprint']['total']), places=2)
+
+    def test_travel_credits_and_checklist_match(self):
+        rows, c = self._rows(), self._figures()
+        self.assertIn('fail: Business class is not fundable by Wellcome.',
+                      self._value(rows, '2026-03-01')[10])
+        self.assertEqual(self._value(rows, 'Credits required')[1],
+                         f"{c['credits']['required']:.0f}")
+        start = rows.index(['Wellcome alignment', 'State', 'Detail', 'Policy line tested']) + 1
+        exported = {r[0]: r[1] for r in rows[start:rows.index([], start)]}
+        self.assertEqual(exported, {r['label']: r['state'] for r in c['checklist']})
+
+    def test_free_text_cannot_inject_formulas(self):
+        rows = self._rows()
+        purpose = self._value(rows, '2026-03-01')[9]
+        self.assertTrue(purpose.startswith("'="), purpose)
+
+    def test_report_page_shows_the_same_total_and_no_forms(self):
+        self.client.force_login(self.user)
+        response = self.client.get(f'/projects/{self.project.id}/report/')
+        self.assertEqual(response.status_code, 200)
+        total = self._figures()['footprint']['total']
+        self.assertContains(response, f'{total:.1f}')
+        self.assertContains(response, 'Wellcome alignment')
+        self.assertContains(response, 'Statement of method')
+        self.assertNotContains(response, 'name="action"')
+
+    def test_outsider_gets_404_for_report_and_export(self):
+        self.client.force_login(self.outsider)
+        for suffix in ('report/', 'export.csv'):
+            self.assertEqual(
+                self.client.get(f'/projects/{self.project.id}/{suffix}').status_code, 404)
+

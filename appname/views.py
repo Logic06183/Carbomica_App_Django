@@ -5,6 +5,7 @@ from collections import defaultdict
 
 from django.shortcuts import render, redirect, get_object_or_404
 from django.http import Http404
+from django.urls import reverse
 from django.db import transaction
 from django.db.models import Sum, F, Avg, Count
 from django.db.models.functions import TruncMonth
@@ -2014,6 +2015,164 @@ def project_detail(request, project_id):
 
         return redirect('project_detail', project_id=project.id)
 
+    context = _award_report_context(project)
+    assigned_ids = [row['facility'].id for row in context['footprint']['site_rows']]
+    context.update({
+        'basis_choices': Project.ALLOCATION_BASIS_CHOICES,
+        'available_facilities': _user_facilities(request.user)
+            .exclude(id__in=assigned_ids).order_by('display_name'),
+        'mode_choices': TravelJourney.MODE_CHOICES,
+        'haul_choices': TravelJourney.HAUL_CHOICES,
+        'cabin_choices': TravelJourney.CABIN_CHOICES,
+        'data_years': award_years(project),
+        'measure_groups': _measure_groups(project),
+        'eligible_costs': [
+            {'key': k, 'label': label, 'heading': heading, 'quote': quote}
+            for k, (label, heading, quote) in ELIGIBLE_COSTS.items()
+        ],
+        'procurement_choices': [
+            (key, spec['display_name']) for key, spec in PROCUREMENT_CATEGORIES.items()
+        ],
+        'registry_choices': CreditPurchase.REGISTRY_CHOICES,
+    })
+    return render(request, 'appname/project_detail.html', context)
+
+
+@login_required
+def project_report(request, project_id):
+    """Read-only, printable funder report for one award."""
+    project = get_object_or_404(_user_projects(request.user), id=project_id)
+    context = _award_report_context(project)
+    context['generated_on'] = date.today()
+    return render(request, 'appname/project_report.html', context)
+
+
+def _csv_safe(text):
+    """Stop spreadsheet formula injection from free-text fields."""
+    text = str(text or '')
+    return "'" + text if text[:1] in ('=', '+', '-', '@', '\t', '\r') else text
+
+
+def _t(value):
+    """tCO2e to three decimal places for export."""
+    return f'{Decimal(value):.3f}'
+
+
+@login_required
+def project_export(request, project_id):
+    """CSV export of the funder report, from the same figures as the page."""
+    from django.http import HttpResponse
+
+    project = get_object_or_404(_user_projects(request.user), id=project_id)
+    c = _award_report_context(project)
+    fp, credits, est = c['footprint'], c['credits'], c['estimate']
+
+    response = HttpResponse(content_type='text/csv')
+    slug = ''.join(ch if ch.isalnum() else '_' for ch in project.name)[:60]
+    response['Content-Disposition'] = f'attachment; filename="{slug}_carbon_report.csv"'
+    w = csv.writer(response)
+
+    w.writerow(['Award carbon report'])
+    w.writerow(['Award', _csv_safe(project.name)])
+    w.writerow(['Funder', _csv_safe(project.funder_label)])
+    w.writerow(['Grant reference', _csv_safe(project.grant_reference)])
+    w.writerow(['Principal investigator', _csv_safe(project.principal_investigator)])
+    w.writerow(['Generated', date.today().isoformat()])
+    w.writerow([])
+
+    w.writerow(['Summary', 'tCO2e'])
+    w.writerow(['Award footprint', _t(fp['total'])])
+    w.writerow(['Charged directly', _t(fp['direct_total'])])
+    w.writerow(['Apportioned from sites', _t(fp['apportioned_total'])])
+    for scope in (1, 2, 3):
+        w.writerow([f'Scope {scope}', _t(c['scope_totals'][scope])])
+    w.writerow([])
+
+    w.writerow(['Category', 'Scope', 'tCO2e', 'Share %'])
+    for r in c['category_rows']:
+        w.writerow([r['label'], r['scope'], _t(r['tco2e']), f"{r['share']:.1f}"])
+    w.writerow([])
+
+    w.writerow(['Site', 'Share %', 'Evidence', 'Period', 'Apportioned tCO2e',
+                'Direct tCO2e', 'Total tCO2e', 'Emission data'])
+    for r in fp['site_rows']:
+        w.writerow([_csv_safe(r['facility'].display_name), f"{r['share_pct']:.3f}",
+                    _csv_safe(r['basis_note']), r['period'].isoformat() if r['period'] else '',
+                    _t(r['apportioned']), _t(r['direct']), _t(r['total']),
+                    'missing' if r['missing_data'] else 'yes'])
+    w.writerow([])
+
+    w.writerow(['Travel log'])
+    w.writerow(['Date', 'From', 'To', 'Mode', 'Flight type', 'Cabin', 'km', 'People',
+                'tCO2e', 'Purpose', 'Wellcome travel checks'])
+    for row in fp['journey_rows']:
+        j = row['journey']
+        w.writerow([
+            j.date.isoformat(), _csv_safe(j.origin), _csv_safe(j.destination),
+            j.get_mode_display(), j.get_air_haul_display() if j.air_haul else '',
+            j.get_cabin_class_display() if j.cabin_class else '', f'{j.distance_km}',
+            j.passengers, _t(j.tco2e()), _csv_safe(j.purpose),
+            ' | '.join(f"{f['severity']}: {f['message']}" for f in row['flags']) or 'meets travel rules',
+        ])
+    w.writerow([])
+
+    w.writerow(['Carbon credits for travel'])
+    w.writerow(['Travel to mitigate (tCO2e)', _t(credits['travel_tco2e']), credits['basis']])
+    w.writerow(['Credits required', f"{credits['required']:.0f}"])
+    w.writerow(['Accredited credits bought', f"{credits['purchased']:.2f}"])
+    w.writerow(['Not accredited (not counted)', f"{credits['not_counted']:.2f}"])
+    w.writerow(['Still to buy', f"{credits['outstanding']:.2f}"])
+    w.writerow(['Surplus', f"{credits['surplus']:.2f}"])
+    w.writerow(['Credits', 'Provider', 'Standard', 'Registry reference', 'Cost USD', 'Date', 'Retired'])
+    for p in credits['purchases']:
+        w.writerow([f'{p.credits_tco2e:.2f}', _csv_safe(p.provider), p.get_registry_display(),
+                    _csv_safe(p.registry_reference),
+                    f'{p.cost_usd:.2f}' if p.cost_usd is not None else '',
+                    p.purchase_date.isoformat() if p.purchase_date else '',
+                    'yes' if p.retired else 'no'])
+    w.writerow([])
+
+    w.writerow(['Wellcome alignment', 'State', 'Detail', 'Policy line tested'])
+    for r in c['checklist']:
+        w.writerow([r['label'], r['state'], _csv_safe(r['detail']),
+                    r['quote'] or 'Good practice; not stated in the policy'])
+    w.writerow([])
+
+    tr = c['trajectory']
+    if tr and not tr['baseline_missing']:
+        t = tr['target']
+        w.writerow([f'Reduction plan: {t.reduction_pct}% below {t.baseline_year} by {t.target_year}'])
+        w.writerow(['Year', 'Target line tCO2e', 'Actual tCO2e', 'Status'])
+        for r in tr['rows']:
+            w.writerow([r['year'], f"{r['required']:.2f}",
+                        _t(r['actual']) if r['actual'] is not None else '',
+                        r['status'] or ('incomplete' if r['incomplete'] else '')])
+        w.writerow([])
+
+    w.writerow(['Application estimate', 'Estimate tCO2e', 'Actual tCO2e', 'Difference'])
+    for r in est['rows']:
+        w.writerow([r['label'], _t(r['estimate']), _t(r['actual']), _t(r['difference'])])
+    w.writerow(['Total', _t(est['estimate_total']), _t(est['actual_total']), _t(est['difference'])])
+    w.writerow(['Sustainability costs budgeted (USD)', f"{est['costs_total']:.2f}"])
+    for line in est['cost_lines']:
+        w.writerow(['', _csv_safe(line.label), _csv_safe(line.description), f'{line.amount_usd:.2f}'])
+    w.writerow([])
+
+    w.writerow(['Statement of method'])
+    w.writerow(['Allocation basis', project.get_allocation_basis_display()])
+    w.writerow(['Audit record', _csv_safe(project.allocation_note)])
+    w.writerow(['Travel factors', TRAVEL_FACTOR_SOURCE, TRAVEL_FACTOR_URL])
+    w.writerow(['Policy', 'Wellcome, Environmental sustainability funding policy', WELLCOME_POLICY_URL])
+    w.writerow(['All factors and sources', request.build_absolute_uri(reverse('methodology'))])
+    return response
+
+
+def _award_report_context(project):
+    """
+    Every figure on an award's report, computed once. The award page, the
+    printable report and the CSV export all read from this, so they cannot
+    disagree.
+    """
     footprint = project_footprint(project)
     credits = credit_position(project, footprint)
     estimate = project_estimate(project, footprint, credits)
@@ -2033,35 +2192,18 @@ def project_detail(request, project_id):
         }
         for row in footprint['category_rows']
     ]
-
-    assigned_ids = [row['facility'].id for row in footprint['site_rows']]
-    return render(request, 'appname/project_detail.html', {
+    return {
         'project': project,
         'footprint': footprint,
         'category_rows': category_rows,
         'scope_totals': scope_totals,
-        'basis_choices': Project.ALLOCATION_BASIS_CHOICES,
-        'available_facilities': _user_facilities(request.user)
-            .exclude(id__in=assigned_ids).order_by('display_name'),
-        'mode_choices': TravelJourney.MODE_CHOICES,
-        'haul_choices': TravelJourney.HAUL_CHOICES,
-        'cabin_choices': TravelJourney.CABIN_CHOICES,
-        'travel_factor_source': TRAVEL_FACTOR_SOURCE,
-        'wellcome_policy_url': WELLCOME_POLICY_URL,
         'credits': credits,
         'checklist': award_checklist(project, footprint, credits),
         'estimate': estimate,
         'statement': application_statement(project, estimate, footprint),
         'trajectory': award_trajectory(project),
-        'data_years': award_years(project),
-        'measure_groups': _measure_groups(project),
-        'eligible_costs': [
-            {'key': k, 'label': label, 'heading': heading, 'quote': quote}
-            for k, (label, heading, quote) in ELIGIBLE_COSTS.items()
-        ],
-        'procurement_choices': [
-            (key, spec['display_name']) for key, spec in PROCUREMENT_CATEGORIES.items()
-        ],
-        'registry_choices': CreditPurchase.REGISTRY_CHOICES,
+        'travel_factor_source': TRAVEL_FACTOR_SOURCE,
+        'travel_factor_url': TRAVEL_FACTOR_URL,
+        'wellcome_policy_url': WELLCOME_POLICY_URL,
         'verra_vcu_url': VERRA_VCU_URL,
-    })
+    }
