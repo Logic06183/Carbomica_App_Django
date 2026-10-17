@@ -343,6 +343,20 @@ class Project(models.Model):
                   '41.0 FTE at the Bara laboratory, from the 2024 timesheet '
                   'return". Reproduced on the funder report.'
     )
+    # Application-stage estimate
+    credit_price_usd = models.DecimalField(
+        max_digits=8, decimal_places=2, null=True, blank=True,
+        validators=[MinValueValidator(0.0)],
+        help_text='Price per credit quoted by your provider, used to budget for '
+                  'mitigating planned travel. Left blank, no cost is estimated.'
+    )
+    reduction_measures = models.JSONField(
+        default=list, blank=True,
+        help_text='Keys from modeling.REDUCTION_MEASURES the award commits to.'
+    )
+    reduction_notes = models.TextField(
+        blank=True, help_text='Other measures, in the applicant\'s own words.'
+    )
     created_by = models.ForeignKey(
         User, null=True, blank=True, on_delete=models.SET_NULL,
         related_name='projects',
@@ -480,6 +494,11 @@ class TravelJourney(models.Model):
         blank=True,
         help_text='Why the trip was needed. Wellcome asks that all travel be justified.'
     )
+    is_planned = models.BooleanField(
+        default=False,
+        help_text='A trip planned in the application, not yet made. Planned trips '
+                  'feed the estimate only, never the reported footprint.'
+    )
     created_by = models.ForeignKey(
         User, null=True, blank=True, on_delete=models.SET_NULL,
         related_name='journeys',
@@ -525,6 +544,47 @@ class TravelJourney(models.Model):
     def policy_flags(self):
         from appname.modeling import journey_policy_flags
         return journey_policy_flags(self)
+
+
+class PlannedSpend(models.Model):
+    """
+    Purchases planned in the application, by procurement category, so the
+    estimate can be built before any spend is charged to the award. Uses the
+    same spend-based factors as itemised procurement.
+    """
+
+    project = models.ForeignKey(Project, related_name='planned_spend', on_delete=models.CASCADE)
+    category = models.CharField(
+        max_length=40, help_text='Key into modeling.PROCUREMENT_CATEGORIES.'
+    )
+    description = models.CharField(max_length=255, blank=True)
+    spend_usd = models.DecimalField(
+        max_digits=14, decimal_places=2, validators=[MinValueValidator(Decimal('0.01'))],
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _('Planned Spend')
+        verbose_name_plural = _('Planned Spend')
+        ordering = ['-spend_usd']
+
+    def __str__(self):
+        return f'{self.category} — {self.spend_usd}'
+
+    def clean(self):
+        from appname.modeling import PROCUREMENT_CATEGORIES
+        from django.core.exceptions import ValidationError
+        if self.category not in PROCUREMENT_CATEGORIES:
+            raise ValidationError({'category': 'Unknown procurement category.'})
+
+    @property
+    def category_label(self):
+        from appname.modeling import PROCUREMENT_CATEGORIES
+        return PROCUREMENT_CATEGORIES[self.category]['display_name']
+
+    def tco2e(self):
+        from appname.modeling import PROCUREMENT_CATEGORIES
+        return self.spend_usd * PROCUREMENT_CATEGORIES[self.category]['factor']
 
 
 class LabAccreditation(models.Model):

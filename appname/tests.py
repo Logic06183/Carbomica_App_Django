@@ -19,6 +19,7 @@ from appname.models import (
     Facility, EmissionData, EmissionSource,
     Intervention, FacilityIntervention, Organisation, ProcurementLine,
     Project, ProjectSite, TravelJourney, CreditPurchase, LabAccreditation,
+    PlannedSpend,
 )
 from appname.modeling import (
     INTERVENTION_LIBRARY,
@@ -28,6 +29,7 @@ from appname.modeling import (
     PROCUREMENT_CATEGORIES, procurement_breakdown, match_procurement_category,
     project_footprint, AIR_FACTORS, SURFACE_FACTORS, journey_tco2e,
     journey_policy_flags, credit_position, award_checklist, lab_status,
+    project_estimate, REDUCTION_MEASURES,
 )
 
 
@@ -2300,4 +2302,133 @@ class LabAccreditationTest(TestCase):
         self.client.post(f'/facilities/{self.lab.id}/', {
             'action': 'remove_accreditation', 'accreditation_id': theirs.id})
         self.assertTrue(LabAccreditation.objects.filter(id=theirs.id).exists())
+
+
+class ProjectEstimateTest(TestCase):
+    """Application-stage estimate: planned trips and purchases never enter the
+    reported footprint, and the actual column reconciles with it exactly."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create_user('est', 'est@example.com', 'pw')
+        cls.outsider = User.objects.create_user('estout', 'eo@example.com', 'pw')
+        cls.facility = Facility.objects.create(
+            code_name='EST_SITE', display_name='Est Lab', country='ZA',
+            sector='research', created_by=cls.user)
+        source = EmissionSource.objects.create(
+            facility=cls.facility, code_name='EST_SRC', display_name='baseline')
+        cls.record = EmissionData.objects.create(
+            emission_source=source, date=date(2025, 12, 31),
+            grid_electricity=Decimal('200000'), flights=Decimal('300000'))
+
+    def setUp(self):
+        self.project = Project.objects.create(name='Est Award', created_by=self.user)
+        ProjectSite.objects.create(project=self.project, facility=self.facility,
+                                   share_pct=Decimal('20'))
+
+    def _trip(self, planned, km='10000'):
+        return TravelJourney.objects.create(
+            project=self.project, date=date(2026, 9, 1), origin='JNB', destination='LHR',
+            mode='air', air_haul='long_haul_uk', cabin_class='economy',
+            distance_km=Decimal(km), purpose='Review', is_planned=planned)
+
+    def _estimate(self):
+        fp = project_footprint(self.project)
+        return fp, project_estimate(self.project, fp, credit_position(self.project, fp))
+
+    def test_planned_trips_never_enter_the_footprint(self):
+        self._trip(planned=True)
+        fp = project_footprint(self.project)
+        self.assertFalse(fp['travel_logged'])
+        self.assertEqual(fp['by_category']['award_travel'], Decimal('0'))
+
+    def test_estimate_uses_planned_travel_and_spend(self):
+        trip = self._trip(planned=True)
+        line = PlannedSpend.objects.create(
+            project=self.project, category='LAB_PLASTICS', spend_usd=Decimal('10000'))
+        fp, est = self._estimate()
+        rows = {r['label']: r for r in est['rows']}
+        self.assertEqual(rows['Travel']['estimate'], trip.tco2e())
+        self.assertEqual(line.tco2e(),
+                         Decimal('10000') * PROCUREMENT_CATEGORIES['LAB_PLASTICS']['factor'])
+        self.assertEqual(rows['Purchases charged to the award']['estimate'], line.tco2e())
+
+    def test_site_share_excludes_site_travel(self):
+        full = compute_tco2e(self.record, 'ZA', 'research')
+        _, est = self._estimate()
+        site_row = [r for r in est['rows'] if r['label'].startswith('Share of site')][0]
+        self.assertEqual(site_row['estimate'], full['grid_electricity'] * Decimal('0.20'))
+
+    def test_actual_column_reconciles_with_reported_footprint(self):
+        self._trip(planned=False)
+        self._trip(planned=True, km='3000')
+        ProcurementLine.objects.create(
+            emission_data=self.record, category='LAB_REAGENTS',
+            spend_usd=Decimal('50000'), project=self.project, source='MANUAL')
+        fp, est = self._estimate()
+        self.assertEqual(est['actual_total'], fp['total'])
+        # And without logged journeys (site travel estimate in the actual column).
+        TravelJourney.objects.filter(is_planned=False).delete()
+        fp, est = self._estimate()
+        self.assertEqual(est['actual_total'], fp['total'])
+
+    def test_credit_budget_rounds_up_and_needs_a_price(self):
+        self._trip(planned=True)                     # 1.1704 t -> 2 credits
+        _, est = self._estimate()
+        self.assertEqual(est['credits_for_plan'], Decimal('2'))
+        self.assertIsNone(est['credit_budget_usd'])
+        self.project.credit_price_usd = Decimal('18.50')
+        self.project.save(update_fields=['credit_price_usd'])
+        _, est = self._estimate()
+        self.assertEqual(est['credit_budget_usd'], Decimal('37.00'))
+
+    def test_every_measure_quotes_the_policy(self):
+        for key, (group, label, quote) in REDUCTION_MEASURES.items():
+            self.assertTrue(group and label and len(quote) > 20, key)
+
+    def test_saving_measures_ignores_unknown_keys(self):
+        self.client.force_login(self.user)
+        self.client.post(f'/projects/{self.project.id}/', {
+            'action': 'update_estimate', 'reduction_measures': ['virtual', 'freezers', 'bogus'],
+            'reduction_notes': 'Shared sequencer', 'credit_price_usd': '20',
+        })
+        self.project.refresh_from_db()
+        self.assertEqual(self.project.reduction_measures, ['virtual', 'freezers'])
+        self.assertEqual(self.project.credit_price_usd, Decimal('20'))
+        _, est = self._estimate()
+        self.assertEqual([m['key'] for m in est['measures']], ['virtual', 'freezers'])
+
+    def test_bad_credit_prices_are_rejected(self):
+        self.client.force_login(self.user)
+        for bad in ('-5', 'abc', 'Infinity'):
+            self.client.post(f'/projects/{self.project.id}/', {
+                'action': 'update_estimate', 'credit_price_usd': bad})
+            self.project.refresh_from_db()
+            self.assertIsNone(self.project.credit_price_usd, bad)
+
+    def test_planned_trip_and_spend_from_the_page(self):
+        self.client.force_login(self.user)
+        url = f'/projects/{self.project.id}/'
+        self.client.post(url, {
+            'action': 'add_journey', 'is_planned': 'on', 'date': '2026-11-01',
+            'origin': 'Harare', 'destination': 'Nairobi', 'mode': 'air',
+            'air_haul': 'international_non_uk', 'cabin_class': 'economy',
+            'distance_km': '1600', 'passengers': '2', 'purpose': 'Site visit'})
+        self.assertTrue(TravelJourney.objects.get(project=self.project).is_planned)
+        self.client.post(url, {'action': 'add_planned_spend', 'category': 'NOT_A_CATEGORY',
+                               'spend_usd': '100'})
+        self.assertFalse(PlannedSpend.objects.exists())
+        self.client.post(url, {'action': 'add_planned_spend', 'category': 'LAB_GLASS',
+                               'spend_usd': '2500'})
+        self.assertEqual(PlannedSpend.objects.count(), 1)
+        response = self.client.get(url)
+        self.assertContains(response, 'Application estimate')
+        self.assertContains(response, 'Harare → Nairobi')
+
+    def test_outsider_cannot_add_planned_spend(self):
+        self.client.force_login(self.outsider)
+        response = self.client.post(f'/projects/{self.project.id}/', {
+            'action': 'add_planned_spend', 'category': 'LAB_GLASS', 'spend_usd': '100'})
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(PlannedSpend.objects.exists())
 

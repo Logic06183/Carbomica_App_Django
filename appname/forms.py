@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from django import forms
 from django.forms import inlineformset_factory
-from .models import Facility, EmissionData, FacilityIntervention, Intervention, EmissionSource, Policy, OptimizationScenario, Organisation, TravelJourney, CreditPurchase, LabAccreditation
+from .models import Facility, EmissionData, FacilityIntervention, Intervention, EmissionSource, Policy, OptimizationScenario, Organisation, TravelJourney, CreditPurchase, LabAccreditation, PlannedSpend
 
 class FacilityForm(forms.ModelForm):
     class Meta:
@@ -192,6 +192,7 @@ class TravelJourneyForm(forms.ModelForm):
         fields = [
             'date', 'traveller', 'origin', 'destination', 'mode', 'air_haul',
             'cabin_class', 'distance_km', 'passengers', 'rail_hours', 'purpose',
+            'is_planned',
         ]
 
 
@@ -212,4 +213,12 @@ class LabAccreditationForm(forms.ModelForm):
     class Meta:
         model = LabAccreditation
         fields = ['lab_name', 'scheme', 'level', 'awarded_on', 'expires_on', 'evidence_url']
+
+
+class PlannedSpendForm(forms.ModelForm):
+    """A purchase planned in the application."""
+
+    class Meta:
+        model = PlannedSpend
+        fields = ['category', 'description', 'spend_usd']
 

@@ -35,6 +35,7 @@ from .forms import (
     TravelJourneyForm,
     CreditPurchaseForm,
     LabAccreditationForm,
+    PlannedSpendForm,
 )
 from .models import (
     Facility,
@@ -52,13 +53,14 @@ from .models import (
     TravelJourney,
     CreditPurchase,
     LabAccreditation,
+    PlannedSpend,
 )
 from .modeling import (
     CarbomicaOptimizer, calculate_npv, compute_tco2e, sum_tco2e,
     PROCUREMENT_CATEGORIES, match_procurement_category, procurement_breakdown,
     project_footprint, AIR_FACTORS, SURFACE_FACTORS, TRAVEL_FACTOR_SOURCE,
     TRAVEL_FACTOR_URL, WELLCOME_POLICY_URL, credit_position, VERRA_VCU_URL,
-    award_checklist, lab_status,
+    award_checklist, lab_status, project_estimate, REDUCTION_MEASURES,
 )
 
 # ---------------------------------------------------------------------------
@@ -498,6 +500,16 @@ def methodology(request):
         'travel_factor_source': TRAVEL_FACTOR_SOURCE,
         'travel_factor_url': TRAVEL_FACTOR_URL,
     })
+
+
+def _measure_groups(project):
+    """Reduction measures grouped by policy heading, with what the award has chosen."""
+    chosen = set(project.reduction_measures or [])
+    groups = {}
+    for key, (group, label, quote) in REDUCTION_MEASURES.items():
+        groups.setdefault(group, []).append(
+            {'key': key, 'label': label, 'quote': quote, 'chosen': key in chosen})
+    return list(groups.items())
 
 
 def _travel_factor_rows():
@@ -1913,6 +1925,43 @@ def project_detail(request, project_id):
             ).update(retired=True)
             messages.success(request, 'Credits marked as retired.')
 
+        elif action == 'add_planned_spend':
+            form = PlannedSpendForm(request.POST)
+            if form.is_valid():
+                line = form.save(commit=False)
+                line.project = project
+                line.save()
+                messages.success(request, f'Planned spend added: {line.category_label}.')
+            else:
+                problems = [
+                    f'{form.fields[f].label}: {msg}' if f in form.fields else msg
+                    for f, msgs in form.errors.items() for msg in msgs
+                ]
+                messages.error(request, 'Planned spend not saved. ' + ' '.join(problems))
+
+        elif action == 'remove_planned_spend':
+            PlannedSpend.objects.filter(
+                project=project, id=request.POST.get('line_id')
+            ).delete()
+            messages.success(request, 'Planned spend removed.')
+
+        elif action == 'update_estimate':
+            try:
+                price = request.POST.get('credit_price_usd', '').strip()
+                project.credit_price_usd = Decimal(price) if price else None
+                if project.credit_price_usd is not None and (
+                        not project.credit_price_usd.is_finite() or project.credit_price_usd < 0):
+                    raise InvalidOperation
+            except InvalidOperation:
+                messages.error(request, 'Credit price must be a positive number.')
+                return redirect('project_detail', project_id=project.id)
+            project.reduction_measures = [
+                k for k in request.POST.getlist('reduction_measures') if k in REDUCTION_MEASURES
+            ]
+            project.reduction_notes = (request.POST.get('reduction_notes') or '').strip()
+            project.save(update_fields=['credit_price_usd', 'reduction_measures', 'reduction_notes'])
+            messages.success(request, 'Estimate settings saved.')
+
         elif action == 'remove_purchase':
             CreditPurchase.objects.filter(
                 project=project, id=request.POST.get('purchase_id')
@@ -1956,6 +2005,11 @@ def project_detail(request, project_id):
         'wellcome_policy_url': WELLCOME_POLICY_URL,
         'credits': credits,
         'checklist': award_checklist(project, footprint, credits),
+        'estimate': project_estimate(project, footprint, credits),
+        'measure_groups': _measure_groups(project),
+        'procurement_choices': [
+            (key, spec['display_name']) for key, spec in PROCUREMENT_CATEGORIES.items()
+        ],
         'registry_choices': CreditPurchase.REGISTRY_CHOICES,
         'verra_vcu_url': VERRA_VCU_URL,
     })

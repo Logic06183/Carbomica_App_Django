@@ -64,10 +64,10 @@ https://wellcome.org/research-funding/guidance/policies-grant-conditions/environ
   requirement the app can evidence (impact assessed, travel justified, rail rule, no
   business class, travel credits covered and retired, lab accreditation, reduction plan).
   Each row quotes the policy line it tests. Accept: every row has a test for each state.
-- [x] 5. **Lab accreditation tracker.** Per site: scheme (LEAF / My Green Lab / other),
+- [x] 5. (`d49060b`) **Lab accreditation tracker.** Per site: scheme (LEAF / My Green Lab / other),
   level, date awarded, evidence link, and a flag against the end-of-2025 deadline.
   Accept: feeds checklist row; tests cover missing, achieved, and overdue.
-- [ ] 6. **Application-stage estimate.** Before an award starts: planned trips, planned
+- [x] 6. **Application-stage estimate.** Before an award starts: planned trips, planned
   equipment and consumables spend, planned sites and FTE share. Produce an estimated
   footprint, the credit cost for travel to put in the budget, and the reduction measures
   chosen. Accept: estimate and actuals sit side by side on the award page once the award runs.
@@ -106,3 +106,4 @@ https://wellcome.org/research-funding/guidance/policies-grant-conditions/environ
 - 2026-10-17 Item 2 done (`3b1aecd`): per-journey Wellcome travel flags with verbatim policy quotes; 10 h edge tested. 125 tests.
 - 2026-10-17 Item 3 done (`0b86f27`): award credit register; only accredited credits count as cover. 138 tests.
 - 2026-10-17 Item 4 done (`15570d0`): per-award checklist, verbatim quotes; retirement labelled good practice (policy silent). 148 tests.
+- 2026-10-17 Item 5 done (`d49060b`): lab accreditation per site, MGL 2-yr recertification, checklist row with end-2025 deadline. 162 tests.

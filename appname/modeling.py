@@ -1876,6 +1876,108 @@ def award_checklist(project, footprint, credits, today=None):
     return rows
 
 
+# ---------------------------------------------------------------------------
+# Reduction measures an applicant can commit to, each with the verbatim line of
+# Wellcome's Environmental sustainability funding policy it comes from (read
+# 2026-10-17). Grouped by the policy's own headings.
+# ---------------------------------------------------------------------------
+REDUCTION_MEASURES = {
+    # key: (group, short label, policy quote)
+    'virtual': ('Travel', 'Meet virtually where possible',
+                'Use alternatives (such as video conferencing, hybrid meetings and attending '
+                'conferences virtually) where possible.'),
+    'local_skills': ('Travel', 'Use local skills for fieldwork',
+                     'Leverage existing local skills for fieldwork or if necessary, upskill others '
+                     'who are already located in the field rather than to travel to site themselves.'),
+    'rail': ('Travel', 'Train for trips up to 10 hours', POLICY_QUOTES['rail']),
+    'economy': ('Travel', 'Economy class when flying', POLICY_QUOTES['economy']),
+    'equipment_off': ('Energy', 'Switch equipment off when not in use',
+                      'Turn off equipment, including laminar flow cabinets when not in use '
+                      '(for example overnight).'),
+    'fume_hoods': ('Energy', 'Close fume hoods', 'Close fume hoods when not in use.'),
+    'freezers': ('Energy', 'Ultra-low freezers at -70 °C',
+                 'Set ultralow freezers no lower than -70 degrees Celsius.'),
+    'asset_check': ('Reuse', 'Check inventories before buying',
+                    'Check internal inventories/asset registries at host organisations for '
+                    'existing equipment, materials and consumables before purchasing new items.'),
+    'second_hand': ('Reuse', 'Second-hand or reconditioned equipment',
+                    'Use second hand or reconditioned equipment where available, viable and more '
+                    'sustainable than purchasing new.'),
+    'share_equipment': ('Reuse', 'Share equipment',
+                        'Share equipment with other researchers/organisations where available and '
+                        'viable, rather than purchasing one of everything each.'),
+    'maintenance': ('Reuse', 'Maintenance contracts so items are repaired',
+                    'Use maintenance contracts so items can be repaired rather than recycled as '
+                    'much as possible.'),
+    'reusable': ('Consumables', 'Reusable instead of single-use plastics',
+                 'Avoid single-use plastics where reusable alternatives are available and viable.'),
+    'min_size': ('Consumables', 'Smallest plastic consumables needed',
+                 'Use plastic consumables with the minimum size required.'),
+    'recycling': ('Waste', 'Use institutional recycling',
+                  'Use institutional recycling facilities, particularly for clean packaging, and use '
+                  'general or hazardous waste bins only when unavoidable.'),
+    'recycled_materials': ('Waste', 'Recycled or recyclable materials',
+                           'Use materials, consumables and equipment that are made from recycled '
+                           'materials and/or can be recycled at the end of their useful life where viable.'),
+}
+
+
+def project_estimate(project, footprint, credits):
+    """
+    Application-stage estimate for an award, laid beside the actuals.
+
+    Estimate = the award's share of its sites' running emissions (excluding
+    site travel, which planned trips replace) + planned trips + planned spend.
+    The site share uses each site's latest record, so it is the same figure in
+    both columns. Actual travel is the credit-position travel figure (logged
+    journeys, or the site-travel estimate when none are logged).
+    """
+    by_category = footprint['by_category']
+    site_travel = sum((by_category.get(f, Decimal('0')) for f in SITE_TRAVEL_FIELDS),
+                      Decimal('0'))
+    site_share = footprint['apportioned_total'] - site_travel
+
+    planned_trips = list(project.journeys.filter(is_planned=True))
+    planned_travel = sum((j.tco2e() for j in planned_trips), Decimal('0'))
+    planned_lines = list(project.planned_spend.all())
+    planned_spend = sum((line.tco2e() for line in planned_lines), Decimal('0'))
+
+    actual_travel = credits['travel_tco2e']
+    actual_spend = footprint['direct_total'] - footprint['travel_total']
+
+    rows = [
+        {'label': 'Travel', 'estimate': planned_travel, 'actual': actual_travel},
+        {'label': 'Purchases charged to the award', 'estimate': planned_spend,
+         'actual': actual_spend},
+        {'label': 'Share of site running emissions', 'estimate': site_share,
+         'actual': site_share},
+    ]
+    for r in rows:
+        r['difference'] = r['actual'] - r['estimate']
+    estimate_total = site_share + planned_travel + planned_spend
+    actual_total = site_share + actual_travel + actual_spend
+
+    credits_for_plan = (planned_travel.to_integral_value(rounding=ROUND_CEILING)
+                        if planned_travel > 0 else Decimal('0'))
+    price = project.credit_price_usd
+    return {
+        'planned_trips': [{'journey': j, 'flags': journey_policy_flags(j)} for j in planned_trips],
+        'planned_lines': planned_lines,
+        'rows': rows,
+        'estimate_total': estimate_total,
+        'actual_total': actual_total,
+        'difference': actual_total - estimate_total,
+        'credits_for_plan': credits_for_plan,
+        'credit_budget_usd': (credits_for_plan * price) if price is not None else None,
+        'measures': [
+            {'key': k, 'group': g, 'label': label, 'quote': q}
+            for k, (g, label, q) in REDUCTION_MEASURES.items()
+            if k in (project.reduction_measures or [])
+        ],
+        'has_plan': bool(planned_trips or planned_lines),
+    }
+
+
 def _latest_record(facility):
     from appname.models import EmissionData
     return (
@@ -1906,7 +2008,7 @@ def project_footprint(project):
     apportioned_total = Decimal('0')
     direct_lines = []
 
-    journeys = list(project.journeys.all())
+    journeys = list(project.journeys.filter(is_planned=False))
     travel_logged = bool(journeys)
     apportioned_fields = [
         field for field in APPORTIONABLE_FIELDS
