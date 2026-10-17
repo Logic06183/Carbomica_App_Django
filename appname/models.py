@@ -518,6 +518,69 @@ class TravelJourney(models.Model):
         return journey_policy_flags(self)
 
 
+class CreditPurchase(models.Model):
+    """
+    Carbon credits bought to mitigate an award's remaining travel emissions.
+
+    Wellcome's policy asks grant holders to "Mitigate the remaining carbon
+    emissions of all journeys using accredited carbon credits" and makes the
+    cost eligible. One credit is counted as one tonne CO₂e: Verra states each
+    Verified Carbon Unit "represents a reduction or removal of one tonne of
+    CO2e" (VCS Program Details, read 2026-10-17).
+    """
+
+    REGISTRY_CHOICES = [
+        ('verra', 'Verra (VCS)'),
+        ('gold_standard', 'Gold Standard'),
+        ('plan_vivo', 'Plan Vivo'),
+        ('woodland_carbon_code', 'Woodland Carbon Code'),
+        ('other', 'Other / not accredited'),
+    ]
+    # The four standards Wellcome names as examples of third-party accreditation.
+    ACCREDITED_REGISTRIES = {'verra', 'gold_standard', 'plan_vivo', 'woodland_carbon_code'}
+
+    project = models.ForeignKey(
+        Project, related_name='credit_purchases', on_delete=models.CASCADE,
+    )
+    credits_tco2e = models.DecimalField(
+        max_digits=10, decimal_places=2, validators=[MinValueValidator(Decimal('0.01'))],
+        help_text='Credits bought (1 credit = 1 tCO₂e).'
+    )
+    provider = models.CharField(
+        max_length=200, help_text='Project or broker the credits came from.'
+    )
+    registry = models.CharField(max_length=32, choices=REGISTRY_CHOICES, default='verra')
+    registry_reference = models.CharField(
+        max_length=255, blank=True,
+        help_text='Registry serial or retirement reference, for audit.'
+    )
+    cost_usd = models.DecimalField(
+        max_digits=12, decimal_places=2, null=True, blank=True,
+        validators=[MinValueValidator(0.0)],
+    )
+    purchase_date = models.DateField(null=True, blank=True)
+    retired = models.BooleanField(
+        default=False, help_text='Credits retired on the registry in the award\'s name.'
+    )
+    created_by = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='credit_purchases',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _('Credit Purchase')
+        verbose_name_plural = _('Credit Purchases')
+        ordering = ['-purchase_date', '-id']
+
+    def __str__(self):
+        return f'{self.credits_tco2e} credits — {self.provider}'
+
+    @property
+    def is_accredited(self):
+        return self.registry in self.ACCREDITED_REGISTRIES
+
+
 class ProcurementLine(models.Model):
     """
     One line of purchased goods or services for a reporting period.

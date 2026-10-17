@@ -33,6 +33,7 @@ from .forms import (
     OptimizationScenarioForm,
     EmissionDataUpdateForm,
     TravelJourneyForm,
+    CreditPurchaseForm,
 )
 from .models import (
     Facility,
@@ -48,12 +49,13 @@ from .models import (
     Project,
     ProjectSite,
     TravelJourney,
+    CreditPurchase,
 )
 from .modeling import (
     CarbomicaOptimizer, calculate_npv, compute_tco2e, sum_tco2e,
     PROCUREMENT_CATEGORIES, match_procurement_category, procurement_breakdown,
     project_footprint, AIR_FACTORS, SURFACE_FACTORS, TRAVEL_FACTOR_SOURCE,
-    TRAVEL_FACTOR_URL, WELLCOME_POLICY_URL,
+    TRAVEL_FACTOR_URL, WELLCOME_POLICY_URL, credit_position, VERRA_VCU_URL,
 )
 
 # ---------------------------------------------------------------------------
@@ -1856,6 +1858,33 @@ def project_detail(request, project_id):
             ).delete()
             messages.success(request, 'Journey removed.')
 
+        elif action == 'add_purchase':
+            form = CreditPurchaseForm(request.POST)
+            if form.is_valid():
+                purchase = form.save(commit=False)
+                purchase.project = project
+                purchase.created_by = request.user
+                purchase.save()
+                messages.success(request, f'{purchase.credits_tco2e} credits recorded.')
+            else:
+                problems = [
+                    f'{form.fields[f].label}: {msg}' if f in form.fields else msg
+                    for f, msgs in form.errors.items() for msg in msgs
+                ]
+                messages.error(request, 'Purchase not saved. ' + ' '.join(problems))
+
+        elif action == 'retire_purchase':
+            CreditPurchase.objects.filter(
+                project=project, id=request.POST.get('purchase_id')
+            ).update(retired=True)
+            messages.success(request, 'Credits marked as retired.')
+
+        elif action == 'remove_purchase':
+            CreditPurchase.objects.filter(
+                project=project, id=request.POST.get('purchase_id')
+            ).delete()
+            messages.success(request, 'Purchase removed.')
+
         return redirect('project_detail', project_id=project.id)
 
     footprint = project_footprint(project)
@@ -1890,4 +1919,7 @@ def project_detail(request, project_id):
         'cabin_choices': TravelJourney.CABIN_CHOICES,
         'travel_factor_source': TRAVEL_FACTOR_SOURCE,
         'wellcome_policy_url': WELLCOME_POLICY_URL,
+        'credits': credit_position(project, footprint),
+        'registry_choices': CreditPurchase.REGISTRY_CHOICES,
+        'verra_vcu_url': VERRA_VCU_URL,
     })

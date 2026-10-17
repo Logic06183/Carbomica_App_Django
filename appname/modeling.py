@@ -9,7 +9,7 @@ and the HIGH Horizons D3.7 intervention catalogue
 Three-scenario optimisation: full coverage, fixed budget, optimised
 (greedy knapsack ranking by tCO₂e reduced per USD).
 """
-from decimal import Decimal
+from decimal import Decimal, ROUND_CEILING
 
 # ---------------------------------------------------------------------------
 # Country-specific electricity costs (USD / kWh)
@@ -1668,6 +1668,52 @@ def journey_policy_flags(journey):
             'quote': POLICY_QUOTES['justified'],
         })
     return flags
+
+
+VERRA_VCU_URL = 'https://verra.org/programs/verified-carbon-standard/vcs-program-details/'
+
+
+def credit_position(project, footprint):
+    """
+    Credits an award needs for its remaining travel emissions, and how far its
+    purchases cover them.
+
+    Travel is the logged journeys when there are any; otherwise the award's
+    apportioned share of site flights and road travel (the estimate shown on
+    the report). Credits are whole units, one per tonne CO₂e (Verra VCU
+    definition), so the requirement is rounded up. Only accredited purchases
+    count towards cover.
+    """
+    by_category = footprint['by_category']
+    travel = (by_category.get('award_travel', Decimal('0'))
+              + sum((by_category.get(f, Decimal('0')) for f in SITE_TRAVEL_FIELDS),
+                    Decimal('0')))
+    if footprint['travel_logged']:
+        basis = 'logged'
+    elif travel > 0:
+        basis = 'apportioned'
+    else:
+        basis = 'none'
+
+    purchases = list(project.credit_purchases.all())
+    required = travel.to_integral_value(rounding=ROUND_CEILING) if travel > 0 else Decimal('0')
+    # Only accredited credits count as cover: the policy asks for "accredited
+    # carbon credits", so anything else is reported but not netted off.
+    purchased = sum((p.credits_tco2e for p in purchases if p.is_accredited), Decimal('0'))
+    not_counted = sum((p.credits_tco2e for p in purchases if not p.is_accredited), Decimal('0'))
+    return {
+        'travel_tco2e': travel,
+        'basis': basis,
+        'required': required,
+        'purchases': purchases,
+        'purchased': purchased,
+        'not_counted': not_counted,
+        'outstanding': max(required - purchased, Decimal('0')),
+        'surplus': max(purchased - required, Decimal('0')),
+        'covered': required > 0 and purchased >= required,
+        'unaccredited': [p for p in purchases if not p.is_accredited],
+        'unretired': [p for p in purchases if not p.retired],
+    }
 
 
 def _latest_record(facility):

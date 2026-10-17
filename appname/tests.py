@@ -18,7 +18,7 @@ from io import StringIO
 from appname.models import (
     Facility, EmissionData, EmissionSource,
     Intervention, FacilityIntervention, Organisation, ProcurementLine,
-    Project, ProjectSite, TravelJourney,
+    Project, ProjectSite, TravelJourney, CreditPurchase,
 )
 from appname.modeling import (
     INTERVENTION_LIBRARY,
@@ -27,7 +27,7 @@ from appname.modeling import (
     CarbomicaOptimizer,
     PROCUREMENT_CATEGORIES, procurement_breakdown, match_procurement_category,
     project_footprint, AIR_FACTORS, SURFACE_FACTORS, journey_tco2e,
-    journey_policy_flags,
+    journey_policy_flags, credit_position,
 )
 
 
@@ -1931,4 +1931,139 @@ class JourneyPolicyFlagsTest(TestCase):
         response = self.client.get(f'/projects/{self.project.id}/')
         self.assertContains(response, 'Wellcome travel checks')
         self.assertContains(response, 'Business class is not fundable by Wellcome.')
+
+
+class CreditPositionTest(TestCase):
+    """Credits for an award's remaining travel: whole credits (1 = 1 tCO2e),
+    net of purchases, from accredited standards, retired on the registry."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create_user('cred', 'cred@example.com', 'pw')
+        cls.outsider = User.objects.create_user('credout', 'co@example.com', 'pw')
+        cls.project = Project.objects.create(name='Credit Award', created_by=cls.user)
+        # 10,000 pkm long-haul economy at 0.11704 kg/pkm = 1.1704 t -> 2 credits.
+        TravelJourney.objects.create(
+            project=cls.project, date=date(2026, 2, 1), origin='JNB', destination='LHR',
+            mode='air', air_haul='long_haul_uk', cabin_class='economy',
+            distance_km=Decimal('10000'), purpose='Review meeting')
+
+    def _buy(self, credits, registry='verra', retired=False):
+        return CreditPurchase.objects.create(
+            project=self.project, credits_tco2e=Decimal(str(credits)),
+            provider='Test provider', registry=registry, retired=retired)
+
+    def _position(self):
+        return credit_position(self.project, project_footprint(self.project))
+
+    def test_requirement_rounds_up_to_whole_credits(self):
+        pos = self._position()
+        self.assertEqual(pos['travel_tco2e'], Decimal('1.17040'))
+        self.assertEqual(pos['required'], Decimal('2'))
+        self.assertEqual(pos['basis'], 'logged')
+
+    def test_under_purchase_leaves_credits_outstanding(self):
+        self._buy('1.5')
+        pos = self._position()
+        self.assertEqual(pos['outstanding'], Decimal('0.5'))
+        self.assertEqual(pos['surplus'], Decimal('0'))
+        self.assertFalse(pos['covered'])
+
+    def test_exact_purchase_covers_the_award(self):
+        self._buy(2)
+        pos = self._position()
+        self.assertTrue(pos['covered'])
+        self.assertEqual((pos['outstanding'], pos['surplus']), (Decimal('0'), Decimal('0')))
+
+    def test_over_purchase_is_surplus_not_negative(self):
+        self._buy(3)
+        pos = self._position()
+        self.assertEqual(pos['outstanding'], Decimal('0'))
+        self.assertEqual(pos['surplus'], Decimal('1'))
+
+    def test_award_without_travel_needs_no_credits(self):
+        empty = Project.objects.create(name='No Travel', created_by=self.user)
+        pos = credit_position(empty, project_footprint(empty))
+        self.assertEqual((pos['required'], pos['basis'], pos['covered']),
+                         (Decimal('0'), 'none', False))
+
+    def test_apportioned_site_travel_is_used_when_nothing_is_logged(self):
+        facility = Facility.objects.create(
+            code_name='CRD_SITE', display_name='Credit Site', country='ZA',
+            sector='research', created_by=self.user)
+        source = EmissionSource.objects.create(
+            facility=facility, code_name='CRD_SRC', display_name='baseline')
+        record = EmissionData.objects.create(
+            emission_source=source, date=date(2025, 12, 31), flights=Decimal('100000'))
+        award = Project.objects.create(name='Apportioned Award', created_by=self.user)
+        ProjectSite.objects.create(project=award, facility=facility, share_pct=Decimal('10'))
+        pos = credit_position(award, project_footprint(award))
+        site_flights = compute_tco2e(record, 'ZA', 'research')['flights']
+        self.assertEqual(pos['basis'], 'apportioned')
+        self.assertEqual(pos['travel_tco2e'], site_flights * Decimal('0.10'))
+
+    def test_unaccredited_purchase_is_reported(self):
+        good = self._buy(1)
+        bad = self._buy(1, registry='other')
+        pos = self._position()
+        self.assertEqual(pos['unaccredited'], [bad])
+        self.assertTrue(good.is_accredited)
+
+    def test_unaccredited_credits_do_not_count_as_cover(self):
+        self._buy(5, registry='other')
+        pos = self._position()
+        self.assertEqual(pos['purchased'], Decimal('0'))
+        self.assertEqual(pos['not_counted'], Decimal('5'))
+        self.assertEqual(pos['outstanding'], Decimal('2'))
+        self.assertFalse(pos['covered'])
+
+    def test_unretired_purchases_are_reported(self):
+        self._buy(1, retired=True)
+        pending = self._buy(1)
+        self.assertEqual(self._position()['unretired'], [pending])
+
+    def test_zero_credit_purchase_is_rejected(self):
+        self.client.force_login(self.user)
+        self.client.post(f'/projects/{self.project.id}/', {
+            'action': 'add_purchase', 'credits_tco2e': '0', 'provider': 'X',
+            'registry': 'verra',
+        })
+        self.assertFalse(CreditPurchase.objects.exists())
+
+    def test_purchase_can_be_recorded_and_retired_on_the_page(self):
+        self.client.force_login(self.user)
+        self.client.post(f'/projects/{self.project.id}/', {
+            'action': 'add_purchase', 'credits_tco2e': '2', 'provider': 'Gold project',
+            'registry': 'gold_standard', 'registry_reference': 'GS-1-2-3',
+        })
+        purchase = CreditPurchase.objects.get(project=self.project)
+        self.client.post(f'/projects/{self.project.id}/', {
+            'action': 'retire_purchase', 'purchase_id': purchase.id,
+        })
+        purchase.refresh_from_db()
+        self.assertTrue(purchase.retired)
+        response = self.client.get(f'/projects/{self.project.id}/')
+        self.assertContains(response, 'Carbon credits for travel')
+        self.assertContains(response, 'GS-1-2-3')
+
+    def test_cannot_retire_or_remove_another_awards_purchase(self):
+        other = Project.objects.create(name='Other', created_by=self.user)
+        theirs = CreditPurchase.objects.create(
+            project=other, credits_tco2e=Decimal('1'), provider='P')
+        self.client.force_login(self.user)
+        for action in ('retire_purchase', 'remove_purchase'):
+            self.client.post(f'/projects/{self.project.id}/', {
+                'action': action, 'purchase_id': theirs.id,
+            })
+        theirs.refresh_from_db()
+        self.assertFalse(theirs.retired)
+
+    def test_outsider_cannot_record_credits(self):
+        self.client.force_login(self.outsider)
+        response = self.client.post(f'/projects/{self.project.id}/', {
+            'action': 'add_purchase', 'credits_tco2e': '2', 'provider': 'X',
+            'registry': 'verra',
+        })
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(CreditPurchase.objects.exists())
 

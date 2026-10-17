@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from django import forms
 from django.forms import inlineformset_factory
-from .models import Facility, EmissionData, FacilityIntervention, Intervention, EmissionSource, Policy, OptimizationScenario, Organisation, TravelJourney
+from .models import Facility, EmissionData, FacilityIntervention, Intervention, EmissionSource, Policy, OptimizationScenario, Organisation, TravelJourney, CreditPurchase
 
 class FacilityForm(forms.ModelForm):
     class Meta:
@@ -193,3 +193,15 @@ class TravelJourneyForm(forms.ModelForm):
             'date', 'traveller', 'origin', 'destination', 'mode', 'air_haul',
             'cabin_class', 'distance_km', 'passengers', 'rail_hours', 'purpose',
         ]
+
+
+class CreditPurchaseForm(forms.ModelForm):
+    """Credits bought against an award's remaining travel emissions."""
+
+    class Meta:
+        model = CreditPurchase
+        fields = [
+            'credits_tco2e', 'provider', 'registry', 'registry_reference',
+            'cost_usd', 'purchase_date',
+        ]
+

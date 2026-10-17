@@ -403,6 +403,152 @@
     </div>
 </div>
 
+<!-- ── Carbon credits for travel ── -->
+<div class="card mt-4">
+    <div class="card-header"><strong>Carbon credits for travel</strong></div>
+    <div class="card-body">
+        <div class="row g-3 text-center mb-3">
+            <div class="col-6 col-md-3">
+                <div class="text-muted small">Travel to mitigate</div>
+                <div class="fw-bold fs-5">{{ credits.travel_tco2e|floatformat:2 }} t</div>
+                <div class="text-muted" style="font-size:.7rem;">
+                    {% if credits.basis == 'logged' %}from the travel log
+                    {% elif credits.basis == 'apportioned' %}estimate: share of site travel
+                    {% else %}no travel recorded{% endif %}
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="text-muted small">Credits required</div>
+                <div class="fw-bold fs-5">{{ credits.required|floatformat:0 }}</div>
+                <div class="text-muted" style="font-size:.7rem;">whole credits, 1 = 1 tCO<sub>2</sub>e</div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="text-muted small">Accredited credits bought</div>
+                <div class="fw-bold fs-5">{{ credits.purchased|floatformat:2 }}</div>
+                {% if credits.not_counted %}
+                <div class="text-danger" style="font-size:.7rem;">
+                    + {{ credits.not_counted|floatformat:2 }} not accredited, not counted
+                </div>
+                {% endif %}
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="text-muted small">{% if credits.surplus %}Surplus{% else %}Still to buy{% endif %}</div>
+                <div class="fw-bold fs-5 {% if credits.covered %}text-success{% elif credits.required %}text-danger{% endif %}">
+                    {% if credits.surplus %}{{ credits.surplus|floatformat:2 }}{% else %}{{ credits.outstanding|floatformat:2 }}{% endif %}
+                </div>
+            </div>
+        </div>
+        {% if credits.unaccredited %}
+        <div class="alert alert-danger py-2 small mb-2">
+            {{ credits.unaccredited|length }} purchase{{ credits.unaccredited|length|pluralize }} not from
+            a third-party accredited standard, so not counted towards cover. Wellcome asks for
+            "accredited carbon credits" and names Gold Standard, Verra, Woodland Carbon Code and
+            Plan Vivo as examples.
+        </div>
+        {% endif %}
+        {% if credits.unretired %}
+        <div class="alert alert-warning py-2 small mb-2">
+            {{ credits.unretired|length }} purchase{{ credits.unretired|length|pluralize }} not yet marked
+            retired. Retire credits on the registry so they cannot be counted again.
+        </div>
+        {% endif %}
+    </div>
+    <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th class="text-end">Credits</th><th>Provider</th><th>Standard</th>
+                    <th>Registry ref</th><th class="text-end">Cost</th><th>Date</th><th>Status</th><th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in credits.purchases %}
+                <tr>
+                    <td class="text-end">{{ p.credits_tco2e|floatformat:2 }}</td>
+                    <td>{{ p.provider }}</td>
+                    <td>
+                        {{ p.get_registry_display }}
+                        {% if not p.is_accredited %}<span class="badge bg-danger ms-1">not accredited</span>{% endif %}
+                    </td>
+                    <td class="text-muted small">{{ p.registry_reference|default:"—" }}</td>
+                    <td class="text-end">{% if p.cost_usd is not None %}${{ p.cost_usd|floatformat:2|intcomma }}{% else %}—{% endif %}</td>
+                    <td class="text-nowrap small">{{ p.purchase_date|date:"j M Y"|default:"—" }}</td>
+                    <td>
+                        {% if p.retired %}
+                        <span class="badge bg-success">Retired</span>
+                        {% else %}
+                        <form method="post" class="d-inline">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="retire_purchase">
+                            <input type="hidden" name="purchase_id" value="{{ p.id }}">
+                            <button type="submit" class="btn btn-sm btn-outline-success">Mark retired</button>
+                        </form>
+                        {% endif %}
+                    </td>
+                    <td class="text-end">
+                        <form method="post" class="d-inline">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="remove_purchase">
+                            <input type="hidden" name="purchase_id" value="{{ p.id }}">
+                            <button type="submit" class="btn btn-sm btn-outline-danger"
+                                    onclick="return confirm('Remove this purchase?')">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="8" class="text-muted p-3">No credits recorded against this award.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="card-body border-top">
+        <h6 class="mb-3">Record a purchase</h6>
+        <form method="post" class="row g-2 align-items-end">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="add_purchase">
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Credits (tCO<sub>2</sub>e)</label>
+                <input type="number" step="0.01" min="0.01" name="credits_tco2e" class="form-control form-control-sm" required
+                       value="{% if credits.outstanding %}{{ credits.outstanding|floatformat:0 }}{% endif %}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold">Provider</label>
+                <input type="text" name="provider" class="form-control form-control-sm" required>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Standard</label>
+                <select name="registry" class="form-select form-select-sm">
+                    {% for value, label in registry_choices %}
+                    <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Registry ref</label>
+                <input type="text" name="registry_reference" class="form-control form-control-sm" placeholder="serial / retirement ref">
+            </div>
+            <div class="col-md-1">
+                <label class="form-label small fw-semibold">Cost $</label>
+                <input type="number" step="0.01" min="0" name="cost_usd" class="form-control form-control-sm">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Date</label>
+                <input type="date" name="purchase_date" class="form-control form-control-sm">
+            </div>
+            <div class="col-12 d-flex justify-content-between align-items-center">
+                <span class="form-text" style="font-size:.7rem;">
+                    Wellcome: "Mitigate the remaining carbon emissions of all journeys using accredited
+                    carbon credits". One credit is one tonne CO<sub>2</sub>e
+                    (<a href="{{ verra_vcu_url }}" target="_blank" rel="noopener">Verra VCU definition</a>).
+                </span>
+                <button type="submit" class="btn btn-sm btn-success">Record purchase</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <!-- ── Statement of method ── -->
 <div class="card mt-4" style="border-left:4px solid var(--hh-blue);">
     <div class="card-header"><i class="fas fa-scale-balanced me-2"></i>Statement of method</div>
