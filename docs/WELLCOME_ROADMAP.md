@@ -56,11 +56,11 @@ https://wellcome.org/research-funding/guidance/policies-grant-conditions/environ
 - [x] 2. (`3b1aecd`) **Travel policy checks.** Flag flights where rail would take ≤10 h door to door,
   any business/first class ("not funded"), and journeys with no justification. Accept:
   flags show on the journey list and the award report; tests pin each rule at the 10 h edge.
-- [x] 3. **Credits for travel emissions.** Port the consortium offset register to award
+- [x] 3. (`0b86f27`) **Credits for travel emissions.** Port the consortium offset register to award
   level: required whole credits for the award's travel, purchases (registry, reference,
   cost, retired), net position, accredited-registry check. Accept: net position correct
   for over/under/zero purchases; unaccredited purchase fails the check.
-- [ ] 4. **Wellcome alignment checklist per award.** Pass/warn/fail rows for each policy
+- [x] 4. **Wellcome alignment checklist per award.** Pass/warn/fail rows for each policy
   requirement the app can evidence (impact assessed, travel justified, rail rule, no
   business class, travel credits covered and retired, lab accreditation, reduction plan).
   Each row quotes the policy line it tests. Accept: every row has a test for each state.
@@ -104,3 +104,4 @@ https://wellcome.org/research-funding/guidance/policies-grant-conditions/environ
 - 2026-10-17 Loop set up on `wellcome-loop` from `origin/verdex` (49af791). Baseline 99 tests pass.
 - 2026-10-17 Item 1 done (`100d5cf`): award travel log, DEFRA 2026 factors, journeys replace apportioned site travel. 114 tests.
 - 2026-10-17 Item 2 done (`3b1aecd`): per-journey Wellcome travel flags with verbatim policy quotes; 10 h edge tested. 125 tests.
+- 2026-10-17 Item 3 done (`0b86f27`): award credit register; only accredited credits count as cover. 138 tests.

@@ -1616,6 +1616,11 @@ POLICY_QUOTES = {
     'economy': 'If flying is unavoidable, using economy class as a default.',
     'business': 'Wellcome does not fund business class flights.',
     'justified': 'All travel requested in grant applications must be justified.',
+    'assess': ('should use a tool appropriate to their setting to assess the '
+               'environmental impact of their work and to track their efforts to reduce it.'),
+    'mitigate': ('Mitigate the remaining carbon emissions of all journeys using '
+                 'accredited carbon credits'),
+    'accredited': 'Have arrangements to purchase third party accredited carbon credits',
 }
 
 
@@ -1714,6 +1719,115 @@ def credit_position(project, footprint):
         'unaccredited': [p for p in purchases if not p.is_accredited],
         'unretired': [p for p in purchases if not p.retired],
     }
+
+
+def award_checklist(project, footprint, credits):
+    """
+    Wellcome alignment checks for one award. Each row: key, label, state
+    ('pass' | 'warn' | 'fail' | 'na'), detail, and the verbatim policy line it
+    tests (None where the row is good practice the policy does not state).
+    """
+    rows = []
+
+    def row(key, label, state, detail, quote):
+        rows.append({'key': key, 'label': label, 'state': state,
+                     'detail': detail, 'quote': quote})
+
+    # Impact assessed with a tool
+    missing = footprint['sites_missing_data']
+    if footprint['total'] <= 0 and not missing:
+        row('assessed', 'Environmental impact assessed', 'fail',
+            'Nothing recorded yet: add sites, journeys or spend charged to the award.',
+            POLICY_QUOTES['assess'])
+    elif missing:
+        row('assessed', 'Environmental impact assessed', 'warn',
+            f'{len(missing)} site(s) on the award have no emission data, so their share counts as zero.',
+            POLICY_QUOTES['assess'])
+    else:
+        row('assessed', 'Environmental impact assessed', 'pass',
+            f"{footprint['total']:.1f} tCO₂e attributed to the award.",
+            POLICY_QUOTES['assess'])
+
+    journeys = footprint['journeys']
+    codes = {flag['code'] for r in footprint['journey_rows'] for flag in r['flags']}
+    flights = [j for j in journeys if j.mode == 'air']
+
+    # Travel justified
+    if not journeys:
+        row('justified', 'All travel justified', 'na',
+            'No journeys logged on this award.', POLICY_QUOTES['justified'])
+    elif 'no_justification' in codes:
+        n = sum(1 for r in footprint['journey_rows']
+                if any(f['code'] == 'no_justification' for f in r['flags']))
+        row('justified', 'All travel justified', 'warn',
+            f'{n} of {len(journeys)} journeys have no justification recorded.',
+            POLICY_QUOTES['justified'])
+    else:
+        row('justified', 'All travel justified', 'pass',
+            f'All {len(journeys)} journeys carry a justification.', POLICY_QUOTES['justified'])
+
+    # Rail for trips up to 10 hours
+    if not flights:
+        row('rail', 'Rail used for trips up to 10 hours', 'na',
+            'No flights logged.', POLICY_QUOTES['rail'])
+    elif 'rail_feasible' in codes or 'rail_unknown' in codes:
+        row('rail', 'Rail used for trips up to 10 hours', 'warn',
+            'Some flights had a rail option within 10 hours, or no rail time recorded. '
+            'Record the exception that applied.',
+            POLICY_QUOTES['rail'])
+    else:
+        row('rail', 'Rail used for trips up to 10 hours', 'pass',
+            'Every flight records a rail alternative over 10 hours.', POLICY_QUOTES['rail'])
+
+    # No business class
+    if not flights:
+        row('business', 'No business-class flights', 'na',
+            'No flights logged.', POLICY_QUOTES['business'])
+    elif 'business_class' in codes:
+        n = sum(1 for j in flights if j.cabin_class == 'business')
+        row('business', 'No business-class flights', 'fail',
+            f'{n} business-class flight(s) logged.', POLICY_QUOTES['business'])
+    else:
+        row('business', 'No business-class flights', 'pass',
+            'No business-class flights logged.', POLICY_QUOTES['business'])
+
+    # Remaining travel emissions mitigated with credits
+    if credits['required'] <= 0:
+        row('mitigated', 'Remaining travel emissions mitigated', 'na',
+            'No travel emissions to mitigate.', POLICY_QUOTES['mitigate'])
+    elif credits['covered']:
+        row('mitigated', 'Remaining travel emissions mitigated', 'pass',
+            f"{credits['purchased']} accredited credits cover {credits['required']} required.",
+            POLICY_QUOTES['mitigate'])
+    else:
+        row('mitigated', 'Remaining travel emissions mitigated', 'warn',
+            f"{credits['outstanding']} of {credits['required']} credits still to buy.",
+            POLICY_QUOTES['mitigate'])
+
+    # Credits third-party accredited
+    if not credits['purchases']:
+        row('accredited', 'Credits third-party accredited', 'na',
+            'No credits recorded.', POLICY_QUOTES['accredited'])
+    elif credits['unaccredited']:
+        row('accredited', 'Credits third-party accredited', 'fail',
+            f"{len(credits['unaccredited'])} purchase(s) not from an accredited standard.",
+            POLICY_QUOTES['accredited'])
+    else:
+        row('accredited', 'Credits third-party accredited', 'pass',
+            'All purchases are from an accredited standard.', POLICY_QUOTES['accredited'])
+
+    # Retirement: good practice, not stated in the policy
+    if not credits['purchases']:
+        row('retired', 'Credits retired on the registry', 'na',
+            'No credits recorded.', None)
+    elif credits['unretired']:
+        row('retired', 'Credits retired on the registry', 'warn',
+            f"{len(credits['unretired'])} purchase(s) not yet marked retired.", None)
+    else:
+        row('retired', 'Credits retired on the registry', 'pass',
+            'All purchases marked retired.', None)
+
+    return rows
 
 
 def _latest_record(facility):

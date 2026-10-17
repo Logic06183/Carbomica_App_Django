@@ -63,6 +63,44 @@
 
 {% if messages %}{% endif %}
 
+<!-- ── Wellcome alignment ── -->
+<div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <strong>Wellcome alignment</strong>
+        <a href="{{ wellcome_policy_url }}" target="_blank" rel="noopener" class="small">
+            Environmental sustainability funding policy
+        </a>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+            <tbody>
+                {% for c in checklist %}
+                <tr>
+                    <td style="width:2rem;" class="text-center">
+                        {% if c.state == 'pass' %}<i class="fas fa-circle-check text-success" title="pass"></i>
+                        {% elif c.state == 'warn' %}<i class="fas fa-circle-exclamation text-warning" title="warn"></i>
+                        {% elif c.state == 'fail' %}<i class="fas fa-circle-xmark text-danger" title="fail"></i>
+                        {% else %}<i class="fas fa-circle-minus text-muted" title="not applicable"></i>{% endif %}
+                    </td>
+                    <td style="width:28%;" class="fw-semibold small">{{ c.label }}</td>
+                    <td class="small">
+                        {{ c.detail }}
+                        <div class="text-muted fst-italic" style="font-size:.7rem;">
+                            {% if c.quote %}Policy: &ldquo;{{ c.quote }}&rdquo;
+                            {% else %}Good practice; the policy does not mention this.{% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="card-footer text-muted" style="font-size:.7rem;">
+        Checks the app can evidence from this award's own records. Lab accreditation and
+        the reduction plan are not checked yet.
+    </div>
+</div>
+
 <div class="row g-4">
     <!-- ── Sites and allocation ── -->
     <div class="col-lg-7">

@@ -27,7 +27,7 @@ from appname.modeling import (
     CarbomicaOptimizer,
     PROCUREMENT_CATEGORIES, procurement_breakdown, match_procurement_category,
     project_footprint, AIR_FACTORS, SURFACE_FACTORS, journey_tco2e,
-    journey_policy_flags, credit_position,
+    journey_policy_flags, credit_position, award_checklist,
 )
 
 
@@ -2066,4 +2066,108 @@ class CreditPositionTest(TestCase):
         })
         self.assertEqual(response.status_code, 404)
         self.assertFalse(CreditPurchase.objects.exists())
+
+
+class AwardChecklistTest(TestCase):
+    """Each Wellcome alignment row reaches every state it can, and quotes the
+    policy line it tests (or says plainly that it is good practice)."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create_user('check', 'check@example.com', 'pw')
+
+    def setUp(self):
+        self.project = Project.objects.create(name='Checklist Award', created_by=self.user)
+
+    def _states(self):
+        fp = project_footprint(self.project)
+        rows = award_checklist(self.project, fp, credit_position(self.project, fp))
+        return {r['key']: r['state'] for r in rows}
+
+    def _flight(self, **kw):
+        fields = dict(project=self.project, date=date(2026, 6, 1), origin='JNB',
+                      destination='LHR', mode='air', air_haul='long_haul_uk',
+                      cabin_class='economy', distance_km=Decimal('9000'),
+                      rail_hours=Decimal('60'), purpose='Annual review')
+        fields.update(kw)
+        return TravelJourney.objects.create(**fields)
+
+    def _buy(self, credits, registry='verra', retired=False):
+        return CreditPurchase.objects.create(
+            project=self.project, credits_tco2e=Decimal(str(credits)),
+            provider='P', registry=registry, retired=retired)
+
+    def test_empty_award_fails_assessment_and_rest_not_applicable(self):
+        states = self._states()
+        self.assertEqual(states.pop('assessed'), 'fail')
+        self.assertEqual(set(states.values()), {'na'})
+
+    def test_site_without_data_warns_assessment(self):
+        facility = Facility.objects.create(
+            code_name='CHK_SITE', display_name='Empty', country='ZA',
+            sector='research', created_by=self.user)
+        ProjectSite.objects.create(project=self.project, facility=facility,
+                                   share_pct=Decimal('10'))
+        self.assertEqual(self._states()['assessed'], 'warn')
+
+    def test_compliant_flight_passes_travel_rows(self):
+        self._flight()
+        states = self._states()
+        for key in ('assessed', 'justified', 'rail', 'business'):
+            self.assertEqual(states[key], 'pass', key)
+
+    def test_unjustified_journey_warns(self):
+        self._flight(purpose='')
+        self.assertEqual(self._states()['justified'], 'warn')
+
+    def test_rail_within_ten_hours_or_unknown_warns(self):
+        for hours in (Decimal('8'), None):
+            TravelJourney.objects.all().delete()
+            self._flight(rail_hours=hours)
+            self.assertEqual(self._states()['rail'], 'warn', hours)
+
+    def test_surface_only_travel_leaves_flight_rows_not_applicable(self):
+        TravelJourney.objects.create(
+            project=self.project, date=date(2026, 6, 1), origin='A', destination='B',
+            mode='rail_national', distance_km=Decimal('300'), purpose='Fieldwork')
+        states = self._states()
+        self.assertEqual((states['rail'], states['business']), ('na', 'na'))
+        self.assertEqual(states['justified'], 'pass')
+
+    def test_business_class_fails(self):
+        self._flight(cabin_class='business')
+        self.assertEqual(self._states()['business'], 'fail')
+
+    def test_credit_rows_across_states(self):
+        self._flight()                       # 9,000 pkm x 0.11704 = 1.05 t -> 2 credits
+        states = self._states()
+        self.assertEqual(states['mitigated'], 'warn')
+        self.assertEqual((states['accredited'], states['retired']), ('na', 'na'))
+
+        purchase = self._buy(2)
+        states = self._states()
+        self.assertEqual((states['mitigated'], states['accredited'], states['retired']),
+                         ('pass', 'pass', 'warn'))
+
+        purchase.retired = True
+        purchase.save(update_fields=['retired'])
+        self.assertEqual(self._states()['retired'], 'pass')
+
+        self._buy(1, registry='other')
+        self.assertEqual(self._states()['accredited'], 'fail')
+
+    def test_rows_quote_policy_except_good_practice(self):
+        fp = project_footprint(self.project)
+        rows = award_checklist(self.project, fp, credit_position(self.project, fp))
+        for r in rows:
+            if r['key'] == 'retired':
+                self.assertIsNone(r['quote'])
+            else:
+                self.assertTrue(r['quote'], r['key'])
+
+    def test_award_page_shows_checklist(self):
+        self.client.force_login(self.user)
+        response = self.client.get(f'/projects/{self.project.id}/')
+        self.assertContains(response, 'Wellcome alignment')
+        self.assertContains(response, 'Good practice; the policy does not mention this.')
 

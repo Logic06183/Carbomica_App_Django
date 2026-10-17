@@ -56,6 +56,7 @@ from .modeling import (
     PROCUREMENT_CATEGORIES, match_procurement_category, procurement_breakdown,
     project_footprint, AIR_FACTORS, SURFACE_FACTORS, TRAVEL_FACTOR_SOURCE,
     TRAVEL_FACTOR_URL, WELLCOME_POLICY_URL, credit_position, VERRA_VCU_URL,
+    award_checklist,
 )
 
 # ---------------------------------------------------------------------------
@@ -1888,6 +1889,7 @@ def project_detail(request, project_id):
         return redirect('project_detail', project_id=project.id)
 
     footprint = project_footprint(project)
+    credits = credit_position(project, footprint)
 
     scope_totals = {1: Decimal('0'), 2: Decimal('0'), 3: Decimal('0')}
     for field, value in footprint['by_category'].items():
@@ -1919,7 +1921,8 @@ def project_detail(request, project_id):
         'cabin_choices': TravelJourney.CABIN_CHOICES,
         'travel_factor_source': TRAVEL_FACTOR_SOURCE,
         'wellcome_policy_url': WELLCOME_POLICY_URL,
-        'credits': credit_position(project, footprint),
+        'credits': credits,
+        'checklist': award_checklist(project, footprint, credits),
         'registry_choices': CreditPurchase.REGISTRY_CHOICES,
         'verra_vcu_url': VERRA_VCU_URL,
     })
