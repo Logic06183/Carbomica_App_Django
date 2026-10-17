@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from django import forms
 from django.forms import inlineformset_factory
-from .models import Facility, EmissionData, FacilityIntervention, Intervention, EmissionSource, Policy, OptimizationScenario, Organisation, TravelJourney, CreditPurchase, LabAccreditation, PlannedSpend, SustainabilityCost, AwardReductionTarget
+from .models import Facility, EmissionData, FacilityIntervention, Intervention, EmissionSource, Policy, OptimizationScenario, Organisation, TravelJourney, CreditPurchase, LabAccreditation, PlannedSpend, SustainabilityCost, AwardReductionTarget, ComputeJob
 
 class FacilityForm(forms.ModelForm):
     class Meta:
@@ -237,4 +237,13 @@ class AwardReductionTargetForm(forms.ModelForm):
     class Meta:
         model = AwardReductionTarget
         fields = ['baseline_year', 'target_year', 'reduction_pct', 'note']
+
+
+class ComputeJobForm(forms.ModelForm):
+    """Computing run outside the award's sites, estimated with Green Algorithms."""
+
+    class Meta:
+        model = ComputeJob
+        fields = ['description', 'date', 'runtime_hours', 'cores', 'watts_per_core',
+                  'usage_factor', 'memory_gb', 'pue', 'runs', 'grid_country', 'is_planned']
 

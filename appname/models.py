@@ -633,6 +633,67 @@ class SustainabilityCost(models.Model):
         return ELIGIBLE_COSTS[self.kind][0]
 
 
+class ComputeJob(models.Model):
+    """
+    Computing run for an award outside its own sites (national HPC, cloud),
+    estimated with the Green Algorithms method (modeling.compute_job_kwh).
+    Computing on a site's own servers is already inside that site's
+    electricity, so it is not logged here.
+    """
+
+    project = models.ForeignKey(Project, related_name='compute_jobs', on_delete=models.CASCADE)
+    description = models.CharField(max_length=200)
+    date = models.DateField(help_text='When the work ran (or will run).')
+    runtime_hours = models.DecimalField(
+        max_digits=10, decimal_places=2, validators=[MinValueValidator(Decimal('0.01'))])
+    cores = models.PositiveIntegerField(validators=[MinValueValidator(1)])
+    watts_per_core = models.DecimalField(
+        max_digits=7, decimal_places=2, validators=[MinValueValidator(Decimal('0.01'))],
+        help_text="Processor TDP divided by its cores, from the manufacturer's specification.")
+    usage_factor = models.DecimalField(
+        max_digits=4, decimal_places=3, default=Decimal('1'),
+        validators=[MinValueValidator(Decimal('0.001')), MaxValueValidator(Decimal('1'))],
+        help_text='Share of the run the cores were busy; 1 if unknown.')
+    memory_gb = models.DecimalField(
+        max_digits=9, decimal_places=2, default=Decimal('0'),
+        validators=[MinValueValidator(0.0)], help_text='Memory requested, in GB.')
+    pue = models.DecimalField(
+        max_digits=4, decimal_places=2, default=Decimal('1.67'),
+        validators=[MinValueValidator(Decimal('1'))],
+        help_text="Data centre PUE; 1.67 is the worldwide average Green Algorithms uses.")
+    runs = models.PositiveIntegerField(
+        default=1, validators=[MinValueValidator(1)],
+        help_text='How many times it runs (Green Algorithms "pragmatic scaling factor").')
+    grid_country = models.CharField(
+        max_length=10, default='OTHER',
+        help_text='Where the data centre is; sets the grid carbon intensity.')
+    is_planned = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _('Compute Job')
+        verbose_name_plural = _('Compute Jobs')
+        ordering = ['-date', '-id']
+
+    def __str__(self):
+        return self.description
+
+    def clean(self):
+        from appname.modeling import ELECTRICITY_EF
+        from django.core.exceptions import ValidationError
+        if self.grid_country not in ELECTRICITY_EF:
+            raise ValidationError({'grid_country': 'Unknown grid.'})
+
+    def kwh(self):
+        from appname.modeling import compute_job_kwh
+        return compute_job_kwh(self.runtime_hours, self.cores, self.watts_per_core,
+                               self.usage_factor, self.memory_gb, self.pue, self.runs)
+
+    def tco2e(self):
+        from appname.modeling import ELECTRICITY_EF
+        return self.kwh() * ELECTRICITY_EF[self.grid_country]
+
+
 class AwardReductionTarget(models.Model):
     """
     A reduction target for one award: cut its annual footprint by a percentage

@@ -2118,6 +2118,30 @@ ELIGIBLE_COSTS = {
         'of research can be costed into outputs management plans.'),
 }
 
+# ---------------------------------------------------------------------------
+# Computing emissions: Green Algorithms method.
+# Lannelongue L, Grealey J, Inouye M. Green Algorithms: Quantifying the Carbon
+# Footprint of Computation. Advanced Science 2021;8(12):2100707,
+# doi:10.1002/advs.202100707 (read via PubMed Central PMC8224424, 2026-10-17).
+#   energy (kWh) = runtime_h x (cores x W_per_core x usage + memory_GB x W_per_GB)
+#                  x PUE / 1000, repeated for the "pragmatic scaling factor"
+# Memory draw "was estimated to be 0.3725 W per GB"; the worldwide average PUE
+# is 1.67, and PUE 1 is used for laptops and desktops. Core power is the
+# processor's TDP per core, which the user takes from the manufacturer.
+# Carbon = energy x grid intensity where the job runs (ELECTRICITY_EF).
+# ---------------------------------------------------------------------------
+GREEN_ALGORITHMS_DOI = 'https://doi.org/10.1002/advs.202100707'
+MEMORY_W_PER_GB = Decimal('0.3725')
+DEFAULT_PUE = Decimal('1.67')
+
+
+def compute_job_kwh(runtime_hours, cores, watts_per_core, usage, memory_gb, pue, runs=1):
+    """Energy for a computing job (all its runs), in kWh."""
+    power_w = (Decimal(cores) * Decimal(watts_per_core) * Decimal(usage)
+               + Decimal(memory_gb) * MEMORY_W_PER_GB)
+    return Decimal(runtime_hours) * power_w * Decimal(pue) / Decimal('1000') * Decimal(runs)
+
+
 # First-person wording for each measure in the draft application text. These
 # are drafting aids for the applicant to edit, not policy quotations.
 MEASURE_COMMITMENTS = {
@@ -2249,19 +2273,25 @@ def project_estimate(project, footprint, credits):
     planned_spend = sum((line.tco2e() for line in planned_lines), Decimal('0'))
 
     actual_travel = credits['travel_tco2e']
-    actual_spend = footprint['direct_total'] - footprint['travel_total']
+    actual_computing = footprint['computing_total']
+    actual_spend = (footprint['direct_total'] - footprint['travel_total']
+                    - actual_computing)
+    planned_jobs = list(project.compute_jobs.filter(is_planned=True))
+    planned_computing = sum((job.tco2e() for job in planned_jobs), Decimal('0'))
 
     rows = [
         {'label': 'Travel', 'estimate': planned_travel, 'actual': actual_travel},
         {'label': 'Purchases charged to the award', 'estimate': planned_spend,
          'actual': actual_spend},
+        {'label': 'Computing outside the award\'s sites', 'estimate': planned_computing,
+         'actual': actual_computing},
         {'label': 'Share of site running emissions', 'estimate': site_share,
          'actual': site_share},
     ]
     for r in rows:
         r['difference'] = r['actual'] - r['estimate']
-    estimate_total = site_share + planned_travel + planned_spend
-    actual_total = site_share + actual_travel + actual_spend
+    estimate_total = site_share + planned_travel + planned_spend + planned_computing
+    actual_total = site_share + actual_travel + actual_spend + actual_computing
 
     cost_lines = list(project.sustainability_costs.all())
 
@@ -2271,6 +2301,7 @@ def project_estimate(project, footprint, credits):
     return {
         'planned_trips': [{'journey': j, 'flags': journey_policy_flags(j)} for j in planned_trips],
         'planned_lines': planned_lines,
+        'planned_jobs': planned_jobs,
         'rows': rows,
         'estimate_total': estimate_total,
         'actual_total': actual_total,
@@ -2282,7 +2313,7 @@ def project_estimate(project, footprint, credits):
             for k, (g, label, q) in REDUCTION_MEASURES.items()
             if k in (project.reduction_measures or [])
         ],
-        'has_plan': bool(planned_trips or planned_lines),
+        'has_plan': bool(planned_trips or planned_lines or planned_jobs),
         'cost_lines': cost_lines,
         'costs_total': sum((c.amount_usd for c in cost_lines), Decimal('0')),
         'credit_cost_budgeted': any(c.kind == 'travel_credits' for c in cost_lines),
@@ -2316,6 +2347,7 @@ def project_footprint(project, year=None):
     by_category = {field: Decimal('0') for field in APPORTIONABLE_FIELDS}
     by_category['lab_consumables'] = Decimal('0')
     by_category['award_travel'] = Decimal('0')
+    by_category['computing'] = Decimal('0')
     direct_total = Decimal('0')
     apportioned_total = Decimal('0')
     direct_lines = []
@@ -2395,6 +2427,14 @@ def project_footprint(project, year=None):
             'missing_data': False,
         })
 
+    jobs = project.compute_jobs.filter(is_planned=False)
+    if year is not None:
+        jobs = jobs.filter(date__year=year)
+    jobs = list(jobs)
+    computing_total = sum((job.tco2e() for job in jobs), Decimal('0'))
+    by_category['computing'] = computing_total
+    direct_total += computing_total
+
     travel_total = sum((j.tco2e() for j in journeys), Decimal('0'))
     by_category['award_travel'] = travel_total
     journey_rows = [{'journey': j, 'flags': journey_policy_flags(j)} for j in journeys]
@@ -2435,6 +2475,8 @@ def project_footprint(project, year=None):
         'travel_flag_summary': travel_flag_summary,
         'travel_total': travel_total,
         'travel_logged': travel_logged,
+        'compute_jobs': jobs,
+        'computing_total': computing_total,
     }
 
 

@@ -39,6 +39,7 @@ from .forms import (
     PlannedSpendForm,
     SustainabilityCostForm,
     AwardReductionTargetForm,
+    ComputeJobForm,
 )
 from .models import (
     Facility,
@@ -60,6 +61,7 @@ from .models import (
     SustainabilityCost,
     AwardReductionTarget,
     ReadinessDeclaration,
+    ComputeJob,
 )
 from .modeling import (
     CarbomicaOptimizer, calculate_npv, compute_tco2e, sum_tco2e,
@@ -68,7 +70,8 @@ from .modeling import (
     TRAVEL_FACTOR_URL, WELLCOME_POLICY_URL, credit_position, VERRA_VCU_URL,
     award_checklist, lab_status, project_estimate, REDUCTION_MEASURES,
     application_statement, ELIGIBLE_COSTS, award_trajectory, award_years,
-    org_readiness, ORG_READINESS_ITEMS,
+    org_readiness, ORG_READINESS_ITEMS, GREEN_ALGORITHMS_DOI, MEMORY_W_PER_GB,
+    DEFAULT_PUE, ELECTRICITY_EF,
 )
 
 # ---------------------------------------------------------------------------
@@ -97,6 +100,7 @@ CATEGORY_LABELS = {
     'flights':             'Flights',
     'lab_consumables':     'Lab Consumables & Procurement',
     'award_travel':        'Award Travel (logged journeys)',
+    'computing':           'Computing (HPC / cloud)',
 }
 
 # GHG Protocol Corporate Standard scope per emission category.
@@ -117,6 +121,7 @@ CATEGORY_SCOPES = {
     'flights':             3,
     'lab_consumables':     3,
     'award_travel':        3,
+    'computing':           3,
 }
 
 # Default intervention cost guidance (USD) — shown in the upload form to help users
@@ -505,6 +510,9 @@ def methodology(request):
         'procurement_rows': procurement_rows,
         'procurement_excluded_note': PROCUREMENT_EXCLUDED_NOTE,
         'travel_rows': _travel_factor_rows(),
+        'green_algorithms_doi': GREEN_ALGORITHMS_DOI,
+        'memory_w_per_gb': MEMORY_W_PER_GB,
+        'default_pue': DEFAULT_PUE,
         'travel_factor_source': TRAVEL_FACTOR_SOURCE,
         'travel_factor_url': TRAVEL_FACTOR_URL,
     })
@@ -1973,6 +1981,26 @@ def project_detail(request, project_id):
             ).delete()
             messages.success(request, 'Cost removed.')
 
+        elif action == 'add_compute':
+            form = ComputeJobForm(request.POST)
+            if form.is_valid():
+                job = form.save(commit=False)
+                job.project = project
+                job.save()
+                messages.success(request, f'{job.description}: {job.tco2e():.3f} tCO₂e.')
+            else:
+                problems = [
+                    f'{form.fields[f].label}: {msg}' if f in form.fields else msg
+                    for f, msgs in form.errors.items() for msg in msgs
+                ]
+                messages.error(request, 'Computing not saved. ' + ' '.join(problems))
+
+        elif action == 'remove_compute':
+            ComputeJob.objects.filter(
+                project=project, id=request.POST.get('job_id')
+            ).delete()
+            messages.success(request, 'Computing removed.')
+
         elif action == 'set_target':
             existing = getattr(project, 'reduction_target', None)
             form = AwardReductionTargetForm(request.POST, instance=existing)
@@ -2036,6 +2064,10 @@ def project_detail(request, project_id):
             (key, spec['display_name']) for key, spec in PROCUREMENT_CATEGORIES.items()
         ],
         'registry_choices': CreditPurchase.REGISTRY_CHOICES,
+        'grid_choices': [(k, f'{k} ({v * 1000000:.0f} g/kWh)') for k, v in ELECTRICITY_EF.items()],
+        'green_algorithms_doi': GREEN_ALGORITHMS_DOI,
+        'default_pue': DEFAULT_PUE,
+        'all_compute_jobs': project.compute_jobs.all(),
     })
     return render(request, 'appname/project_detail.html', context)
 

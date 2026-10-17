@@ -229,6 +229,29 @@
     </div>
 </div>
 
+<!-- ── Computing ── -->
+<div class="card mb-4" id="computing-method">
+    <div class="card-header"><i class="fas fa-microchip me-2"></i>Computing outside the award's sites — Green Algorithms</div>
+    <div class="card-body small text-muted">
+        <p class="mb-2">
+            High-performance and cloud computing logged on an award uses the Green Algorithms method
+            (Lannelongue, Grealey &amp; Inouye, <em>Advanced Science</em> 2021;8:2100707,
+            <a href="{{ green_algorithms_doi }}" target="_blank" rel="noopener">doi:10.1002/advs.202100707</a>):
+        </p>
+        <p class="mb-2 font-monospace">energy (kWh) = hours × (cores × W per core × usage + memory GB × {{ memory_w_per_gb }} W/GB) × PUE ÷ 1000 × runs</p>
+        <p class="mb-2">
+            Memory draw of {{ memory_w_per_gb }} W per GB and the worldwide average PUE of {{ default_pue }} are the paper's
+            values; it uses PUE 1 for laptops and desktops. Core power is the processor's thermal design power per core,
+            taken from the manufacturer. Energy is converted with the grid intensity of the country the data centre is in
+            (table above). Like the paper, this excludes hardware manufacture and storage.
+        </p>
+        <p class="mb-0">
+            Only computing outside the award's own sites is logged this way. Computing on a site's own servers is already
+            inside that site's electricity and its apportioned share.
+        </p>
+    </div>
+</div>
+
 <!-- ── Limitations & roadmap ── -->
 <div class="card mb-4" style="border-left:4px solid var(--hh-red);">
     <div class="card-header"><i class="fas fa-exclamation-triangle me-2" style="color:var(--hh-red);"></i>Known limitations — read before citing results</div>

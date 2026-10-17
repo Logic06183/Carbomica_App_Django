@@ -20,6 +20,7 @@ from appname.models import (
     Intervention, FacilityIntervention, Organisation, ProcurementLine,
     Project, ProjectSite, TravelJourney, CreditPurchase, LabAccreditation,
     PlannedSpend, SustainabilityCost, AwardReductionTarget, ReadinessDeclaration,
+    ComputeJob,
 )
 from appname.modeling import (
     INTERVENTION_LIBRARY,
@@ -30,7 +31,7 @@ from appname.modeling import (
     project_footprint, AIR_FACTORS, SURFACE_FACTORS, journey_tco2e,
     journey_policy_flags, credit_position, award_checklist, lab_status,
     project_estimate, REDUCTION_MEASURES, application_statement, MEASURE_COMMITMENTS,
-    ELIGIBLE_COSTS, award_trajectory, org_readiness,
+    ELIGIBLE_COSTS, award_trajectory, org_readiness, compute_job_kwh, MEMORY_W_PER_GB,
 )
 
 
@@ -2951,4 +2952,107 @@ class OrgReadinessTest(TestCase):
                             'Lead organisation readiness')
         csv_text = self.client.get(f'/projects/{project.id}/export.csv').content.decode()
         self.assertIn('Lead organisation readiness (self-declared): Ready Org', csv_text)
+
+
+class ComputeJobTest(TestCase):
+    """Computing outside the award's sites, by the Green Algorithms method
+    (Lannelongue et al. 2021, doi:10.1002/advs.202100707)."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create_user('comp', 'comp@example.com', 'pw')
+        cls.outsider = User.objects.create_user('compout', 'cpo@example.com', 'pw')
+
+    def setUp(self):
+        self.project = Project.objects.create(name='Compute Award', created_by=self.user)
+        self.url = f'/projects/{self.project.id}/'
+
+    def _job(self, **kw):
+        fields = dict(project=self.project, description='GWAS', date=date(2026, 4, 1),
+                      runtime_hours=Decimal('10'), cores=4, watts_per_core=Decimal('10'),
+                      usage_factor=Decimal('1'), memory_gb=Decimal('16'),
+                      pue=Decimal('1.67'), runs=2, grid_country='GB')
+        fields.update(kw)
+        job = ComputeJob(**fields)
+        job.full_clean()
+        job.save()
+        return job
+
+    def test_memory_draw_matches_the_papers_example(self):
+        # "requesting 29 GB of memory draws 10.8 W"
+        self.assertEqual((Decimal('29') * MEMORY_W_PER_GB).quantize(Decimal('0.1')),
+                         Decimal('10.8'))
+
+    def test_energy_formula(self):
+        expected = (Decimal('10') * (Decimal('4') * Decimal('10') * Decimal('1')
+                                     + Decimal('16') * Decimal('0.3725'))
+                    * Decimal('1.67') / Decimal('1000') * Decimal('2'))
+        self.assertEqual(compute_job_kwh(10, 4, 10, 1, 16, Decimal('1.67'), 2), expected)
+
+    def test_usage_factor_scales_cores_not_memory(self):
+        full = compute_job_kwh(10, 4, 10, 1, 16, 1)
+        half = compute_job_kwh(10, 4, 10, Decimal('0.5'), 16, 1)
+        self.assertEqual(full - half, Decimal('10') * Decimal('20') / Decimal('1000'))
+
+    def test_carbon_uses_the_data_centre_grid(self):
+        job = self._job()
+        self.assertEqual(job.tco2e(), job.kwh() * ELECTRICITY_EF['GB'])
+        za = self._job(grid_country='ZA')
+        self.assertGreater(za.tco2e(), job.tco2e())
+
+    def test_invalid_inputs_are_rejected(self):
+        from django.core.exceptions import ValidationError
+        for bad in ({'grid_country': 'XX'}, {'usage_factor': Decimal('1.5')},
+                    {'pue': Decimal('0.9')}, {'cores': 0}):
+            with self.assertRaises(ValidationError, msg=str(bad)):
+                self._job(**bad)
+
+    def test_actual_jobs_count_planned_do_not(self):
+        actual = self._job()
+        self._job(is_planned=True, runs=50)
+        fp = project_footprint(self.project)
+        self.assertEqual(fp['by_category']['computing'], actual.tco2e())
+        self.assertEqual(fp['direct_total'], actual.tco2e())
+
+    def test_year_filter_applies_to_computing(self):
+        job = self._job(date=date(2025, 6, 1))
+        self.assertEqual(project_footprint(self.project, year=2025)['computing_total'], job.tco2e())
+        self.assertEqual(project_footprint(self.project, year=2026)['computing_total'], Decimal('0'))
+
+    def test_estimate_has_computing_row_and_still_reconciles(self):
+        actual = self._job()
+        planned = self._job(is_planned=True)
+        TravelJourney.objects.create(
+            project=self.project, date=date(2026, 3, 1), origin='A', destination='B',
+            mode='rail_national', distance_km=Decimal('500'), purpose='x')
+        fp = project_footprint(self.project)
+        est = project_estimate(self.project, fp, credit_position(self.project, fp))
+        row = next(r for r in est['rows'] if r['label'].startswith('Computing'))
+        self.assertEqual((row['estimate'], row['actual']), (planned.tco2e(), actual.tco2e()))
+        purchases = next(r for r in est['rows'] if r['label'].startswith('Purchases'))
+        self.assertEqual(purchases['actual'], Decimal('0'))
+        self.assertEqual(est['actual_total'], fp['total'])
+
+    def test_logged_from_page_and_access_control(self):
+        self.client.force_login(self.user)
+        self.client.post(self.url, {
+            'action': 'add_compute', 'description': 'Cloud training', 'date': '2026-05-01',
+            'runtime_hours': '24', 'cores': '8', 'watts_per_core': '12', 'usage_factor': '1',
+            'memory_gb': '64', 'pue': '1.2', 'runs': '3', 'grid_country': 'EU'})
+        job = ComputeJob.objects.get(project=self.project)
+        self.assertContains(self.client.get(self.url), 'Cloud training')
+        other = Project.objects.create(name='Other', created_by=self.user)
+        theirs = self._job(project=other)
+        self.client.post(self.url, {'action': 'remove_compute', 'job_id': theirs.id})
+        self.assertTrue(ComputeJob.objects.filter(id=theirs.id).exists())
+        self.client.force_login(self.outsider)
+        response = self.client.post(self.url, {'action': 'remove_compute', 'job_id': job.id})
+        self.assertEqual(response.status_code, 404)
+        self.assertTrue(ComputeJob.objects.filter(id=job.id).exists())
+
+    def test_methodology_page_states_the_method(self):
+        response = self.client.get('/methodology/')
+        self.assertContains(response, 'Green Algorithms')
+        self.assertContains(response, '10.1002/advs.202100707')
+        self.assertContains(response, '0.3725')
 
