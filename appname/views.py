@@ -37,6 +37,7 @@ from .forms import (
     LabAccreditationForm,
     PlannedSpendForm,
     SustainabilityCostForm,
+    AwardReductionTargetForm,
 )
 from .models import (
     Facility,
@@ -56,6 +57,7 @@ from .models import (
     LabAccreditation,
     PlannedSpend,
     SustainabilityCost,
+    AwardReductionTarget,
 )
 from .modeling import (
     CarbomicaOptimizer, calculate_npv, compute_tco2e, sum_tco2e,
@@ -63,7 +65,7 @@ from .modeling import (
     project_footprint, AIR_FACTORS, SURFACE_FACTORS, TRAVEL_FACTOR_SOURCE,
     TRAVEL_FACTOR_URL, WELLCOME_POLICY_URL, credit_position, VERRA_VCU_URL,
     award_checklist, lab_status, project_estimate, REDUCTION_MEASURES,
-    application_statement, ELIGIBLE_COSTS,
+    application_statement, ELIGIBLE_COSTS, award_trajectory, award_years,
 )
 
 # ---------------------------------------------------------------------------
@@ -1968,6 +1970,25 @@ def project_detail(request, project_id):
             ).delete()
             messages.success(request, 'Cost removed.')
 
+        elif action == 'set_target':
+            existing = getattr(project, 'reduction_target', None)
+            form = AwardReductionTargetForm(request.POST, instance=existing)
+            if form.is_valid():
+                target = form.save(commit=False)
+                target.project = project
+                target.save()
+                messages.success(request, 'Reduction target saved.')
+            else:
+                problems = [
+                    f'{form.fields[f].label}: {msg}' if f in form.fields else msg
+                    for f, msgs in form.errors.items() for msg in msgs
+                ]
+                messages.error(request, 'Target not saved. ' + ' '.join(problems))
+
+        elif action == 'delete_target':
+            AwardReductionTarget.objects.filter(project=project).delete()
+            messages.success(request, 'Reduction target deleted.')
+
         elif action == 'update_estimate':
             try:
                 price = request.POST.get('credit_price_usd', '').strip()
@@ -2031,6 +2052,8 @@ def project_detail(request, project_id):
         'checklist': award_checklist(project, footprint, credits),
         'estimate': estimate,
         'statement': application_statement(project, estimate, footprint),
+        'trajectory': award_trajectory(project),
+        'data_years': award_years(project),
         'measure_groups': _measure_groups(project),
         'eligible_costs': [
             {'key': k, 'label': label, 'heading': heading, 'quote': quote}

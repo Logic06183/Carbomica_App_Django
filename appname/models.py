@@ -623,6 +623,40 @@ class SustainabilityCost(models.Model):
         return ELIGIBLE_COSTS[self.kind][0]
 
 
+class AwardReductionTarget(models.Model):
+    """
+    A reduction target for one award: cut its annual footprint by a percentage
+    from a baseline year by a target year, tracked along a straight line.
+    Wellcome asks researchers to assess their impact "and to track their
+    efforts to reduce it".
+    """
+
+    project = models.OneToOneField(
+        Project, related_name='reduction_target', on_delete=models.CASCADE,
+    )
+    baseline_year = models.PositiveIntegerField()
+    target_year = models.PositiveIntegerField()
+    reduction_pct = models.DecimalField(
+        max_digits=5, decimal_places=2,
+        validators=[MinValueValidator(Decimal('0.01')), MaxValueValidator(Decimal('100'))],
+    )
+    note = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _('Award Reduction Target')
+        verbose_name_plural = _('Award Reduction Targets')
+
+    def __str__(self):
+        return f'{self.project}: -{self.reduction_pct}% {self.baseline_year}→{self.target_year}'
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        if (self.baseline_year and self.target_year
+                and self.target_year <= self.baseline_year):
+            raise ValidationError({'target_year': 'Target year must be after the baseline year.'})
+
+
 class LabAccreditation(models.Model):
     """
     A green-lab accreditation held by a site.

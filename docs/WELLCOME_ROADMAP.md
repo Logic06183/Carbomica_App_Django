@@ -75,10 +75,10 @@ https://wellcome.org/research-funding/guidance/policies-grant-conditions/environ
   the most sustainable approach" section: energy, reuse of equipment, waste, travel. Plain
   template text filled from the user's own numbers, no generated claims. Accept: copyable
   text, every number traceable to an input.
-- [x] 8. **Eligible-cost lines.** List the sustainability costs Wellcome says are eligible
+- [x] 8. (`0bac869`) **Eligible-cost lines.** List the sustainability costs Wellcome says are eligible
   (staff time for measurement, credits, lead-lab accreditation, hybrid tools, LCA) as budget
   lines the user can fill in. Accept: totals appear in the estimate and the export.
-- [ ] 9. **Reduction plan per award.** Port consortium reduction planning: baseline,
+- [x] 9. **Reduction plan per award.** Port consortium reduction planning: baseline,
   target, straight-line trajectory, actuals. Accept: trajectory maths tested.
 - [ ] 10. **Funder report export.** CSV and print view of the award: footprint by scope and
   category, travel log with flags, credits, checklist, statement of method with sources.
@@ -109,3 +109,4 @@ https://wellcome.org/research-funding/guidance/policies-grant-conditions/environ
 - 2026-10-17 Item 5 done (`d49060b`): lab accreditation per site, MGL 2-yr recertification, checklist row with end-2025 deadline. 162 tests.
 - 2026-10-17 Item 6 done (`9871422`): planned trips/purchases, estimate vs actual (reconciles), credit budget at user price, 15 policy-quoted measures. 172 tests.
 - 2026-10-17 Item 7 done (`a2b8fd2`): draft application text from estimate and chosen measures; breaches surfaced as warnings. 181 tests.
+- 2026-10-17 Item 8 done (`0bac869`): eligible sustainability cost lines with verbatim headings; totals in estimate and draft text. 189 tests. Note for item 14: award page is now long; consider splitting applicant vs holder views.

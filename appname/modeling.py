@@ -1624,6 +1624,8 @@ POLICY_QUOTES = {
     'accredited': 'Have arrangements to purchase third party accredited carbon credits',
     'lab': ('Laboratories should achieve the minimum level of accreditation offered by '
             'LEAF, My Green Lab or equivalent by the end of 2025.'),
+    'reduce': ('Researchers across all fields should demonstrate how they will reduce the '
+               'emissions and natural resources used in their research.'),
 }
 LAB_ACCREDITATION_DEADLINE = date(2025, 12, 31)
 
@@ -1739,6 +1741,65 @@ def credit_position(project, footprint):
         'unaccredited': [p for p in purchases if not p.is_accredited],
         'unretired': [p for p in purchases if not p.retired],
     }
+
+
+def award_years(project):
+    """Years with any actual data for the award: site records or logged journeys."""
+    from appname.models import EmissionData
+    facility_ids = project.sites.values_list('facility_id', flat=True)
+    years = set(
+        d.year for d in EmissionData.objects
+        .filter(emission_source__facility_id__in=facility_ids)
+        .values_list('date', flat=True)
+    )
+    years |= set(d.year for d in project.journeys.filter(is_planned=False)
+                 .values_list('date', flat=True))
+    return sorted(years)
+
+
+def award_trajectory(project):
+    """
+    Annual award footprints against the reduction target's straight line.
+
+    Returns None without a target. Each row: year, required (target line),
+    actual (None when the year has no data), incomplete (a site on the award
+    had no record that year, so the actual is understated), and status
+    ('on' | 'off' | None) for complete years after the baseline.
+    """
+    target = getattr(project, 'reduction_target', None)
+    if target is None:
+        return None
+    annual = {}
+    for y in award_years(project):
+        fp = project_footprint(project, year=y)
+        annual[y] = {'total': fp['total'], 'incomplete': bool(fp['sites_missing_data'])}
+
+    baseline = annual.get(target.baseline_year)
+    result = {'target': target, 'baseline': None, 'rows': [], 'on_track': None,
+              'baseline_missing': baseline is None or baseline['total'] <= 0}
+    if result['baseline_missing']:
+        return result
+    base_total = baseline['total']
+    result['baseline'] = base_total
+    span = Decimal(target.target_year - target.baseline_year)
+    pct = Decimal(target.reduction_pct) / Decimal('100')
+    for y in range(target.baseline_year, target.target_year + 1):
+        required = base_total * (Decimal('1') - pct * Decimal(y - target.baseline_year) / span)
+        data = annual.get(y)
+        actual = data['total'] if data else None
+        incomplete = bool(data and data['incomplete'])
+        status = None
+        # An incomplete year is understated, so it is shown but never judged.
+        if actual is not None and y > target.baseline_year and not incomplete:
+            status = 'on' if actual <= required else 'off'
+        result['rows'].append({
+            'year': y, 'required': required.quantize(Decimal('0.01')), 'actual': actual,
+            'incomplete': incomplete, 'status': status,
+        })
+    tracked = [r for r in result['rows'] if r['status']]
+    if tracked:
+        result['on_track'] = tracked[-1]['status'] == 'on'
+    return result
 
 
 def award_checklist(project, footprint, credits, today=None):
@@ -1861,6 +1922,25 @@ def award_checklist(project, footprint, credits, today=None):
         row('lab', 'Laboratories accredited', 'pass',
             f'All {len(labs)} lab site(s) hold current LEAF or My Green Lab accreditation.',
             POLICY_QUOTES['lab'])
+
+    # Reduction plan
+    trajectory = award_trajectory(project)
+    if trajectory is None:
+        row('reduction', 'Reduction target set and tracked', 'warn',
+            'No reduction target set for this award.', POLICY_QUOTES['reduce'])
+    elif trajectory['baseline_missing']:
+        row('reduction', 'Reduction target set and tracked', 'warn',
+            f"Target set, but there is no data for the {trajectory['target'].baseline_year} baseline year.",
+            POLICY_QUOTES['reduce'])
+    elif trajectory['on_track'] is False:
+        row('reduction', 'Reduction target set and tracked', 'warn',
+            'Target set; the latest year is above the target line.', POLICY_QUOTES['reduce'])
+    else:
+        t = trajectory['target']
+        row('reduction', 'Reduction target set and tracked', 'pass',
+            f'{t.reduction_pct:.0f}% below {t.baseline_year} by {t.target_year}'
+            + ('; on track.' if trajectory['on_track'] else '; no complete year after the baseline yet.'),
+            POLICY_QUOTES['reduce'])
 
     # Retirement: good practice, not stated in the policy
     if not credits['purchases']:
@@ -2141,17 +2221,15 @@ def project_estimate(project, footprint, credits):
     }
 
 
-def _latest_record(facility):
+def _latest_record(facility, year=None):
     from appname.models import EmissionData
-    return (
-        EmissionData.objects
-        .filter(emission_source__facility=facility)
-        .order_by('-date', '-id')
-        .first()
-    )
+    records = EmissionData.objects.filter(emission_source__facility=facility)
+    if year is not None:
+        records = records.filter(date__year=year)
+    return records.order_by('-date', '-id').first()
 
 
-def project_footprint(project):
+def project_footprint(project, year=None):
     """
     Attribute emissions to one award.
 
@@ -2160,6 +2238,9 @@ def project_footprint(project):
     the award. Sites with no emission record are reported so the gap is visible
     rather than silently reducing the total. Logged journeys are direct, and once
     any exist they replace the award's share of SITE_TRAVEL_FIELDS.
+
+    With `year`, each site's latest record within that year is used and only
+    that year's journeys are counted, giving the award's footprint for one year.
     """
     from appname.models import ProcurementLine
 
@@ -2171,7 +2252,10 @@ def project_footprint(project):
     apportioned_total = Decimal('0')
     direct_lines = []
 
-    journeys = list(project.journeys.filter(is_planned=False))
+    journeys = project.journeys.filter(is_planned=False)
+    if year is not None:
+        journeys = journeys.filter(date__year=year)
+    journeys = list(journeys)
     travel_logged = bool(journeys)
     apportioned_fields = [
         field for field in APPORTIONABLE_FIELDS
@@ -2181,7 +2265,7 @@ def project_footprint(project):
     for project_site in project.sites.select_related('facility').all():
         facility = project_site.facility
         share = (project_site.share_pct or Decimal('0')) / Decimal('100')
-        record = _latest_record(facility)
+        record = _latest_record(facility, year)
         if record is None:
             site_rows.append({
                 'site_id': project_site.id,

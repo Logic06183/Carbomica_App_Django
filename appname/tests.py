@@ -19,7 +19,7 @@ from appname.models import (
     Facility, EmissionData, EmissionSource,
     Intervention, FacilityIntervention, Organisation, ProcurementLine,
     Project, ProjectSite, TravelJourney, CreditPurchase, LabAccreditation,
-    PlannedSpend, SustainabilityCost,
+    PlannedSpend, SustainabilityCost, AwardReductionTarget,
 )
 from appname.modeling import (
     INTERVENTION_LIBRARY,
@@ -30,7 +30,7 @@ from appname.modeling import (
     project_footprint, AIR_FACTORS, SURFACE_FACTORS, journey_tco2e,
     journey_policy_flags, credit_position, award_checklist, lab_status,
     project_estimate, REDUCTION_MEASURES, application_statement, MEASURE_COMMITMENTS,
-    ELIGIBLE_COSTS,
+    ELIGIBLE_COSTS, award_trajectory,
 )
 
 
@@ -2103,6 +2103,7 @@ class AwardChecklistTest(TestCase):
     def test_empty_award_fails_assessment_and_rest_not_applicable(self):
         states = self._states()
         self.assertEqual(states.pop('assessed'), 'fail')
+        self.assertEqual(states.pop('reduction'), 'warn')   # no target is never "n/a"
         self.assertEqual(set(states.values()), {'na'})
 
     def test_site_without_data_warns_assessment(self):
@@ -2604,4 +2605,146 @@ class SustainabilityCostTest(TestCase):
                                                'amount_usd': '100'})
         self.assertEqual(response.status_code, 404)
         self.assertFalse(SustainabilityCost.objects.exists())
+
+
+class AwardReductionPlanTest(TestCase):
+    """Annual award footprints against a straight-line reduction target."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create_user('plan', 'plan@example.com', 'pw')
+        cls.outsider = User.objects.create_user('planout', 'plo@example.com', 'pw')
+
+    def setUp(self):
+        self.facility = Facility.objects.create(
+            code_name='PLAN_SITE', display_name='Plan Lab', country='ZA',
+            sector='research', created_by=self.user)
+        self.source = EmissionSource.objects.create(
+            facility=self.facility, code_name='PLAN_SRC', display_name='baseline')
+        self.project = Project.objects.create(name='Plan Award', created_by=self.user)
+        ProjectSite.objects.create(project=self.project, facility=self.facility,
+                                   share_pct=Decimal('50'))
+        self.url = f'/projects/{self.project.id}/'
+
+    def _year(self, year, kwh):
+        return EmissionData.objects.create(
+            emission_source=self.source, date=date(year, 12, 31),
+            grid_electricity=Decimal(kwh))
+
+    def _site_t(self, kwh):
+        return Decimal(kwh) * ELECTRICITY_EF['ZA'] * Decimal('0.5')
+
+    def _target(self, base=2024, end=2028, pct='30'):
+        return AwardReductionTarget.objects.create(
+            project=self.project, baseline_year=base, target_year=end,
+            reduction_pct=Decimal(pct))
+
+    def test_year_footprint_uses_that_years_record_and_journeys(self):
+        self._year(2024, '100000')
+        self._year(2025, '60000')
+        TravelJourney.objects.create(
+            project=self.project, date=date(2025, 5, 1), origin='A', destination='B',
+            mode='rail_national', distance_km=Decimal('1000'), purpose='x')
+        fp24 = project_footprint(self.project, year=2024)
+        fp25 = project_footprint(self.project, year=2025)
+        self.assertEqual(fp24['by_category']['grid_electricity'], self._site_t('100000'))
+        self.assertEqual(fp24['travel_total'], Decimal('0'))
+        self.assertEqual(fp25['by_category']['grid_electricity'], self._site_t('60000'))
+        self.assertGreater(fp25['travel_total'], Decimal('0'))
+        # Default (no year) still means each site's latest record.
+        self.assertEqual(project_footprint(self.project)['by_category']['grid_electricity'],
+                         self._site_t('60000'))
+
+    def test_no_target_means_no_trajectory(self):
+        self.assertIsNone(award_trajectory(self.project))
+
+    def test_straight_line_maths(self):
+        self._year(2024, '100000')
+        self._target()
+        tr = award_trajectory(self.project)
+        base = self._site_t('100000')
+        required = {r['year']: r['required'] for r in tr['rows']}
+        self.assertEqual(sorted(required), [2024, 2025, 2026, 2027, 2028])
+        self.assertEqual(required[2024], base.quantize(Decimal('0.01')))
+        self.assertEqual(required[2026], (base * Decimal('0.85')).quantize(Decimal('0.01')))
+        self.assertEqual(required[2028], (base * Decimal('0.70')).quantize(Decimal('0.01')))
+
+    def test_on_and_off_track(self):
+        self._year(2024, '100000')
+        self._year(2025, '90000')      # line in 2025 is 92.5% -> on
+        self._target()
+        tr = award_trajectory(self.project)
+        self.assertEqual({r['year']: r['status'] for r in tr['rows']}[2025], 'on')
+        self.assertTrue(tr['on_track'])
+        self._year(2026, '95000')      # line in 2026 is 85% -> off, and it is the latest
+        tr = award_trajectory(self.project)
+        self.assertEqual({r['year']: r['status'] for r in tr['rows']}[2026], 'off')
+        self.assertFalse(tr['on_track'])
+
+    def test_year_with_a_silent_site_is_marked_incomplete(self):
+        other = Facility.objects.create(
+            code_name='PLAN_OTHER', display_name='Other', country='ZA',
+            sector='research', created_by=self.user)
+        other_src = EmissionSource.objects.create(
+            facility=other, code_name='PLAN_OSRC', display_name='b')
+        EmissionData.objects.create(emission_source=other_src, date=date(2024, 12, 31),
+                                    grid_electricity=Decimal('1000'))
+        ProjectSite.objects.create(project=self.project, facility=other,
+                                   share_pct=Decimal('10'))
+        self._year(2024, '100000')
+        self._year(2025, '90000')      # other site has no 2025 record
+        self._target()
+        tr = award_trajectory(self.project)
+        rows = {r['year']: r for r in tr['rows']}
+        self.assertFalse(rows[2024]['incomplete'])
+        self.assertTrue(rows[2025]['incomplete'])
+        # Understated years are never judged, so they cannot make the award look on track.
+        self.assertIsNone(rows[2025]['status'])
+        self.assertIsNone(tr['on_track'])
+
+    def test_missing_baseline_is_reported(self):
+        self._year(2025, '90000')
+        self._target(base=2024)
+        tr = award_trajectory(self.project)
+        self.assertTrue(tr['baseline_missing'])
+        self.assertEqual(tr['rows'], [])
+
+    def test_checklist_reduction_row_states(self):
+        def state():
+            fp = project_footprint(self.project)
+            rows = award_checklist(self.project, fp, credit_position(self.project, fp))
+            return next(r['state'] for r in rows if r['key'] == 'reduction')
+        self.assertEqual(state(), 'warn')                     # no target
+        target = self._target(base=2024)
+        self.assertEqual(state(), 'warn')                     # no baseline data
+        self._year(2024, '100000')
+        self.assertEqual(state(), 'pass')                     # set, nothing after baseline
+        self._year(2025, '99000')                             # above the 92.5% line
+        self.assertEqual(state(), 'warn')
+        target.reduction_pct = Decimal('1')                   # line at 99.75% -> on
+        target.save()
+        self.assertEqual(state(), 'pass')
+
+    def test_target_set_updated_and_validated_from_page(self):
+        self.client.force_login(self.user)
+        self.client.post(self.url, {'action': 'set_target', 'baseline_year': '2024',
+                                    'target_year': '2028', 'reduction_pct': '30'})
+        self.client.post(self.url, {'action': 'set_target', 'baseline_year': '2024',
+                                    'target_year': '2030', 'reduction_pct': '40'})
+        target = AwardReductionTarget.objects.get(project=self.project)
+        self.assertEqual((target.target_year, target.reduction_pct), (2030, Decimal('40')))
+        for bad in ({'baseline_year': '2028', 'target_year': '2024', 'reduction_pct': '30'},
+                    {'baseline_year': '2024', 'target_year': '2028', 'reduction_pct': '150'}):
+            self.client.post(self.url, {'action': 'set_target', **bad})
+            target.refresh_from_db()
+            self.assertEqual(target.target_year, 2030)
+        self.client.post(self.url, {'action': 'delete_target'})
+        self.assertFalse(AwardReductionTarget.objects.exists())
+
+    def test_outsider_cannot_set_target(self):
+        self.client.force_login(self.outsider)
+        response = self.client.post(self.url, {'action': 'set_target', 'baseline_year': '2024',
+                                               'target_year': '2028', 'reduction_pct': '30'})
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(AwardReductionTarget.objects.exists())
 

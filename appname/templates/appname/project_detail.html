@@ -96,8 +96,7 @@
         </table>
     </div>
     <div class="card-footer text-muted" style="font-size:.7rem;">
-        Checks the app can evidence from this award's own records. The reduction plan is
-        not checked yet.
+        Checks the app can evidence from this award's own records.
     </div>
 </div>
 
@@ -871,6 +870,95 @@
                 </span>
                 <button type="submit" class="btn btn-sm btn-success">Record purchase</button>
             </div>
+        </form>
+    </div>
+</div>
+
+<!-- ── Reduction plan ── -->
+<div class="card mt-4" id="reduction-plan">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <strong>Reduction plan</strong>
+        {% if trajectory %}
+        <form method="post" class="d-inline">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="delete_target">
+            <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete the reduction target?')">Delete target</button>
+        </form>
+        {% endif %}
+    </div>
+    <div class="card-body">
+        {% if trajectory %}
+        <p class="mb-2">
+            <strong>{{ trajectory.target.reduction_pct|floatformat:0 }}% below {{ trajectory.target.baseline_year }}
+            by {{ trajectory.target.target_year }}</strong>
+            {% if trajectory.target.note %}<span class="text-muted small"> · {{ trajectory.target.note }}</span>{% endif %}
+            {% if trajectory.on_track is True %}<span class="badge bg-success ms-2">on track</span>
+            {% elif trajectory.on_track is False %}<span class="badge bg-danger ms-2">off track</span>{% endif %}
+        </p>
+        {% if trajectory.baseline_missing %}
+        <div class="alert alert-warning py-2 small mb-0">
+            No data for the {{ trajectory.target.baseline_year }} baseline year, so the target line cannot be drawn.
+            Years with data: {{ data_years|join:", "|default:"none" }}.
+        </div>
+        {% else %}
+        <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+                <thead class="table-light">
+                    <tr><th>Year</th><th class="text-end">Target line (tCO<sub>2</sub>e)</th><th class="text-end">Actual (tCO<sub>2</sub>e)</th><th>Status</th></tr>
+                </thead>
+                <tbody>
+                    {% for r in trajectory.rows %}
+                    <tr>
+                        <td>{{ r.year }}</td>
+                        <td class="text-end">{{ r.required|floatformat:1 }}</td>
+                        <td class="text-end">
+                            {% if r.actual is not None %}{{ r.actual|floatformat:1 }}{% else %}—{% endif %}
+                            {% if r.incomplete %}<span class="badge bg-warning text-dark ms-1" title="A site on the award has no record this year, so this is understated.">incomplete</span>{% endif %}
+                        </td>
+                        <td>
+                            {% if forloop.first %}<span class="text-muted small">baseline</span>
+                            {% elif r.status == 'on' %}<span class="badge bg-success">on track</span>
+                            {% elif r.status == 'off' %}<span class="badge bg-danger">above line</span>
+                            {% elif r.incomplete %}<span class="text-muted small">not assessed</span>{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+        {% else %}
+        <p class="text-muted small">
+            No target yet. Wellcome asks researchers to "demonstrate how they will reduce the emissions and
+            natural resources used in their research". Set a percentage cut from a baseline year; each year's
+            actual footprint is tracked against a straight line. Years with data: {{ data_years|join:", "|default:"none" }}.
+        </p>
+        {% endif %}
+    </div>
+    <div class="card-body border-top">
+        <form method="post" class="row g-2 align-items-end">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="set_target">
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Baseline year</label>
+                <input type="number" name="baseline_year" class="form-control form-control-sm" required
+                       value="{{ trajectory.target.baseline_year|default:'' }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Target year</label>
+                <input type="number" name="target_year" class="form-control form-control-sm" required
+                       value="{{ trajectory.target.target_year|default:'' }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Reduction %</label>
+                <input type="number" step="0.01" min="0.01" max="100" name="reduction_pct" class="form-control form-control-sm" required
+                       value="{{ trajectory.target.reduction_pct|default:'' }}">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label small fw-semibold">Note</label>
+                <input type="text" name="note" class="form-control form-control-sm" value="{{ trajectory.target.note|default:'' }}">
+            </div>
+            <div class="col-md-2"><button type="submit" class="btn btn-sm btn-primary w-100">{% if trajectory %}Update{% else %}Set target{% endif %}</button></div>
         </form>
     </div>
 </div>
