@@ -2,7 +2,7 @@
 {% load humanize %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-start mb-1">
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-1">
     <div>
         <p class="section-label mb-1">Award carbon report</p>
         <h2 class="mb-1">{{ project.name }}</h2>
@@ -12,7 +12,7 @@
             {% if project.organisation %} · {{ project.organisation.display_label }}{% endif %}
         </p>
     </div>
-    <div class="text-nowrap">
+    <div class="d-flex flex-wrap gap-1">
         <a href="{% url 'project_report' project.id %}" class="btn btn-primary btn-sm">
             <i class="fas fa-file-lines me-1"></i> Funder report
         </a>
@@ -111,7 +111,7 @@
     </div>
     <div class="card-body py-2 small">
         {% for r in org_readiness %}
-        <span class="me-3 text-nowrap">
+        <span class="me-3 d-inline-block">
             <span class="badge {% if r.state == 'pass' %}bg-success{% elif r.state == 'warn' %}bg-warning text-dark{% elif r.state == 'fail' %}bg-danger{% else %}bg-light text-dark border{% endif %}">{% if r.state == 'na' %}n/a{% else %}{{ r.state }}{% endif %}</span>
             {{ r.label }}
         </span>

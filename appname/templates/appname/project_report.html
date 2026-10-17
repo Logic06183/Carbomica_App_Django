@@ -13,7 +13,7 @@
 {% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-start mb-3">
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
     <div>
         <p class="section-label mb-1">Funder carbon report</p>
         <h2 class="mb-1">{{ project.name }}</h2>
@@ -24,7 +24,7 @@
         </p>
         <p class="text-muted small mb-0">Generated {{ generated_on|date:"j F Y" }}</p>
     </div>
-    <div class="text-nowrap no-print">
+    <div class="d-flex flex-wrap gap-1 no-print">
         <button onclick="window.print()" class="btn btn-outline-secondary btn-sm"><i class="fas fa-print me-1"></i> Print / PDF</button>
         <a href="{% url 'project_export' project.id %}" class="btn btn-outline-secondary btn-sm"><i class="fas fa-file-csv me-1"></i> CSV</a>
         <a href="{% url 'project_detail' project.id %}" class="btn btn-outline-secondary btn-sm"><i class="fas fa-arrow-left me-1"></i> Award</a>
@@ -56,7 +56,7 @@
 <!-- Alignment -->
 <div class="card mb-3">
     <div class="card-header"><strong>Wellcome alignment</strong></div>
-    <table class="table table-sm mb-0 report-table">
+    <div class="table-responsive"><table class="table table-sm mb-0 report-table">
         <tbody>
             {% for c in checklist %}
             <tr>
@@ -74,13 +74,13 @@
             </tr>
             {% endfor %}
         </tbody>
-    </table>
+    </table></div>
 </div>
 
 {% if org_readiness %}
 <div class="card mb-3">
     <div class="card-header"><strong>Lead organisation readiness: {{ project.organisation.name }}</strong> <span class="text-muted small">· self-declared</span></div>
-    <table class="table table-sm mb-0 report-table">
+    <div class="table-responsive"><table class="table table-sm mb-0 report-table">
         <tbody>
             {% for r in org_readiness %}
             <tr>
@@ -90,7 +90,7 @@
             </tr>
             {% endfor %}
         </tbody>
-    </table>
+    </table></div>
 </div>
 {% endif %}
 
@@ -98,20 +98,20 @@
     <div class="col-md-6">
         <div class="card mb-3">
             <div class="card-header"><strong>Emissions by category</strong></div>
-            <table class="table table-sm mb-0 report-table">
+            <div class="table-responsive"><table class="table table-sm mb-0 report-table">
                 <thead class="table-light"><tr><th>Category</th><th>Scope</th><th class="text-end">tCO<sub>2</sub>e</th><th class="text-end">Share</th></tr></thead>
                 <tbody>
                     {% for r in category_rows %}
                     <tr><td>{{ r.label }}</td><td>S{{ r.scope }}</td><td class="text-end">{{ r.tco2e|floatformat:2 }}</td><td class="text-end">{{ r.share|floatformat:1 }}%</td></tr>
                     {% empty %}<tr><td colspan="4" class="text-muted">No emissions attributed.</td></tr>{% endfor %}
                 </tbody>
-            </table>
+            </table></div>
         </div>
     </div>
     <div class="col-md-6">
         <div class="card mb-3">
             <div class="card-header"><strong>Sites and apportionment</strong></div>
-            <table class="table table-sm mb-0 report-table">
+            <div class="table-responsive"><table class="table table-sm mb-0 report-table">
                 <thead class="table-light"><tr><th>Site</th><th class="text-end">Share</th><th>Evidence</th><th class="text-end">tCO<sub>2</sub>e</th></tr></thead>
                 <tbody>
                     {% for r in footprint.site_rows %}
@@ -123,7 +123,7 @@
                     </tr>
                     {% empty %}<tr><td colspan="4" class="text-muted">No sites.</td></tr>{% endfor %}
                 </tbody>
-            </table>
+            </table></div>
         </div>
     </div>
 </div>
@@ -131,7 +131,7 @@
 <!-- Travel -->
 <div class="card mb-3">
     <div class="card-header"><strong>Travel log</strong> <span class="text-muted small">· {{ footprint.journeys|length }} journeys · {{ footprint.travel_total|floatformat:2 }} tCO<sub>2</sub>e</span></div>
-    <table class="table table-sm mb-0 report-table">
+    <div class="table-responsive"><table class="table table-sm mb-0 report-table">
         <thead class="table-light"><tr><th>Date</th><th>Journey</th><th>Mode</th><th class="text-end">km × people</th><th class="text-end">tCO<sub>2</sub>e</th><th>Purpose</th><th>Checks</th></tr></thead>
         <tbody>
             {% for row in footprint.journey_rows %}{% with j=row.journey %}
@@ -148,7 +148,7 @@
             <tr><td colspan="7" class="text-muted">No journeys logged; travel is apportioned from site figures.</td></tr>
             {% endfor %}
         </tbody>
-    </table>
+    </table></div>
 </div>
 
 <!-- Credits -->
@@ -163,14 +163,14 @@
         · {% if credits.surplus %}surplus {{ credits.surplus|floatformat:2 }}{% else %}still to buy <strong>{{ credits.outstanding|floatformat:2 }}</strong>{% endif %}
     </div>
     {% if credits.purchases %}
-    <table class="table table-sm mb-0 report-table">
+    <div class="table-responsive"><table class="table table-sm mb-0 report-table">
         <thead class="table-light"><tr><th class="text-end">Credits</th><th>Provider</th><th>Standard</th><th>Registry ref</th><th>Retired</th></tr></thead>
         <tbody>
             {% for p in credits.purchases %}
             <tr><td class="text-end">{{ p.credits_tco2e|floatformat:2 }}</td><td>{{ p.provider }}</td><td>{{ p.get_registry_display }}</td><td>{{ p.registry_reference|default:"—" }}</td><td>{% if p.retired %}yes{% else %}no{% endif %}</td></tr>
             {% endfor %}
         </tbody>
-    </table>
+    </table></div>
     {% endif %}
 </div>
 
@@ -178,7 +178,7 @@
 {% if trajectory and not trajectory.baseline_missing %}
 <div class="card mb-3">
     <div class="card-header"><strong>Reduction plan</strong> <span class="text-muted small">· {{ trajectory.target.reduction_pct|floatformat:0 }}% below {{ trajectory.target.baseline_year }} by {{ trajectory.target.target_year }}</span></div>
-    <table class="table table-sm mb-0 report-table">
+    <div class="table-responsive"><table class="table table-sm mb-0 report-table">
         <thead class="table-light"><tr><th>Year</th><th class="text-end">Target line</th><th class="text-end">Actual</th><th>Status</th></tr></thead>
         <tbody>
             {% for r in trajectory.rows %}
@@ -187,14 +187,14 @@
                 <td>{% if forloop.first %}baseline{% elif r.status == 'on' %}on track{% elif r.status == 'off' %}above line{% elif r.incomplete %}incomplete{% endif %}</td></tr>
             {% endfor %}
         </tbody>
-    </table>
+    </table></div>
 </div>
 {% endif %}
 
 <!-- Estimate -->
 <div class="card mb-3">
     <div class="card-header"><strong>Application estimate against actuals</strong></div>
-    <table class="table table-sm mb-0 report-table">
+    <div class="table-responsive"><table class="table table-sm mb-0 report-table">
         <thead class="table-light"><tr><th></th><th class="text-end">Estimate</th><th class="text-end">Actual</th><th class="text-end">Difference</th></tr></thead>
         <tbody>
             {% for r in estimate.rows %}
@@ -202,7 +202,7 @@
             {% endfor %}
             <tr class="fw-semibold"><td>Total</td><td class="text-end">{{ estimate.estimate_total|floatformat:2 }}</td><td class="text-end">{{ estimate.actual_total|floatformat:2 }}</td><td class="text-end">{{ estimate.difference|floatformat:2 }}</td></tr>
         </tbody>
-    </table>
+    </table></div>
     {% if estimate.cost_lines %}
     <div class="card-body small border-top">
         Sustainability costs budgeted: <strong>${{ estimate.costs_total|floatformat:2|intcomma }}</strong> —
