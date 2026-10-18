@@ -51,6 +51,16 @@ class Organisation(models.Model):
         help_text='Users who can access all facilities in this organisation '
                   'and every organisation beneath it.'
     )
+    # Self-declared scope for Wellcome's organisation-level duties. The policy
+    # does not define "high-income", so the organisation states it.
+    based_in_uk = models.BooleanField(
+        default=False, help_text='UK-based: Wellcome expects Concordat signatory status.'
+    )
+    high_income_country = models.BooleanField(
+        default=False,
+        help_text='Based in a high-income country, which brings extra duties under '
+                  "Wellcome's policy. The policy does not define high-income."
+    )
 
     class Meta:
         ordering = ['name']
@@ -199,6 +209,11 @@ class Facility(models.Model):
         related_name='facilities',
         help_text='Organisation this facility belongs to. All org members can access it.'
     )
+    has_laboratory = models.BooleanField(
+        default=False,
+        help_text='The site has laboratories. Wellcome expects labs to hold LEAF, '
+                  'My Green Lab or equivalent accreditation.'
+    )
 
     class Meta:
         verbose_name = _('Facility')
@@ -207,6 +222,10 @@ class Facility(models.Model):
 
     def __str__(self):
         return self.display_name
+
+    @property
+    def is_laboratory(self):
+        return self.has_laboratory or self.facility_type == 'university_lab'
 
 class EmissionSource(models.Model):
     facility = models.ForeignKey(Facility, related_name='emission_sources', on_delete=models.CASCADE)
@@ -334,6 +353,20 @@ class Project(models.Model):
                   '41.0 FTE at the Bara laboratory, from the 2024 timesheet '
                   'return". Reproduced on the funder report.'
     )
+    # Application-stage estimate
+    credit_price_usd = models.DecimalField(
+        max_digits=8, decimal_places=2, null=True, blank=True,
+        validators=[MinValueValidator(0.0)],
+        help_text='Price per credit quoted by your provider, used to budget for '
+                  'mitigating planned travel. Left blank, no cost is estimated.'
+    )
+    reduction_measures = models.JSONField(
+        default=list, blank=True,
+        help_text='Keys from modeling.REDUCTION_MEASURES the award commits to.'
+    )
+    reduction_notes = models.TextField(
+        blank=True, help_text='Other measures, in the applicant\'s own words.'
+    )
     created_by = models.ForeignKey(
         User, null=True, blank=True, on_delete=models.SET_NULL,
         related_name='projects',
@@ -396,6 +429,502 @@ class ProjectSite(models.Model):
 
     def __str__(self):
         return f'{self.project} @ {self.facility} ({self.share_pct}%)'
+
+
+class TravelJourney(models.Model):
+    """
+    One journey made for an award.
+
+    Logged journeys are attributed to the award directly. Once an award has any,
+    they replace its apportioned share of the site's flights and road travel
+    (modeling.SITE_TRAVEL_FIELDS), so the same trip is never counted twice.
+    Factors come from DEFRA's 2026 business-travel tables (modeling.AIR_FACTORS,
+    modeling.SURFACE_FACTORS); combinations DEFRA does not publish are rejected.
+    """
+
+    MODE_CHOICES = [
+        ('air', 'Flight'),
+        ('rail_national', 'Rail (national)'),
+        ('rail_international', 'Rail (international)'),
+        ('light_rail', 'Light rail / tram'),
+        ('underground', 'Underground / metro'),
+        ('bus', 'Local bus'),
+        ('coach', 'Coach'),
+        ('taxi', 'Taxi'),
+        ('car', 'Car (per vehicle)'),
+    ]
+    HAUL_CHOICES = [
+        ('domestic_uk', 'Domestic, within the UK'),
+        ('short_haul_uk', 'Short-haul, to/from the UK'),
+        ('long_haul_uk', 'Long-haul, to/from the UK'),
+        ('international_non_uk', 'International, not touching the UK'),
+    ]
+    CABIN_CHOICES = [
+        ('average', 'Unknown / average'),
+        ('economy', 'Economy'),
+        ('premium_economy', 'Premium economy'),
+        ('business', 'Business'),
+        ('first', 'First'),
+    ]
+
+    project = models.ForeignKey(Project, related_name='journeys', on_delete=models.CASCADE)
+    date = models.DateField()
+    traveller = models.CharField(
+        max_length=120, blank=True,
+        help_text='Role or name, e.g. "PI" or "field coordinator".'
+    )
+    origin = models.CharField(max_length=120)
+    destination = models.CharField(max_length=120)
+    mode = models.CharField(max_length=20, choices=MODE_CHOICES)
+    air_haul = models.CharField(
+        max_length=24, choices=HAUL_CHOICES, blank=True,
+        help_text='Flights only. DEFRA factors differ by haul and by whether the '
+                  'flight starts or ends in the UK.'
+    )
+    cabin_class = models.CharField(
+        max_length=20, choices=CABIN_CHOICES, blank=True,
+        help_text='Flights only.'
+    )
+    distance_km = models.DecimalField(
+        max_digits=10, decimal_places=1, validators=[MinValueValidator(0.1)],
+        help_text='Distance of this journey. Log a return trip as two journeys.'
+    )
+    passengers = models.PositiveIntegerField(
+        default=1, validators=[MinValueValidator(1)],
+        help_text='People travelling together on this journey. Ignored for car, '
+                  'whose factor is per vehicle.'
+    )
+    rail_hours = models.DecimalField(
+        max_digits=5, decimal_places=1, null=True, blank=True,
+        validators=[MinValueValidator(0.0)],
+        help_text='Flights only: door-to-door time the same trip would take by rail, '
+                  'including connections. Wellcome expects rail for trips up to 10 hours.'
+    )
+    purpose = models.TextField(
+        blank=True,
+        help_text='Why the trip was needed. Wellcome asks that all travel be justified.'
+    )
+    is_planned = models.BooleanField(
+        default=False,
+        help_text='A trip planned in the application, not yet made. Planned trips '
+                  'feed the estimate only, never the reported footprint.'
+    )
+    created_by = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='journeys',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _('Travel Journey')
+        verbose_name_plural = _('Travel Journeys')
+        ordering = ['-date', '-id']
+
+    def __str__(self):
+        return f'{self.origin} → {self.destination} ({self.get_mode_display()}, {self.date})'
+
+    def clean(self):
+        from appname.modeling import journey_factor
+        from django.core.exceptions import ValidationError
+
+        if not self.is_planned and self.date and self.date > timezone.localdate():
+            raise ValidationError({'date': (
+                'This journey is dated in the future. Add it as a planned trip in the '
+                'application estimate, or correct the date.'
+            )})
+        if self.mode == 'air':
+            if not self.air_haul:
+                raise ValidationError({'air_haul': 'Choose the flight type.'})
+            self.cabin_class = self.cabin_class or 'average'
+            if journey_factor('air', self.air_haul, self.cabin_class) is None:
+                raise ValidationError({
+                    'cabin_class': (
+                        f'DEFRA publishes no factor for {self.get_cabin_class_display()} '
+                        f'on a {self.get_air_haul_display().lower()} flight. '
+                        'Choose the nearest class it does publish.'
+                    ),
+                })
+        else:
+            self.air_haul = ''
+            self.cabin_class = ''
+            self.rail_hours = None
+
+    def tco2e(self):
+        from appname.modeling import journey_tco2e
+        return journey_tco2e(
+            self.mode, self.distance_km, self.passengers,
+            self.air_haul, self.cabin_class,
+        )
+
+    def policy_flags(self):
+        from appname.modeling import journey_policy_flags
+        return journey_policy_flags(self)
+
+
+class PlannedSpend(models.Model):
+    """
+    Purchases planned in the application, by procurement category, so the
+    estimate can be built before any spend is charged to the award. Uses the
+    same spend-based factors as itemised procurement.
+    """
+
+    project = models.ForeignKey(Project, related_name='planned_spend', on_delete=models.CASCADE)
+    category = models.CharField(
+        max_length=40, help_text='Key into modeling.PROCUREMENT_CATEGORIES.'
+    )
+    description = models.CharField(max_length=255, blank=True)
+    spend_usd = models.DecimalField(
+        max_digits=14, decimal_places=2, validators=[MinValueValidator(Decimal('0.01'))],
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _('Planned Spend')
+        verbose_name_plural = _('Planned Spend')
+        ordering = ['-spend_usd']
+
+    def __str__(self):
+        return f'{self.category} — {self.spend_usd}'
+
+    def clean(self):
+        from appname.modeling import PROCUREMENT_CATEGORIES
+        from django.core.exceptions import ValidationError
+        if self.category not in PROCUREMENT_CATEGORIES:
+            raise ValidationError({'category': 'Unknown procurement category.'})
+
+    @property
+    def category_label(self):
+        from appname.modeling import PROCUREMENT_CATEGORIES
+        return PROCUREMENT_CATEGORIES[self.category]['display_name']
+
+    def tco2e(self):
+        from appname.modeling import PROCUREMENT_CATEGORIES
+        return self.spend_usd * PROCUREMENT_CATEGORIES[self.category]['factor']
+
+
+class SustainabilityCost(models.Model):
+    """
+    A sustainability cost budgeted on the award, under one of the headings
+    Wellcome's policy lists as fundable (modeling.ELIGIBLE_COSTS).
+    """
+
+    project = models.ForeignKey(
+        Project, related_name='sustainability_costs', on_delete=models.CASCADE,
+    )
+    kind = models.CharField(max_length=40, help_text='Key into modeling.ELIGIBLE_COSTS.')
+    description = models.CharField(max_length=255, blank=True)
+    amount_usd = models.DecimalField(
+        max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal('0.01'))],
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _('Sustainability Cost')
+        verbose_name_plural = _('Sustainability Costs')
+        ordering = ['kind', '-amount_usd']
+
+    def __str__(self):
+        return f'{self.kind} — {self.amount_usd}'
+
+    def clean(self):
+        from appname.modeling import ELIGIBLE_COSTS
+        from django.core.exceptions import ValidationError
+        if self.kind not in ELIGIBLE_COSTS:
+            raise ValidationError({'kind': 'Not a cost heading Wellcome lists.'})
+
+    @property
+    def label(self):
+        from appname.modeling import ELIGIBLE_COSTS
+        return ELIGIBLE_COSTS[self.kind][0]
+
+
+class ComputeJob(models.Model):
+    """
+    Computing run for an award outside its own sites (national HPC, cloud),
+    estimated with the Green Algorithms method (modeling.compute_job_kwh).
+    Computing on a site's own servers is already inside that site's
+    electricity, so it is not logged here.
+    """
+
+    project = models.ForeignKey(Project, related_name='compute_jobs', on_delete=models.CASCADE)
+    description = models.CharField(max_length=200)
+    date = models.DateField(help_text='When the work ran (or will run).')
+    runtime_hours = models.DecimalField(
+        max_digits=10, decimal_places=2, validators=[MinValueValidator(Decimal('0.01'))])
+    cores = models.PositiveIntegerField(validators=[MinValueValidator(1)])
+    watts_per_core = models.DecimalField(
+        max_digits=7, decimal_places=2, validators=[MinValueValidator(Decimal('0.01'))],
+        help_text="Processor TDP divided by its cores, from the manufacturer's specification.")
+    usage_factor = models.DecimalField(
+        max_digits=4, decimal_places=3, default=Decimal('1'),
+        validators=[MinValueValidator(Decimal('0.001')), MaxValueValidator(Decimal('1'))],
+        help_text='Share of the run the cores were busy; 1 if unknown.')
+    memory_gb = models.DecimalField(
+        max_digits=9, decimal_places=2, default=Decimal('0'),
+        validators=[MinValueValidator(0.0)], help_text='Memory requested, in GB.')
+    pue = models.DecimalField(
+        max_digits=4, decimal_places=2, default=Decimal('1.67'),
+        validators=[MinValueValidator(Decimal('1'))],
+        help_text="Data centre PUE; 1.67 is the worldwide average Green Algorithms uses.")
+    runs = models.PositiveIntegerField(
+        default=1, validators=[MinValueValidator(1)],
+        help_text='How many times it runs (Green Algorithms "pragmatic scaling factor").')
+    grid_country = models.CharField(
+        max_length=10, default='OTHER',
+        help_text='Where the data centre is; sets the grid carbon intensity.')
+    is_planned = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _('Compute Job')
+        verbose_name_plural = _('Compute Jobs')
+        ordering = ['-date', '-id']
+
+    def __str__(self):
+        return self.description
+
+    def clean(self):
+        from appname.modeling import ELECTRICITY_EF
+        from django.core.exceptions import ValidationError
+        if self.grid_country not in ELECTRICITY_EF:
+            raise ValidationError({'grid_country': 'Unknown grid.'})
+        if not self.is_planned and self.date and self.date > timezone.localdate():
+            raise ValidationError({'date': (
+                'This computing is dated in the future. Tick "Planned", or correct the date.'
+            )})
+
+    def kwh(self):
+        from appname.modeling import compute_job_kwh
+        return compute_job_kwh(self.runtime_hours, self.cores, self.watts_per_core,
+                               self.usage_factor, self.memory_gb, self.pue, self.runs)
+
+    def tco2e(self):
+        from appname.modeling import ELECTRICITY_EF
+        return self.kwh() * ELECTRICITY_EF[self.grid_country]
+
+
+class AwardReductionTarget(models.Model):
+    """
+    A reduction target for one award: cut its annual footprint by a percentage
+    from a baseline year by a target year, tracked along a straight line.
+    Wellcome asks researchers to assess their impact "and to track their
+    efforts to reduce it".
+    """
+
+    project = models.OneToOneField(
+        Project, related_name='reduction_target', on_delete=models.CASCADE,
+    )
+    baseline_year = models.PositiveIntegerField()
+    target_year = models.PositiveIntegerField()
+    reduction_pct = models.DecimalField(
+        max_digits=5, decimal_places=2,
+        validators=[MinValueValidator(Decimal('0.01')), MaxValueValidator(Decimal('100'))],
+    )
+    note = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _('Award Reduction Target')
+        verbose_name_plural = _('Award Reduction Targets')
+
+    def __str__(self):
+        return f'{self.project}: -{self.reduction_pct}% {self.baseline_year}→{self.target_year}'
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        if (self.baseline_year and self.target_year
+                and self.target_year <= self.baseline_year):
+            raise ValidationError({'target_year': 'Target year must be after the baseline year.'})
+
+
+class ReadinessDeclaration(models.Model):
+    """
+    An organisation's self-declared position on one of the organisation-level
+    duties in Wellcome's funding policy (modeling.ORG_READINESS_ITEMS), with
+    evidence. Self-declared: the app records it and does not verify it.
+    """
+
+    STATUS_CHOICES = [
+        ('yes', 'In place'),
+        ('in_progress', 'In progress'),
+        ('no', 'Not in place'),
+    ]
+
+    organisation = models.ForeignKey(
+        'Organisation', related_name='readiness', on_delete=models.CASCADE,
+    )
+    item = models.CharField(max_length=40, help_text='Key into modeling.ORG_READINESS_ITEMS.')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES)
+    evidence_url = models.URLField(blank=True)
+    note = models.CharField(max_length=255, blank=True)
+    declared_on = models.DateField()
+    declared_by = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL, related_name='+',
+    )
+
+    class Meta:
+        verbose_name = _('Readiness Declaration')
+        verbose_name_plural = _('Readiness Declarations')
+        constraints = [
+            models.UniqueConstraint(fields=['organisation', 'item'],
+                                    name='unique_org_readiness_item'),
+        ]
+
+    def __str__(self):
+        return f'{self.organisation}: {self.item} = {self.status}'
+
+
+class LabAccreditation(models.Model):
+    """
+    A green-lab accreditation held by a site.
+
+    Wellcome: labs should "achieve the minimum level of accreditation offered by
+    LEAF, My Green Lab or equivalent by the end of 2025", so any level counts.
+    Levels: LEAF awards Bronze, Silver and Gold (UCL LEAF programme page); My
+    Green Lab awards "Bronze, Silver, Gold, Platinum, or Green" and
+    "Recertification occurs 2 years after certification date" (mygreenlab.org
+    green-lab-certification, read 2026-10-17). LEAF validity is not stated on
+    its primary page, so a LEAF award lapses only on an expiry date the user
+    enters.
+    """
+
+    SCHEME_CHOICES = [
+        ('leaf', 'LEAF'),
+        ('my_green_lab', 'My Green Lab'),
+        ('other', 'Other (equivalent scheme)'),
+    ]
+    LEVEL_CHOICES = [
+        ('bronze', 'Bronze'),
+        ('silver', 'Silver'),
+        ('gold', 'Gold'),
+        ('platinum', 'Platinum'),
+        ('green', 'Green'),
+        ('other', 'Other / not graded'),
+    ]
+    SCHEME_LEVELS = {
+        'leaf': {'bronze', 'silver', 'gold'},
+        'my_green_lab': {'bronze', 'silver', 'gold', 'platinum', 'green'},
+    }
+    MGL_RECERTIFY_YEARS = 2
+
+    facility = models.ForeignKey(
+        Facility, related_name='lab_accreditations', on_delete=models.CASCADE,
+    )
+    lab_name = models.CharField(
+        max_length=200, blank=True, help_text='Which lab, if the site has several.'
+    )
+    scheme = models.CharField(max_length=20, choices=SCHEME_CHOICES)
+    level = models.CharField(max_length=20, choices=LEVEL_CHOICES)
+    awarded_on = models.DateField()
+    expires_on = models.DateField(
+        null=True, blank=True,
+        help_text='Leave blank for My Green Lab to use its 2-year recertification date.'
+    )
+    evidence_url = models.URLField(blank=True, help_text='Certificate or listing.')
+    created_by = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='lab_accreditations',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _('Lab Accreditation')
+        verbose_name_plural = _('Lab Accreditations')
+        ordering = ['-awarded_on', '-id']
+
+    def __str__(self):
+        return f'{self.get_scheme_display()} {self.get_level_display()} — {self.facility}'
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        allowed = self.SCHEME_LEVELS.get(self.scheme)
+        if allowed is not None and self.level not in allowed:
+            raise ValidationError({'level': (
+                f'{self.get_scheme_display()} does not award '
+                f'{self.get_level_display()}.'
+            )})
+        if self.expires_on and self.awarded_on and self.expires_on < self.awarded_on:
+            raise ValidationError({'expires_on': 'Expiry is before the award date.'})
+
+    @property
+    def valid_until(self):
+        if self.expires_on:
+            return self.expires_on
+        if self.scheme == 'my_green_lab' and self.awarded_on:
+            try:
+                return self.awarded_on.replace(
+                    year=self.awarded_on.year + self.MGL_RECERTIFY_YEARS)
+            except ValueError:  # 29 February
+                return self.awarded_on.replace(
+                    year=self.awarded_on.year + self.MGL_RECERTIFY_YEARS, day=28)
+        return None
+
+    def is_current(self, on_date):
+        until = self.valid_until
+        return self.awarded_on <= on_date and (until is None or until >= on_date)
+
+
+class CreditPurchase(models.Model):
+    """
+    Carbon credits bought to mitigate an award's remaining travel emissions.
+
+    Wellcome's policy asks grant holders to "Mitigate the remaining carbon
+    emissions of all journeys using accredited carbon credits" and makes the
+    cost eligible. One credit is counted as one tonne CO₂e: Verra states each
+    Verified Carbon Unit "represents a reduction or removal of one tonne of
+    CO2e" (VCS Program Details, read 2026-10-17).
+    """
+
+    REGISTRY_CHOICES = [
+        ('verra', 'Verra (VCS)'),
+        ('gold_standard', 'Gold Standard'),
+        ('plan_vivo', 'Plan Vivo'),
+        ('woodland_carbon_code', 'Woodland Carbon Code'),
+        ('other', 'Other / not accredited'),
+    ]
+    # The four standards Wellcome names as examples of third-party accreditation.
+    ACCREDITED_REGISTRIES = {'verra', 'gold_standard', 'plan_vivo', 'woodland_carbon_code'}
+
+    project = models.ForeignKey(
+        Project, related_name='credit_purchases', on_delete=models.CASCADE,
+    )
+    credits_tco2e = models.DecimalField(
+        max_digits=10, decimal_places=2, validators=[MinValueValidator(Decimal('0.01'))],
+        help_text='Credits bought (1 credit = 1 tCO₂e).'
+    )
+    provider = models.CharField(
+        max_length=200, help_text='Project or broker the credits came from.'
+    )
+    registry = models.CharField(max_length=32, choices=REGISTRY_CHOICES, default='verra')
+    registry_reference = models.CharField(
+        max_length=255, blank=True,
+        help_text='Registry serial or retirement reference, for audit.'
+    )
+    cost_usd = models.DecimalField(
+        max_digits=12, decimal_places=2, null=True, blank=True,
+        validators=[MinValueValidator(0.0)],
+    )
+    purchase_date = models.DateField(null=True, blank=True)
+    retired = models.BooleanField(
+        default=False, help_text='Credits retired on the registry in the award\'s name.'
+    )
+    created_by = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='credit_purchases',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _('Credit Purchase')
+        verbose_name_plural = _('Credit Purchases')
+        ordering = ['-purchase_date', '-id']
+
+    def __str__(self):
+        return f'{self.credits_tco2e} credits — {self.provider}'
+
+    @property
+    def is_accredited(self):
+        return self.registry in self.ACCREDITED_REGISTRIES
 
 
 class ProcurementLine(models.Model):

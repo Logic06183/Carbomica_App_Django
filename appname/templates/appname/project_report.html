@@ -1,0 +1,231 @@
+{% extends 'appname/base.html' %}
+{% load humanize %}
+
+{% block extra_css %}
+<style>
+    @media print {
+        .hh-navbar, footer, .no-print { display: none !important; }
+        .card { break-inside: avoid; box-shadow: none !important; }
+        body { font-size: 11pt; }
+    }
+    .report-table td, .report-table th { font-size: .85rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+    <div>
+        <p class="section-label mb-1">Funder carbon report</p>
+        <h2 class="mb-1">{{ project.name }}</h2>
+        <p class="text-muted mb-0">
+            {{ project.reference_label }}
+            {% if project.principal_investigator %} · PI {{ project.principal_investigator }}{% endif %}
+            {% if project.organisation %} · {{ project.organisation.display_label }}{% endif %}
+        </p>
+        <p class="text-muted small mb-0">Generated {{ generated_on|date:"j F Y" }}</p>
+    </div>
+    <div class="d-flex flex-wrap gap-1 no-print">
+        <button onclick="window.print()" class="btn btn-outline-secondary btn-sm"><i class="fas fa-print me-1"></i> Print / PDF</button>
+        <a href="{% url 'project_export' project.id %}" class="btn btn-outline-secondary btn-sm"><i class="fas fa-file-csv me-1"></i> CSV</a>
+        <a href="{% url 'project_detail' project.id %}" class="btn btn-outline-secondary btn-sm"><i class="fas fa-arrow-left me-1"></i> Award</a>
+    </div>
+</div>
+
+<!-- Headline -->
+<div class="row g-3 mb-3">
+    <div class="col-3"><div class="card text-center py-2">
+        <div class="text-muted small">Award footprint</div>
+        <div class="fw-bold fs-4" style="color:var(--hh-red);">{{ footprint.total|floatformat:1 }}</div>
+        <div class="text-muted small">tCO<sub>2</sub>e</div>
+    </div></div>
+    <div class="col-3"><div class="card text-center py-2">
+        <div class="text-muted small">Charged directly</div>
+        <div class="fw-bold fs-4">{{ footprint.direct_total|floatformat:1 }}</div>
+        <div class="text-muted small">incl. {{ footprint.travel_total|floatformat:1 }} logged travel</div>
+    </div></div>
+    <div class="col-3"><div class="card text-center py-2">
+        <div class="text-muted small">Apportioned from sites</div>
+        <div class="fw-bold fs-4">{{ footprint.apportioned_total|floatformat:1 }}</div>
+    </div></div>
+    <div class="col-3"><div class="card text-center py-2">
+        <div class="text-muted small">GHG Protocol scopes</div>
+        <div class="small mt-1">S1 {{ scope_totals.1|floatformat:1 }} · S2 {{ scope_totals.2|floatformat:1 }} · S3 {{ scope_totals.3|floatformat:1 }}</div>
+    </div></div>
+</div>
+
+<!-- Alignment -->
+<div class="card mb-3">
+    <div class="card-header"><strong>Wellcome alignment</strong></div>
+    <div class="table-responsive"><table class="table table-sm mb-0 report-table">
+        <tbody>
+            {% for c in checklist %}
+            <tr>
+                <td style="width:6rem;">
+                    <span class="badge {% if c.state == 'pass' %}bg-success{% elif c.state == 'warn' %}bg-warning text-dark{% elif c.state == 'fail' %}bg-danger{% else %}bg-light text-dark border{% endif %}">
+                        {% if c.state == 'na' %}n/a{% else %}{{ c.state }}{% endif %}
+                    </span>
+                </td>
+                <td class="fw-semibold" style="width:28%;">{{ c.label }}</td>
+                <td>{{ c.detail }}
+                    <div class="text-muted fst-italic" style="font-size:.7rem;">
+                        {% if c.quote %}Policy: &ldquo;{{ c.quote }}&rdquo;{% else %}Good practice; the policy does not mention this.{% endif %}
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table></div>
+</div>
+
+{% if org_readiness %}
+<div class="card mb-3">
+    <div class="card-header"><strong>Lead organisation readiness: {{ project.organisation.name }}</strong> <span class="text-muted small">· self-declared</span></div>
+    <div class="table-responsive"><table class="table table-sm mb-0 report-table">
+        <tbody>
+            {% for r in org_readiness %}
+            <tr>
+                <td style="width:6rem;"><span class="badge {% if r.state == 'pass' %}bg-success{% elif r.state == 'warn' %}bg-warning text-dark{% elif r.state == 'fail' %}bg-danger{% else %}bg-light text-dark border{% endif %}">{% if r.state == 'na' %}n/a{% else %}{{ r.state }}{% endif %}</span></td>
+                <td class="fw-semibold" style="width:28%;">{{ r.label }}</td>
+                <td>{{ r.detail }}{% if r.declaration.evidence_url %} · <a href="{{ r.declaration.evidence_url }}">evidence</a>{% endif %}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table></div>
+</div>
+{% endif %}
+
+<div class="row g-3">
+    <div class="col-md-6">
+        <div class="card mb-3">
+            <div class="card-header"><strong>Emissions by category</strong></div>
+            <div class="table-responsive"><table class="table table-sm mb-0 report-table">
+                <thead class="table-light"><tr><th>Category</th><th>Scope</th><th class="text-end">tCO<sub>2</sub>e</th><th class="text-end">Share</th></tr></thead>
+                <tbody>
+                    {% for r in category_rows %}
+                    <tr><td>{{ r.label }}</td><td>S{{ r.scope }}</td><td class="text-end">{{ r.tco2e|floatformat:2 }}</td><td class="text-end">{{ r.share|floatformat:1 }}%</td></tr>
+                    {% empty %}<tr><td colspan="4" class="text-muted">No emissions attributed.</td></tr>{% endfor %}
+                </tbody>
+            </table></div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card mb-3">
+            <div class="card-header"><strong>Sites and apportionment</strong></div>
+            <div class="table-responsive"><table class="table table-sm mb-0 report-table">
+                <thead class="table-light"><tr><th>Site</th><th class="text-end">Share</th><th>Evidence</th><th class="text-end">tCO<sub>2</sub>e</th></tr></thead>
+                <tbody>
+                    {% for r in footprint.site_rows %}
+                    <tr>
+                        <td>{{ r.facility.display_name }}{% if r.missing_data %} <span class="badge bg-warning text-dark">no data</span>{% elif r.period %}<div class="text-muted" style="font-size:.7rem;">{{ r.period|date:"M Y" }}</div>{% endif %}</td>
+                        <td class="text-end">{{ r.share_pct|floatformat:2 }}%</td>
+                        <td class="text-muted small">{{ r.basis_note|default:"—" }}</td>
+                        <td class="text-end">{{ r.total|floatformat:2 }}</td>
+                    </tr>
+                    {% empty %}<tr><td colspan="4" class="text-muted">No sites.</td></tr>{% endfor %}
+                </tbody>
+            </table></div>
+        </div>
+    </div>
+</div>
+
+<!-- Travel -->
+<div class="card mb-3">
+    <div class="card-header"><strong>Travel log</strong> <span class="text-muted small">· {{ footprint.journeys|length }} journeys · {{ footprint.travel_total|floatformat:2 }} tCO<sub>2</sub>e</span></div>
+    <div class="table-responsive"><table class="table table-sm mb-0 report-table">
+        <thead class="table-light"><tr><th>Date</th><th>Journey</th><th>Mode</th><th class="text-end">km × people</th><th class="text-end">tCO<sub>2</sub>e</th><th>Purpose</th><th>Checks</th></tr></thead>
+        <tbody>
+            {% for row in footprint.journey_rows %}{% with j=row.journey %}
+            <tr>
+                <td class="text-nowrap">{{ j.date|date:"j M Y" }}</td>
+                <td>{{ j.origin }} → {{ j.destination }}</td>
+                <td>{{ j.get_mode_display }}{% if j.mode == 'air' %}<div class="text-muted" style="font-size:.7rem;">{{ j.get_air_haul_display }} · {{ j.get_cabin_class_display }}</div>{% endif %}</td>
+                <td class="text-end">{{ j.distance_km|floatformat:0|intcomma }} × {{ j.passengers }}</td>
+                <td class="text-end">{{ j.tco2e|floatformat:3 }}</td>
+                <td class="small">{{ j.purpose|default:"—" }}</td>
+                <td style="font-size:.7rem;">{% for f in row.flags %}<div>{{ f.severity }}: {{ f.message }}</div>{% empty %}meets travel rules{% endfor %}</td>
+            </tr>
+            {% endwith %}{% empty %}
+            <tr><td colspan="7" class="text-muted">No journeys logged; travel is apportioned from site figures.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table></div>
+</div>
+
+<!-- Credits -->
+<div class="card mb-3">
+    <div class="card-header"><strong>Carbon credits for travel</strong></div>
+    <div class="card-body small">
+        Travel to mitigate <strong>{{ credits.travel_tco2e|floatformat:2 }} t</strong>
+        ({% if credits.basis == 'logged' %}travel log{% elif credits.basis == 'apportioned' %}estimate from site share{% else %}none{% endif %})
+        · credits required <strong>{{ credits.required|floatformat:0 }}</strong>
+        · accredited bought <strong>{{ credits.purchased|floatformat:2 }}</strong>
+        {% if credits.not_counted %}· not accredited (not counted) {{ credits.not_counted|floatformat:2 }}{% endif %}
+        · {% if credits.surplus %}surplus {{ credits.surplus|floatformat:2 }}{% else %}still to buy <strong>{{ credits.outstanding|floatformat:2 }}</strong>{% endif %}
+    </div>
+    {% if credits.purchases %}
+    <div class="table-responsive"><table class="table table-sm mb-0 report-table">
+        <thead class="table-light"><tr><th class="text-end">Credits</th><th>Provider</th><th>Standard</th><th>Registry ref</th><th>Retired</th></tr></thead>
+        <tbody>
+            {% for p in credits.purchases %}
+            <tr><td class="text-end">{{ p.credits_tco2e|floatformat:2 }}</td><td>{{ p.provider }}</td><td>{{ p.get_registry_display }}</td><td>{{ p.registry_reference|default:"—" }}</td><td>{% if p.retired %}yes{% else %}no{% endif %}</td></tr>
+            {% endfor %}
+        </tbody>
+    </table></div>
+    {% endif %}
+</div>
+
+<!-- Reduction plan -->
+{% if trajectory and not trajectory.baseline_missing %}
+<div class="card mb-3">
+    <div class="card-header"><strong>Reduction plan</strong> <span class="text-muted small">· {{ trajectory.target.reduction_pct|floatformat:0 }}% below {{ trajectory.target.baseline_year }} by {{ trajectory.target.target_year }}</span></div>
+    <div class="table-responsive"><table class="table table-sm mb-0 report-table">
+        <thead class="table-light"><tr><th>Year</th><th class="text-end">Target line</th><th class="text-end">Actual</th><th>Status</th></tr></thead>
+        <tbody>
+            {% for r in trajectory.rows %}
+            <tr><td>{{ r.year }}</td><td class="text-end">{{ r.required|floatformat:1 }}</td>
+                <td class="text-end">{% if r.actual is not None %}{{ r.actual|floatformat:1 }}{% else %}—{% endif %}</td>
+                <td>{% if forloop.first %}baseline{% elif r.status == 'on' %}on track{% elif r.status == 'off' %}above line{% elif r.incomplete %}incomplete{% endif %}</td></tr>
+            {% endfor %}
+        </tbody>
+    </table></div>
+</div>
+{% endif %}
+
+<!-- Estimate -->
+<div class="card mb-3">
+    <div class="card-header"><strong>Application estimate against actuals</strong></div>
+    <div class="table-responsive"><table class="table table-sm mb-0 report-table">
+        <thead class="table-light"><tr><th></th><th class="text-end">Estimate</th><th class="text-end">Actual</th><th class="text-end">Difference</th></tr></thead>
+        <tbody>
+            {% for r in estimate.rows %}
+            <tr><td>{{ r.label }}</td><td class="text-end">{{ r.estimate|floatformat:2 }}</td><td class="text-end">{{ r.actual|floatformat:2 }}</td><td class="text-end">{{ r.difference|floatformat:2 }}</td></tr>
+            {% endfor %}
+            <tr class="fw-semibold"><td>Total</td><td class="text-end">{{ estimate.estimate_total|floatformat:2 }}</td><td class="text-end">{{ estimate.actual_total|floatformat:2 }}</td><td class="text-end">{{ estimate.difference|floatformat:2 }}</td></tr>
+        </tbody>
+    </table></div>
+    {% if estimate.cost_lines %}
+    <div class="card-body small border-top">
+        Sustainability costs budgeted: <strong>${{ estimate.costs_total|floatformat:2|intcomma }}</strong> —
+        {% for c in estimate.cost_lines %}{{ c.label }} ${{ c.amount_usd|floatformat:0|intcomma }}{% if not forloop.last %}; {% endif %}{% endfor %}
+    </div>
+    {% endif %}
+</div>
+
+<!-- Method -->
+<div class="card mb-3" style="border-left:4px solid var(--hh-blue);">
+    <div class="card-header"><strong>Statement of method</strong></div>
+    <div class="card-body small text-muted">
+        <p>Reported on the GHG Protocol Corporate Standard category structure: purchases and logged
+        journeys charged to the award count in full; each site's shared running emissions are
+        apportioned on the basis of <strong>{{ project.get_allocation_basis_display|lower }}</strong>.</p>
+        {% if project.allocation_note %}<p><strong>Audit record.</strong> {{ project.allocation_note }}</p>{% endif %}
+        <p>Travel factors: <a href="{{ travel_factor_url }}">{{ travel_factor_source }}</a>. Policy checks
+        quote Wellcome's <a href="{{ wellcome_policy_url }}">Environmental sustainability funding policy</a>.
+        One credit is one tonne CO<sub>2</sub>e (<a href="{{ verra_vcu_url }}">Verra VCU definition</a>).
+        Every other factor and source: <a href="{% url 'methodology' %}">methodology page</a>.</p>
+        <p class="mb-0"><strong>Limitations.</strong> Apportionment is a proxy, not metered use. Procurement
+        uses spend-based factors, which assume price tracks carbon.
+        {% if footprint.sites_missing_data %}{{ footprint.sites_missing_data|length }} site(s) have no emission data and count as zero.{% endif %}</p>
+    </div>
+</div>
+{% endblock %}

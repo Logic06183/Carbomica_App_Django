@@ -5,6 +5,7 @@ from collections import defaultdict
 
 from django.shortcuts import render, redirect, get_object_or_404
 from django.http import Http404
+from django.urls import reverse
 from django.db import transaction
 from django.db.models import Sum, F, Avg, Count
 from django.db.models.functions import TruncMonth
@@ -32,6 +33,13 @@ from .forms import (
     FacilityInterventionFormSet,
     OptimizationScenarioForm,
     EmissionDataUpdateForm,
+    TravelJourneyForm,
+    CreditPurchaseForm,
+    LabAccreditationForm,
+    PlannedSpendForm,
+    SustainabilityCostForm,
+    AwardReductionTargetForm,
+    ComputeJobForm,
 )
 from .models import (
     Facility,
@@ -46,11 +54,24 @@ from .models import (
     ProcurementLine,
     Project,
     ProjectSite,
+    TravelJourney,
+    CreditPurchase,
+    LabAccreditation,
+    PlannedSpend,
+    SustainabilityCost,
+    AwardReductionTarget,
+    ReadinessDeclaration,
+    ComputeJob,
 )
 from .modeling import (
     CarbomicaOptimizer, calculate_npv, compute_tco2e, sum_tco2e,
     PROCUREMENT_CATEGORIES, match_procurement_category, procurement_breakdown,
-    project_footprint,
+    project_footprint, AIR_FACTORS, SURFACE_FACTORS, TRAVEL_FACTOR_SOURCE,
+    TRAVEL_FACTOR_URL, WELLCOME_POLICY_URL, credit_position, VERRA_VCU_URL,
+    award_checklist, lab_status, project_estimate, REDUCTION_MEASURES,
+    application_statement, ELIGIBLE_COSTS, award_trajectory, award_years,
+    org_readiness, ORG_READINESS_ITEMS, GREEN_ALGORITHMS_DOI, MEMORY_W_PER_GB,
+    DEFAULT_PUE, ELECTRICITY_EF, FACTOR_AUDIT, FACTOR_AUDIT_DATE,
 )
 
 # ---------------------------------------------------------------------------
@@ -78,6 +99,8 @@ CATEGORY_LABELS = {
     'contractor_logistics': 'Contractor Logistics',
     'flights':             'Flights',
     'lab_consumables':     'Lab Consumables & Procurement',
+    'award_travel':        'Award Travel (logged journeys)',
+    'computing':           'Computing (HPC / cloud)',
 }
 
 # GHG Protocol Corporate Standard scope per emission category.
@@ -97,6 +120,8 @@ CATEGORY_SCOPES = {
     'contractor_logistics': 3,
     'flights':             3,
     'lab_consumables':     3,
+    'award_travel':        3,
+    'computing':           3,
 }
 
 # Default intervention cost guidance (USD) — shown in the upload form to help users
@@ -410,17 +435,17 @@ CATEGORY_UNITS = {
 
 CATEGORY_SOURCES = {
     'grid_electricity':    'IEA 2023 country grid factors (ZW 0.556, ZA 0.928, KE 0.032 kg/kWh …)',
-    'grid_gas':            'DEFRA 2023 — natural gas, 2.02633 kg CO₂e/m³',
-    'bottled_gas':         'DEFRA 2023 — LPG, 2.93921 kg CO₂e/kg',
-    'liquid_fuel':         'DEFRA 2023 — mineral diesel, 2.68779 kg CO₂e/L (LMIC pump fuel, not B7 blend)',
-    'vehicle_fuel_owned':  'DEFRA 2023 — mineral diesel, 2.68779 kg CO₂e/L',
-    'business_travel':     'DEFRA 2023 — average car, unknown fuel, 0.171 kg CO₂e/km',
+    'grid_gas':            'DEFRA 2026 — natural gas, 2.02633 kg CO₂e/m³',
+    'bottled_gas':         'DEFRA 2026 — LPG, 2.93936 kg CO₂e/kg (2,939.36 kg/tonne)',
+    'liquid_fuel':         'DEFRA 2026 — 100% mineral diesel, 2.66155 kg CO₂e/L (LMIC pump fuel, not biofuel blend)',
+    'vehicle_fuel_owned':  'DEFRA 2026 — 100% mineral diesel, 2.66155 kg CO₂e/L',
+    'business_travel':     'DEFRA 2026 — average car, unknown fuel, 0.16591 kg CO₂e/km',
     'anaesthetic_gases':   'GWP₁₀₀ case-mix: 50% isoflurane (510) · 30% sevoflurane (130) · 20% desflurane (2,540) — Sulbaek Andersen et al. 2010 / IPCC',
     'refrigeration_gases': 'Average in-service HFC blend (R-410A 2,088 · R-134a 1,430 · R-22 1,810) per kg lost or recharged',
-    'waste_management':    'Sector-routed: clinical → high-temp incineration 1,074 kg CO₂e/t (Rizan et al. 2021, J. Cleaner Production); other sectors → municipal landfill 497 kg CO₂e/t (DEFRA 2023)',
+    'waste_management':    'Sector-routed: clinical → high-temp incineration 1,074 kg CO₂e/t (Rizan et al. 2021, J. Cleaner Production); other sectors → household residual waste to landfill 497.29 kg CO₂e/t (DEFRA 2026)',
     'medical_inhalers':    'NHS England / BEIS — pMDI HFC-134a propellant, 18.9 kg CO₂e per salbutamol-weighted unit (range 10–37)',
-    'contractor_logistics': 'DEFRA 2023 — average diesel van, 0.267 kg CO₂e/km',
-    'flights':             'DEFRA 2023 — long-haul economy incl. radiative forcing, 0.14993 kg CO₂e/passenger-km',
+    'contractor_logistics': 'DEFRA 2026 — average van up to 3.5 t, diesel, 0.25716 kg CO₂e/km',
+    'flights':             'DEFRA 2026 — long-haul economy incl. radiative forcing, 0.11704 kg CO₂e/passenger-km',
     'lab_consumables':     'Spend-based EEIO factor ~0.5 kg CO₂e/USD — HESCET v2 (Higher Education Supply Chain Emission Tool) / DEFRA 2023 EEIO tables',
 }
 
@@ -484,7 +509,51 @@ def methodology(request):
         'carbon_price': CARBON_CREDIT_PRICE_USD,
         'procurement_rows': procurement_rows,
         'procurement_excluded_note': PROCUREMENT_EXCLUDED_NOTE,
+        'travel_rows': _travel_factor_rows(),
+        'green_algorithms_doi': GREEN_ALGORITHMS_DOI,
+        'factor_audit': FACTOR_AUDIT,
+        'factor_audit_date': FACTOR_AUDIT_DATE,
+        'memory_w_per_gb': MEMORY_W_PER_GB,
+        'default_pue': DEFAULT_PUE,
+        'travel_factor_source': TRAVEL_FACTOR_SOURCE,
+        'travel_factor_url': TRAVEL_FACTOR_URL,
     })
+
+
+def _measure_groups(project):
+    """Reduction measures grouped by policy heading, with what the award has chosen."""
+    chosen = set(project.reduction_measures or [])
+    groups = {}
+    for key, (group, label, quote) in REDUCTION_MEASURES.items():
+        groups.setdefault(group, []).append(
+            {'key': key, 'label': label, 'quote': quote, 'chosen': key in chosen})
+    return list(groups.items())
+
+
+def _travel_factor_rows():
+    """The award travel-log factors as methodology-table rows."""
+    haul = dict(TravelJourney.HAUL_CHOICES)
+    cabin = dict(TravelJourney.CABIN_CHOICES)
+    mode = dict(TravelJourney.MODE_CHOICES)
+    rows = [
+        {
+            'mode': 'Flight',
+            'detail': f'{haul[h]} · {cabin[c]}',
+            'factor': factor,
+            'unit': 'passenger-km',
+        }
+        for (h, c), factor in AIR_FACTORS.items()
+    ]
+    rows += [
+        {
+            'mode': mode[m],
+            'detail': '',
+            'factor': factor,
+            'unit': 'passenger-km' if per_passenger else 'vehicle-km',
+        }
+        for m, (factor, per_passenger) in SURFACE_FACTORS.items()
+    ]
+    return rows
 
 
 # ---------------------------------------------------------------------------
@@ -1552,6 +1621,33 @@ def facility_detail(request, facility_id):
         id=facility_id,
     )
 
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        if action == 'set_laboratory':
+            facility.has_laboratory = request.POST.get('has_laboratory') == 'on'
+            facility.save(update_fields=['has_laboratory'])
+            messages.success(request, 'Laboratory setting saved.')
+        elif action == 'add_accreditation':
+            form = LabAccreditationForm(request.POST)
+            if form.is_valid():
+                accreditation = form.save(commit=False)
+                accreditation.facility = facility
+                accreditation.created_by = request.user
+                accreditation.save()
+                messages.success(request, f'{accreditation} recorded.')
+            else:
+                problems = [
+                    f'{form.fields[f].label}: {msg}' if f in form.fields else msg
+                    for f, msgs in form.errors.items() for msg in msgs
+                ]
+                messages.error(request, 'Accreditation not saved. ' + ' '.join(problems))
+        elif action == 'remove_accreditation':
+            LabAccreditation.objects.filter(
+                facility=facility, id=request.POST.get('accreditation_id')
+            ).delete()
+            messages.success(request, 'Accreditation removed.')
+        return redirect('facility_detail', facility_id=facility.id)
+
     # All emission records for this facility, newest first
     emission_records = list(
         EmissionData.objects
@@ -1686,6 +1782,10 @@ def facility_detail(request, facility_id):
         'category_labels': CATEGORY_LABELS,
         'category_rows': category_rows,
         'scope_totals': scope_totals,
+        'lab': lab_status(facility, date.today()),
+        'accreditations': facility.lab_accreditations.all(),
+        'scheme_choices': LabAccreditation.SCHEME_CHOICES,
+        'level_choices': LabAccreditation.LEVEL_CHOICES,
     })
 
 
@@ -1797,9 +1897,384 @@ def project_detail(request, project_id):
             project.save(update_fields=['allocation_basis', 'allocation_note'])
             messages.success(request, 'Allocation basis updated.')
 
+        elif action == 'add_journey':
+            form = TravelJourneyForm(request.POST)
+            if form.is_valid():
+                journey = form.save(commit=False)
+                journey.project = project
+                journey.created_by = request.user
+                journey.save()
+                messages.success(
+                    request,
+                    f'{journey.origin} → {journey.destination} '
+                    f'{"planned" if journey.is_planned else "logged"}: '
+                    f'{journey.tco2e():.3f} tCO₂e.',
+                )
+            else:
+                problems = [
+                    f'{form.fields[f].label}: {msg}' if f in form.fields else msg
+                    for f, msgs in form.errors.items() for msg in msgs
+                ]
+                messages.error(request, 'Journey not saved. ' + ' '.join(problems))
+
+        elif action == 'remove_journey':
+            TravelJourney.objects.filter(
+                project=project, id=request.POST.get('journey_id')
+            ).delete()
+            messages.success(request, 'Journey removed.')
+
+        elif action == 'add_purchase':
+            form = CreditPurchaseForm(request.POST)
+            if form.is_valid():
+                purchase = form.save(commit=False)
+                purchase.project = project
+                purchase.created_by = request.user
+                purchase.save()
+                messages.success(request, f'{purchase.credits_tco2e} credits recorded.')
+            else:
+                problems = [
+                    f'{form.fields[f].label}: {msg}' if f in form.fields else msg
+                    for f, msgs in form.errors.items() for msg in msgs
+                ]
+                messages.error(request, 'Purchase not saved. ' + ' '.join(problems))
+
+        elif action == 'retire_purchase':
+            CreditPurchase.objects.filter(
+                project=project, id=request.POST.get('purchase_id')
+            ).update(retired=True)
+            messages.success(request, 'Credits marked as retired.')
+
+        elif action == 'add_planned_spend':
+            form = PlannedSpendForm(request.POST)
+            if form.is_valid():
+                line = form.save(commit=False)
+                line.project = project
+                line.save()
+                messages.success(request, f'Planned spend added: {line.category_label}.')
+            else:
+                problems = [
+                    f'{form.fields[f].label}: {msg}' if f in form.fields else msg
+                    for f, msgs in form.errors.items() for msg in msgs
+                ]
+                messages.error(request, 'Planned spend not saved. ' + ' '.join(problems))
+
+        elif action == 'remove_planned_spend':
+            PlannedSpend.objects.filter(
+                project=project, id=request.POST.get('line_id')
+            ).delete()
+            messages.success(request, 'Planned spend removed.')
+
+        elif action == 'add_cost':
+            form = SustainabilityCostForm(request.POST)
+            if form.is_valid():
+                line = form.save(commit=False)
+                line.project = project
+                line.save()
+                messages.success(request, f'Cost added: {line.label}.')
+            else:
+                problems = [
+                    f'{form.fields[f].label}: {msg}' if f in form.fields else msg
+                    for f, msgs in form.errors.items() for msg in msgs
+                ]
+                messages.error(request, 'Cost not saved. ' + ' '.join(problems))
+
+        elif action == 'remove_cost':
+            SustainabilityCost.objects.filter(
+                project=project, id=request.POST.get('cost_id')
+            ).delete()
+            messages.success(request, 'Cost removed.')
+
+        elif action == 'add_compute':
+            form = ComputeJobForm(request.POST)
+            if form.is_valid():
+                job = form.save(commit=False)
+                job.project = project
+                job.save()
+                messages.success(request, f'{job.description}: {job.tco2e():.3f} tCO₂e.')
+            else:
+                problems = [
+                    f'{form.fields[f].label}: {msg}' if f in form.fields else msg
+                    for f, msgs in form.errors.items() for msg in msgs
+                ]
+                messages.error(request, 'Computing not saved. ' + ' '.join(problems))
+
+        elif action == 'remove_compute':
+            ComputeJob.objects.filter(
+                project=project, id=request.POST.get('job_id')
+            ).delete()
+            messages.success(request, 'Computing removed.')
+
+        elif action == 'set_target':
+            existing = getattr(project, 'reduction_target', None)
+            form = AwardReductionTargetForm(request.POST, instance=existing)
+            if form.is_valid():
+                target = form.save(commit=False)
+                target.project = project
+                target.save()
+                messages.success(request, 'Reduction target saved.')
+            else:
+                problems = [
+                    f'{form.fields[f].label}: {msg}' if f in form.fields else msg
+                    for f, msgs in form.errors.items() for msg in msgs
+                ]
+                messages.error(request, 'Target not saved. ' + ' '.join(problems))
+
+        elif action == 'delete_target':
+            AwardReductionTarget.objects.filter(project=project).delete()
+            messages.success(request, 'Reduction target deleted.')
+
+        elif action == 'update_estimate':
+            try:
+                price = request.POST.get('credit_price_usd', '').strip()
+                project.credit_price_usd = Decimal(price) if price else None
+                if project.credit_price_usd is not None and (
+                        not project.credit_price_usd.is_finite() or project.credit_price_usd < 0):
+                    raise InvalidOperation
+            except InvalidOperation:
+                messages.error(request, 'Credit price must be a positive number.')
+                return redirect('project_detail', project_id=project.id)
+            project.reduction_measures = [
+                k for k in request.POST.getlist('reduction_measures') if k in REDUCTION_MEASURES
+            ]
+            project.reduction_notes = (request.POST.get('reduction_notes') or '').strip()
+            project.save(update_fields=['credit_price_usd', 'reduction_measures', 'reduction_notes'])
+            messages.success(request, 'Estimate settings saved.')
+
+        elif action == 'remove_purchase':
+            CreditPurchase.objects.filter(
+                project=project, id=request.POST.get('purchase_id')
+            ).delete()
+            messages.success(request, 'Purchase removed.')
+
         return redirect('project_detail', project_id=project.id)
 
+    context = _award_report_context(project)
+    assigned_ids = [row['facility'].id for row in context['footprint']['site_rows']]
+    context.update({
+        'basis_choices': Project.ALLOCATION_BASIS_CHOICES,
+        'available_facilities': _user_facilities(request.user)
+            .exclude(id__in=assigned_ids).order_by('display_name'),
+        'mode_choices': TravelJourney.MODE_CHOICES,
+        'haul_choices': TravelJourney.HAUL_CHOICES,
+        'cabin_choices': TravelJourney.CABIN_CHOICES,
+        'data_years': award_years(project),
+        'measure_groups': _measure_groups(project),
+        'eligible_costs': [
+            {'key': k, 'label': label, 'heading': heading, 'quote': quote}
+            for k, (label, heading, quote) in ELIGIBLE_COSTS.items()
+        ],
+        'procurement_choices': [
+            (key, spec['display_name']) for key, spec in PROCUREMENT_CATEGORIES.items()
+        ],
+        'registry_choices': CreditPurchase.REGISTRY_CHOICES,
+        'grid_choices': [(k, f'{k} ({v * 1000000:.0f} g/kWh)') for k, v in ELECTRICITY_EF.items()],
+        'green_algorithms_doi': GREEN_ALGORITHMS_DOI,
+        'default_pue': DEFAULT_PUE,
+        'all_compute_jobs': project.compute_jobs.all(),
+    })
+    return render(request, 'appname/project_detail.html', context)
+
+
+@login_required
+def org_readiness_page(request, org_id):
+    """
+    An organisation's position on Wellcome's organisation-level duties.
+    Members can view; only those who manage the organisation can declare.
+    """
+    if org_id not in (_visible_org_ids(request.user) | _manageable_org_ids(request.user)):
+        raise Http404
+    org = get_object_or_404(Organisation, id=org_id)
+    can_manage = org_id in _manageable_org_ids(request.user)
+
+    if request.method == 'POST':
+        if not can_manage:
+            raise Http404
+        action = request.POST.get('action')
+        if action == 'set_scope':
+            org.based_in_uk = request.POST.get('based_in_uk') == 'on'
+            org.high_income_country = (request.POST.get('high_income_country') == 'on'
+                                       or org.based_in_uk)
+            org.save(update_fields=['based_in_uk', 'high_income_country'])
+            messages.success(request, 'Scope saved.')
+        elif action == 'declare':
+            item = request.POST.get('item')
+            status = request.POST.get('status')
+            evidence = (request.POST.get('evidence_url') or '').strip()
+            if item not in ORG_READINESS_ITEMS or status not in dict(ReadinessDeclaration.STATUS_CHOICES):
+                messages.error(request, 'Unknown item or status.')
+            elif evidence and not evidence.startswith(('http://', 'https://')):
+                messages.error(request, 'Evidence must be a web link starting http:// or https://.')
+            else:
+                ReadinessDeclaration.objects.update_or_create(
+                    organisation=org, item=item,
+                    defaults={'status': status, 'evidence_url': evidence,
+                              'note': (request.POST.get('note') or '').strip()[:255],
+                              'declared_on': date.today(), 'declared_by': request.user},
+                )
+                messages.success(request, 'Declaration saved.')
+        elif action == 'clear':
+            ReadinessDeclaration.objects.filter(
+                organisation=org, item=request.POST.get('item')).delete()
+            messages.success(request, 'Declaration cleared.')
+        return redirect('org_readiness', org_id=org.id)
+
+    return render(request, 'appname/org_readiness.html', {
+        'org': org,
+        'rows': org_readiness(org),
+        'can_manage': can_manage,
+        'status_choices': ReadinessDeclaration.STATUS_CHOICES,
+        'wellcome_policy_url': WELLCOME_POLICY_URL,
+        'awards': org.projects.order_by('name'),
+    })
+
+
+@login_required
+def project_report(request, project_id):
+    """Read-only, printable funder report for one award."""
+    project = get_object_or_404(_user_projects(request.user), id=project_id)
+    context = _award_report_context(project)
+    context['generated_on'] = date.today()
+    return render(request, 'appname/project_report.html', context)
+
+
+def _csv_safe(text):
+    """Stop spreadsheet formula injection from free-text fields."""
+    text = str(text or '')
+    return "'" + text if text[:1] in ('=', '+', '-', '@', '\t', '\r') else text
+
+
+def _t(value):
+    """tCO2e to three decimal places for export."""
+    return f'{Decimal(value):.3f}'
+
+
+@login_required
+def project_export(request, project_id):
+    """CSV export of the funder report, from the same figures as the page."""
+    from django.http import HttpResponse
+
+    project = get_object_or_404(_user_projects(request.user), id=project_id)
+    c = _award_report_context(project)
+    fp, credits, est = c['footprint'], c['credits'], c['estimate']
+
+    response = HttpResponse(content_type='text/csv')
+    slug = ''.join(ch if ch.isalnum() else '_' for ch in project.name)[:60]
+    response['Content-Disposition'] = f'attachment; filename="{slug}_carbon_report.csv"'
+    w = csv.writer(response)
+
+    w.writerow(['Award carbon report'])
+    w.writerow(['Award', _csv_safe(project.name)])
+    w.writerow(['Funder', _csv_safe(project.funder_label)])
+    w.writerow(['Grant reference', _csv_safe(project.grant_reference)])
+    w.writerow(['Principal investigator', _csv_safe(project.principal_investigator)])
+    w.writerow(['Generated', date.today().isoformat()])
+    w.writerow([])
+
+    w.writerow(['Summary', 'tCO2e'])
+    w.writerow(['Award footprint', _t(fp['total'])])
+    w.writerow(['Charged directly', _t(fp['direct_total'])])
+    w.writerow(['Apportioned from sites', _t(fp['apportioned_total'])])
+    for scope in (1, 2, 3):
+        w.writerow([f'Scope {scope}', _t(c['scope_totals'][scope])])
+    w.writerow([])
+
+    w.writerow(['Category', 'Scope', 'tCO2e', 'Share %'])
+    for r in c['category_rows']:
+        w.writerow([r['label'], r['scope'], _t(r['tco2e']), f"{r['share']:.1f}"])
+    w.writerow([])
+
+    w.writerow(['Site', 'Share %', 'Evidence', 'Period', 'Apportioned tCO2e',
+                'Direct tCO2e', 'Total tCO2e', 'Emission data'])
+    for r in fp['site_rows']:
+        w.writerow([_csv_safe(r['facility'].display_name), f"{r['share_pct']:.3f}",
+                    _csv_safe(r['basis_note']), r['period'].isoformat() if r['period'] else '',
+                    _t(r['apportioned']), _t(r['direct']), _t(r['total']),
+                    'missing' if r['missing_data'] else 'yes'])
+    w.writerow([])
+
+    w.writerow(['Travel log'])
+    w.writerow(['Date', 'From', 'To', 'Mode', 'Flight type', 'Cabin', 'km', 'People',
+                'tCO2e', 'Purpose', 'Wellcome travel checks'])
+    for row in fp['journey_rows']:
+        j = row['journey']
+        w.writerow([
+            j.date.isoformat(), _csv_safe(j.origin), _csv_safe(j.destination),
+            j.get_mode_display(), j.get_air_haul_display() if j.air_haul else '',
+            j.get_cabin_class_display() if j.cabin_class else '', f'{j.distance_km}',
+            j.passengers, _t(j.tco2e()), _csv_safe(j.purpose),
+            ' | '.join(f"{f['severity']}: {f['message']}" for f in row['flags']) or 'meets travel rules',
+        ])
+    w.writerow([])
+
+    w.writerow(['Carbon credits for travel'])
+    w.writerow(['Travel to mitigate (tCO2e)', _t(credits['travel_tco2e']), credits['basis']])
+    w.writerow(['Credits required', f"{credits['required']:.0f}"])
+    w.writerow(['Accredited credits bought', f"{credits['purchased']:.2f}"])
+    w.writerow(['Not accredited (not counted)', f"{credits['not_counted']:.2f}"])
+    w.writerow(['Still to buy', f"{credits['outstanding']:.2f}"])
+    w.writerow(['Surplus', f"{credits['surplus']:.2f}"])
+    w.writerow(['Credits', 'Provider', 'Standard', 'Registry reference', 'Cost USD', 'Date', 'Retired'])
+    for p in credits['purchases']:
+        w.writerow([f'{p.credits_tco2e:.2f}', _csv_safe(p.provider), p.get_registry_display(),
+                    _csv_safe(p.registry_reference),
+                    f'{p.cost_usd:.2f}' if p.cost_usd is not None else '',
+                    p.purchase_date.isoformat() if p.purchase_date else '',
+                    'yes' if p.retired else 'no'])
+    w.writerow([])
+
+    w.writerow(['Wellcome alignment', 'State', 'Detail', 'Policy line tested'])
+    for r in c['checklist']:
+        w.writerow([r['label'], r['state'], _csv_safe(r['detail']),
+                    r['quote'] or 'Good practice; not stated in the policy'])
+    w.writerow([])
+
+    if c['org_readiness']:
+        w.writerow([f'Lead organisation readiness (self-declared): {_csv_safe(project.organisation.name)}'])
+        w.writerow(['Duty', 'State', 'Detail', 'Evidence', 'Policy line'])
+        for r in c['org_readiness']:
+            d = r['declaration']
+            w.writerow([r['label'], r['state'], r['detail'],
+                        _csv_safe(d.evidence_url) if d else '', r['quote']])
+        w.writerow([])
+
+    tr = c['trajectory']
+    if tr and not tr['baseline_missing']:
+        t = tr['target']
+        w.writerow([f'Reduction plan: {t.reduction_pct}% below {t.baseline_year} by {t.target_year}'])
+        w.writerow(['Year', 'Target line tCO2e', 'Actual tCO2e', 'Status'])
+        for r in tr['rows']:
+            w.writerow([r['year'], f"{r['required']:.2f}",
+                        _t(r['actual']) if r['actual'] is not None else '',
+                        r['status'] or ('incomplete' if r['incomplete'] else '')])
+        w.writerow([])
+
+    w.writerow(['Application estimate', 'Estimate tCO2e', 'Actual tCO2e', 'Difference'])
+    for r in est['rows']:
+        w.writerow([r['label'], _t(r['estimate']), _t(r['actual']), _t(r['difference'])])
+    w.writerow(['Total', _t(est['estimate_total']), _t(est['actual_total']), _t(est['difference'])])
+    w.writerow(['Sustainability costs budgeted (USD)', f"{est['costs_total']:.2f}"])
+    for line in est['cost_lines']:
+        w.writerow(['', _csv_safe(line.label), _csv_safe(line.description), f'{line.amount_usd:.2f}'])
+    w.writerow([])
+
+    w.writerow(['Statement of method'])
+    w.writerow(['Allocation basis', project.get_allocation_basis_display()])
+    w.writerow(['Audit record', _csv_safe(project.allocation_note)])
+    w.writerow(['Travel factors', TRAVEL_FACTOR_SOURCE, TRAVEL_FACTOR_URL])
+    w.writerow(['Policy', 'Wellcome, Environmental sustainability funding policy', WELLCOME_POLICY_URL])
+    w.writerow(['All factors and sources', request.build_absolute_uri(reverse('methodology'))])
+    return response
+
+
+def _award_report_context(project):
+    """
+    Every figure on an award's report, computed once. The award page, the
+    printable report and the CSV export all read from this, so they cannot
+    disagree.
+    """
     footprint = project_footprint(project)
+    credits = credit_position(project, footprint)
+    estimate = project_estimate(project, footprint, credits)
 
     scope_totals = {1: Decimal('0'), 2: Decimal('0'), 3: Decimal('0')}
     for field, value in footprint['by_category'].items():
@@ -1816,14 +2291,19 @@ def project_detail(request, project_id):
         }
         for row in footprint['category_rows']
     ]
-
-    assigned_ids = [row['facility'].id for row in footprint['site_rows']]
-    return render(request, 'appname/project_detail.html', {
+    return {
         'project': project,
         'footprint': footprint,
         'category_rows': category_rows,
         'scope_totals': scope_totals,
-        'basis_choices': Project.ALLOCATION_BASIS_CHOICES,
-        'available_facilities': _user_facilities(request.user)
-            .exclude(id__in=assigned_ids).order_by('display_name'),
-    })
+        'credits': credits,
+        'checklist': award_checklist(project, footprint, credits),
+        'estimate': estimate,
+        'statement': application_statement(project, estimate, footprint),
+        'trajectory': award_trajectory(project),
+        'org_readiness': org_readiness(project.organisation) if project.organisation else None,
+        'travel_factor_source': TRAVEL_FACTOR_SOURCE,
+        'travel_factor_url': TRAVEL_FACTOR_URL,
+        'wellcome_policy_url': WELLCOME_POLICY_URL,
+        'verra_vcu_url': VERRA_VCU_URL,
+    }

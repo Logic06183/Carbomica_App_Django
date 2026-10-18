@@ -9,7 +9,8 @@ and the HIGH Horizons D3.7 intervention catalogue
 Three-scenario optimisation: full coverage, fixed budget, optimised
 (greedy knapsack ranking by tCO₂e reduced per USD).
 """
-from decimal import Decimal
+from datetime import date
+from decimal import Decimal, ROUND_CEILING
 
 # ---------------------------------------------------------------------------
 # Country-specific electricity costs (USD / kWh)
@@ -47,13 +48,14 @@ DISCOUNT_RATE = Decimal('0.08')
 #   Electricity  — IEA World Energy Outlook 2022 country emission factors
 #   Combustion   — GHG Protocol / UK BEIS 2023 conversion factors
 #   Gases        — IPCC AR6 GWP₁₀₀ values (CH₄ = 29.8, N₂O = 273)
-#   Travel       — UK DEFRA 2022 (average medium car, diesel)
+#   Travel       — UK DEFRA 2026 (average car, unknown fuel; long-haul economy flights incl. RF)
 #   Inhalers     — NHS England / BEIS 2023 (pMDI HFC-134a propellant)
 #   Anaesthetics — weighted average: isoflurane (GWP 510, 50 %), sevoflurane
 #                  (GWP 130, 30 %), desflurane (GWP 2540, 20 %)
 #   Refrigerants — average HFC blend (R-410A GWP 2088, R-134a 1430, R-22 1810)
-#   Waste        — DEFRA 2022 mixed clinical-waste treatment (landfill/incineration)
-#   Contractor   — DEFRA 2022 average diesel logistics vehicle
+#   Waste        — clinical: Rizan et al. 2021 incineration; other: DEFRA 2026 household residual landfill
+#   Contractor   — DEFRA 2026 average van (up to 3.5 t), diesel
+#   (DEFRA 2026 = UK Government GHG Conversion Factors 2026, flat file v1.2, read 2026-10-17)
 # ---------------------------------------------------------------------------
 
 ELECTRICITY_EF = {          # tCO₂e per kWh of grid electricity consumed
@@ -71,7 +73,7 @@ ELECTRICITY_EF = {          # tCO₂e per kWh of grid electricity consumed
     'IN':    Decimal('0.000810'),   # India     — coal-heavy (CEA 2023)
     'BD':    Decimal('0.000620'),   # Bangladesh — gas-dominated
     # Donor / OECD
-    'GB':    Decimal('0.000200'),   # UK        — renewables + gas (DEFRA 2023)
+    'GB':    Decimal('0.00013096'), # UK        — DEFRA 2026 'Electricity: UK' generated, kWh
     'US':    Decimal('0.000390'),   # US        — mixed grid (EPA eGRID 2023)
     'EU':    Decimal('0.000235'),   # EU avg    — renewables-heavy (EEA 2024)
     'OTHER': Decimal('0.000400'),   # Catch-all SSA-leaning default
@@ -80,12 +82,12 @@ ELECTRICITY_EF = {          # tCO₂e per kWh of grid electricity consumed
 EMISSION_FACTORS = {
     # field_name: tCO₂e per unit (unit shown in parentheses)
     'grid_electricity':    None,                  # country-specific — see ELECTRICITY_EF
-    'grid_gas':            Decimal('0.00202'),    # per m³ natural gas (DEFRA 2023: 2.02633 kg/m³)
-    'bottled_gas':         Decimal('0.00294'),    # per kg LPG (DEFRA 2023: 2.93921 kg/kg)
-    'liquid_fuel':         Decimal('0.00268'),    # per litre mineral diesel (DEFRA 2023: 2.68779 kg/L
+    'grid_gas':            Decimal('0.00202633'), # per m³ natural gas (DEFRA 2026: 2.02633 kg/m³)
+    'bottled_gas':         Decimal('0.00293936'), # per kg LPG (DEFRA 2026: 2,939.36095 kg/tonne)
+    'liquid_fuel':         Decimal('0.00266155'), # per litre mineral diesel (DEFRA 2026: 2.66155 kg/L
                                                  # — mineral, not B7 blend; LMIC pump diesel)
-    'vehicle_fuel_owned':  Decimal('0.00268'),    # per litre (owned fleet, mineral diesel)
-    'business_travel':     Decimal('0.000171'),   # per km (DEFRA 2023 average car, unknown fuel)
+    'vehicle_fuel_owned':  Decimal('0.00266155'), # per litre (owned fleet, mineral diesel, DEFRA 2026)
+    'business_travel':     Decimal('0.00016591'), # per km (DEFRA 2026 average car, unknown fuel)
     'anaesthetic_gases':   Decimal('0.802'),      # per kg agent (GWP₁₀₀ mix: 50% isoflurane 510,
                                                  # 30% sevoflurane 130, 20% desflurane 2540 —
                                                  # Sulbaek Andersen et al. 2010 / IPCC)
@@ -94,9 +96,9 @@ EMISSION_FACTORS = {
     'waste_management':    None,                  # sector-specific — see WASTE_EF
     'medical_inhalers':    Decimal('0.0189'),     # per pMDI unit (NHS England ~10–37 kg/unit,
                                                  # salbutamol-weighted average)
-    'contractor_logistics': Decimal('0.000267'), # per km contracted vehicle (DEFRA 2023 avg van)
-    'flights':             Decimal('0.00015'),   # per passenger-km (DEFRA 2023 long-haul
-                                                 # economy incl. radiative forcing: 0.14993 kg/pkm)
+    'contractor_logistics': Decimal('0.00025716'), # per km (DEFRA 2026 average van up to 3.5 t, diesel)
+    'flights':             Decimal('0.00011704'), # per passenger-km (DEFRA 2026 long-haul
+                                                 # economy incl. radiative forcing: 0.11704 kg/pkm)
     'lab_consumables':     Decimal('0.0005'),    # per USD spend (EEIO spend-based, HESCET v2
                                                  # / DEFRA 2023 ~0.5 kgCO₂e per USD)
 }
@@ -106,8 +108,8 @@ EMISSION_FACTORS = {
 # infectious/anatomical waste, and the dominant route in LMIC facilities);
 # general organisational waste goes to mixed municipal landfill.
 # Sources: Rizan et al. 2021, J. Cleaner Production (high-temp incineration
-# 1,074 kg CO₂e/t; range 21–1,074 across routes); DEFRA 2023 municipal
-# residual waste to landfill 497 kg CO₂e/t.
+# 1,074 kg CO₂e/t; range 21–1,074 across routes); DEFRA 2026 household
+# residual waste to landfill 497.29 kg CO₂e/t (unchanged from 2023 at 3 s.f.).
 WASTE_EF = {
     'clinical': Decimal('1.074'),   # tCO₂e per tonne — high-temp incineration
     'default':  Decimal('0.497'),   # tCO₂e per tonne — municipal landfill
@@ -1515,38 +1517,901 @@ APPORTIONABLE_FIELDS = [
 ]
 
 
-def _latest_record(facility):
+# Site travel figures an award's own travel log replaces. Once an award logs its
+# journeys, apportioning it a share of the site's flights and road travel as
+# well would count the same trips twice.
+SITE_TRAVEL_FIELDS = ('flights', 'business_travel')
+
+# ---------------------------------------------------------------------------
+# Per-journey factors for the award travel log, kg CO₂e per unit.
+#
+# Source: UK Government GHG Conversion Factors for Company Reporting 2026
+# (DESNZ / DEFRA), flat file v1.2, revised July 2026, sheets "Business travel-
+# air" and "Business travel- land":
+# https://www.gov.uk/government/publications/greenhouse-gas-reporting-conversion-factors-2026
+# (read 2026-10-17). Air factors are the "With RF" rows, matching the site-level
+# flights factor. DEFRA gives only "average passenger" for UK domestic flights
+# and no first or premium-economy factor for short-haul, so those combinations
+# are rejected rather than estimated.
+# ---------------------------------------------------------------------------
+TRAVEL_FACTOR_SOURCE = (
+    'UK Government GHG Conversion Factors for Company Reporting 2026 '
+    '(DESNZ/DEFRA), flat file v1.2, July 2026'
+)
+TRAVEL_FACTOR_URL = (
+    'https://www.gov.uk/government/publications/'
+    'greenhouse-gas-reporting-conversion-factors-2026'
+)
+
+AIR_FACTORS = {  # (haul, cabin) → kg CO₂e per passenger-km, incl. radiative forcing
+    ('domestic_uk', 'average'):                  Decimal('0.22928'),
+    ('short_haul_uk', 'average'):                Decimal('0.12786'),
+    ('short_haul_uk', 'economy'):                Decimal('0.12576'),
+    ('short_haul_uk', 'business'):               Decimal('0.18863'),
+    ('long_haul_uk', 'average'):                 Decimal('0.15282'),
+    ('long_haul_uk', 'economy'):                 Decimal('0.11704'),
+    ('long_haul_uk', 'premium_economy'):         Decimal('0.18726'),
+    ('long_haul_uk', 'business'):                Decimal('0.33940'),
+    ('long_haul_uk', 'first'):                   Decimal('0.46814'),
+    ('international_non_uk', 'average'):         Decimal('0.14253'),
+    ('international_non_uk', 'economy'):         Decimal('0.10916'),
+    ('international_non_uk', 'premium_economy'): Decimal('0.17465'),
+    ('international_non_uk', 'business'):        Decimal('0.31656'),
+    ('international_non_uk', 'first'):           Decimal('0.43663'),
+}
+
+# mode → (kg CO₂e per unit, per passenger?). Car is per vehicle-km, so people
+# sharing one car do not multiply it; every other mode is per passenger-km.
+SURFACE_FACTORS = {
+    'rail_national':      (Decimal('0.03092'), True),   # National rail
+    'rail_international': (Decimal('0.01135'), True),   # International rail
+    'light_rail':         (Decimal('0.02121'), True),   # Light rail and tram
+    'underground':        (Decimal('0.01549'), True),   # London Underground
+    'bus':                (Decimal('0.10151'), True),   # Average local bus
+    'coach':              (Decimal('0.03948'), True),   # Coach
+    'taxi':               (Decimal('0.14861'), True),   # Regular taxi
+    'car':                (Decimal('0.16591'), False),  # Average car, unknown fuel
+}
+
+
+def journey_factor(mode, air_haul='', cabin_class=''):
+    """kg CO₂e per unit for one journey, or None if DEFRA publishes no factor."""
+    if mode == 'air':
+        return AIR_FACTORS.get((air_haul, cabin_class or 'average'))
+    spec = SURFACE_FACTORS.get(mode)
+    return spec[0] if spec else None
+
+
+def journey_tco2e(mode, distance_km, passengers=1, air_haul='', cabin_class=''):
+    """tCO₂e for one logged journey."""
+    factor = journey_factor(mode, air_haul, cabin_class)
+    if factor is None:
+        raise ValueError(f'No DEFRA factor for {mode} / {air_haul} / {cabin_class}')
+    per_passenger = mode == 'air' or SURFACE_FACTORS[mode][1]
+    people = Decimal(passengers or 1) if per_passenger else Decimal('1')
+    return Decimal(str(distance_km or 0)) * people * factor / Decimal('1000')
+
+
+# ---------------------------------------------------------------------------
+# Wellcome travel rules, checked per journey.
+#
+# Source: Wellcome, Environmental sustainability funding policy, travel section
+# (page last updated 1 July 2025, read 2026-10-17). Quotes are verbatim. The
+# policy names economy (the default) and business (not funded) only; it is
+# silent on premium economy and first, so those are flagged as "not economy"
+# without claiming a rule the policy does not state. It does not say whether
+# the 10 hours is one way, so the check applies per logged journey.
+# ---------------------------------------------------------------------------
+WELLCOME_POLICY_URL = (
+    'https://wellcome.org/research-funding/guidance/policies-grant-conditions/'
+    'environmental-sustainability-funding-policy'
+)
+RAIL_HOURS_LIMIT = Decimal('10')
+
+POLICY_QUOTES = {
+    'rail': ('This includes taking the train for journeys of up to 10 hours '
+             '(total travel time including connections).'),
+    'rail_exceptions': ('Exceptions may include lack of availability, safety, or '
+                        'visa/permit reasons, or in exceptional circumstances such as a '
+                        'disability, long-term health condition or caring requirements '
+                        'necessitating faster travel.'),
+    'economy': 'If flying is unavoidable, using economy class as a default.',
+    'business': 'Wellcome does not fund business class flights.',
+    'justified': 'All travel requested in grant applications must be justified.',
+    'assess': ('should use a tool appropriate to their setting to assess the '
+               'environmental impact of their work and to track their efforts to reduce it.'),
+    'mitigate': ('Mitigate the remaining carbon emissions of all journeys using '
+                 'accredited carbon credits'),
+    'accredited': 'Have arrangements to purchase third party accredited carbon credits',
+    'lab': ('Laboratories should achieve the minimum level of accreditation offered by '
+            'LEAF, My Green Lab or equivalent by the end of 2025.'),
+    'reduce': ('Researchers across all fields should demonstrate how they will reduce the '
+               'emissions and natural resources used in their research.'),
+}
+LAB_ACCREDITATION_DEADLINE = date(2025, 12, 31)
+
+
+def lab_status(facility, today):
+    """
+    Accreditation state of one laboratory site on a given date:
+    'accredited' (current LEAF or My Green Lab), 'equivalent' (only a current
+    other-scheme award, which Wellcome may or may not accept), or 'none'.
+    """
+    current = [a for a in facility.lab_accreditations.all() if a.is_current(today)]
+    if any(a.scheme in ('leaf', 'my_green_lab') for a in current):
+        state = 'accredited'
+    elif current:
+        state = 'equivalent'
+    else:
+        state = 'none'
+    return {'state': state, 'current': current}
+
+
+TRAVEL_FLAG_LABELS = {
+    'business_class':   'Business-class flights',
+    'not_economy':      'Flights above economy (premium economy or first)',
+    'rail_feasible':    'Flights where rail is within 10 hours',
+    'no_justification': 'Journeys with no justification',
+    'rail_unknown':     'Flights with no rail time recorded',
+}
+
+
+def journey_policy_flags(journey):
+    """
+    Wellcome travel-rule flags for one journey, as a list of dicts with
+    code, severity ('fail' | 'warn' | 'info'), message and the policy quote.
+    """
+    flags = []
+    if journey.mode == 'air':
+        if journey.rail_hours is None:
+            flags.append({
+                'code': 'rail_unknown', 'severity': 'info',
+                'message': 'Rail time not recorded, so the 10-hour rule cannot be shown to be met.',
+                'quote': POLICY_QUOTES['rail'],
+            })
+        elif journey.rail_hours <= RAIL_HOURS_LIMIT:
+            flags.append({
+                'code': 'rail_feasible', 'severity': 'warn',
+                'message': (f'Rail takes {journey.rail_hours} h door to door, within the '
+                            '10-hour limit. Record the exception that applies, or take the train.'),
+                'quote': f"{POLICY_QUOTES['rail']} {POLICY_QUOTES['rail_exceptions']}",
+            })
+        if journey.cabin_class == 'business':
+            flags.append({
+                'code': 'business_class', 'severity': 'fail',
+                'message': 'Business class is not fundable by Wellcome.',
+                'quote': POLICY_QUOTES['business'],
+            })
+        elif journey.cabin_class in ('premium_economy', 'first'):
+            flags.append({
+                'code': 'not_economy', 'severity': 'warn',
+                'message': (f'{journey.get_cabin_class_display()} is not economy, the '
+                            "policy's default. The policy does not name this class."),
+                'quote': POLICY_QUOTES['economy'],
+            })
+    if not (journey.purpose or '').strip():
+        flags.append({
+            'code': 'no_justification', 'severity': 'warn',
+            'message': 'No justification recorded for this journey.',
+            'quote': POLICY_QUOTES['justified'],
+        })
+    return flags
+
+
+VERRA_VCU_URL = 'https://verra.org/programs/verified-carbon-standard/vcs-program-details/'
+
+
+def credit_position(project, footprint):
+    """
+    Credits an award needs for its remaining travel emissions, and how far its
+    purchases cover them.
+
+    Travel is the logged journeys when there are any; otherwise the award's
+    apportioned share of site flights and road travel (the estimate shown on
+    the report). Credits are whole units, one per tonne CO₂e (Verra VCU
+    definition), so the requirement is rounded up. Only accredited purchases
+    count towards cover.
+    """
+    by_category = footprint['by_category']
+    travel = (by_category.get('award_travel', Decimal('0'))
+              + sum((by_category.get(f, Decimal('0')) for f in SITE_TRAVEL_FIELDS),
+                    Decimal('0')))
+    if footprint['travel_logged']:
+        basis = 'logged'
+    elif travel > 0:
+        basis = 'apportioned'
+    else:
+        basis = 'none'
+
+    purchases = list(project.credit_purchases.all())
+    required = travel.to_integral_value(rounding=ROUND_CEILING) if travel > 0 else Decimal('0')
+    # Only accredited credits count as cover: the policy asks for "accredited
+    # carbon credits", so anything else is reported but not netted off.
+    purchased = sum((p.credits_tco2e for p in purchases if p.is_accredited), Decimal('0'))
+    not_counted = sum((p.credits_tco2e for p in purchases if not p.is_accredited), Decimal('0'))
+    return {
+        'travel_tco2e': travel,
+        'basis': basis,
+        'required': required,
+        'purchases': purchases,
+        'purchased': purchased,
+        'not_counted': not_counted,
+        'outstanding': max(required - purchased, Decimal('0')),
+        'surplus': max(purchased - required, Decimal('0')),
+        'covered': required > 0 and purchased >= required,
+        'unaccredited': [p for p in purchases if not p.is_accredited],
+        'unretired': [p for p in purchases if not p.retired],
+    }
+
+
+def award_years(project):
+    """Years with any actual data for the award: site records or logged journeys."""
     from appname.models import EmissionData
-    return (
-        EmissionData.objects
-        .filter(emission_source__facility=facility)
-        .order_by('-date', '-id')
-        .first()
+    facility_ids = project.sites.values_list('facility_id', flat=True)
+    years = set(
+        d.year for d in EmissionData.objects
+        .filter(emission_source__facility_id__in=facility_ids)
+        .values_list('date', flat=True)
     )
+    years |= set(d.year for d in project.journeys.filter(is_planned=False)
+                 .values_list('date', flat=True))
+    return sorted(years)
 
 
-def project_footprint(project):
+def award_trajectory(project):
+    """
+    Annual award footprints against the reduction target's straight line.
+
+    Returns None without a target. Each row: year, required (target line),
+    actual (None when the year has no data), incomplete (a site on the award
+    had no record that year, so the actual is understated), and status
+    ('on' | 'off' | None) for complete years after the baseline.
+    """
+    target = getattr(project, 'reduction_target', None)
+    if target is None:
+        return None
+    annual = {}
+    for y in award_years(project):
+        fp = project_footprint(project, year=y)
+        annual[y] = {'total': fp['total'], 'incomplete': bool(fp['sites_missing_data'])}
+
+    baseline = annual.get(target.baseline_year)
+    result = {'target': target, 'baseline': None, 'rows': [], 'on_track': None,
+              'baseline_missing': baseline is None or baseline['total'] <= 0}
+    if result['baseline_missing']:
+        return result
+    base_total = baseline['total']
+    result['baseline'] = base_total
+    span = Decimal(target.target_year - target.baseline_year)
+    pct = Decimal(target.reduction_pct) / Decimal('100')
+    for y in range(target.baseline_year, target.target_year + 1):
+        required = base_total * (Decimal('1') - pct * Decimal(y - target.baseline_year) / span)
+        data = annual.get(y)
+        actual = data['total'] if data else None
+        incomplete = bool(data and data['incomplete'])
+        status = None
+        # An incomplete year is understated, so it is shown but never judged.
+        if actual is not None and y > target.baseline_year and not incomplete:
+            status = 'on' if actual <= required else 'off'
+        result['rows'].append({
+            'year': y, 'required': required.quantize(Decimal('0.01')), 'actual': actual,
+            'incomplete': incomplete, 'status': status,
+        })
+    tracked = [r for r in result['rows'] if r['status']]
+    if tracked:
+        result['on_track'] = tracked[-1]['status'] == 'on'
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Organisation-level duties in Wellcome's funding policy, verbatim (read
+# 2026-10-17). "all": "To support researchers reduce their environmental
+# impact, all organisations must:". "hic": "organisations based in
+# high-income countries must:". The policy does not define high-income.
+# ---------------------------------------------------------------------------
+ORG_DUTIES_DEADLINE = date(2024, 12, 31)
+ORG_READINESS_ITEMS = {
+    # key: (scope, label, quote, has the end-2024 deadline)
+    'training': ('all', 'Training, expert advice and tools for measurement',
+                 'Provide training and access to expert advice and tools to support them with the '
+                 'measurement and monitoring requirements of this policy (training costs are '
+                 'allowable under our Continual Professional Development policy).', False),
+    'credit_arrangement': ('all', 'Arrangements to buy accredited carbon credits',
+                           'Have arrangements to purchase third party accredited carbon credits',
+                           False),
+    'concordat': ('hic', 'Concordat for Environmental Sustainability of Research',
+                  'By the end of 2024 be signatories of the Concordat for the Environmental '
+                  'Sustainability of Research and Innovation Practice where they are based in the '
+                  'UK. Organisations in other high-income countries should follow the principles '
+                  'of the concordat.', True),
+    'net_zero_plan': ('hic', 'Science-based net-zero targets and plan (scopes 1 and 2)',
+                      'Have an organisation-wide sustainability policy with science-based targets to '
+                      'reduce scope 1 and 2 carbon emissions to net zero and by the end of 2024 they '
+                      'must have a plan for achieving this.', True),
+    'resource_log': ('hic', 'Logs of existing and left-over resources',
+                     'Maintain logs of existing and left-over resources (for example, equipment, '
+                     'including freezers and other cooling equipment, materials and consumables) '
+                     'that researchers can check before purchasing new items.', False),
+}
+
+
+def org_readiness(organisation, today=None):
+    """
+    Wellcome organisation-level duties for one organisation, with its
+    declarations. Rows: key, label, quote, applies, state, detail, declaration.
+    States: pass (in place, with evidence), warn (in place without evidence,
+    in progress, or not declared before a deadline), fail (declared not in
+    place, or undeclared after the end-2024 deadline), na (does not apply).
+    """
+    today = today or date.today()
+    declared = {d.item: d for d in organisation.readiness.all()}
+    rows = []
+    for key, (scope, label, quote, has_deadline) in ORG_READINESS_ITEMS.items():
+        applies = scope == 'all' or organisation.high_income_country or organisation.based_in_uk
+        d = declared.get(key)
+        overdue = has_deadline and today > ORG_DUTIES_DEADLINE
+        if key == 'concordat' and applies:
+            label = ('Concordat signatory' if organisation.based_in_uk
+                     else 'Follows the Concordat principles')
+        if not applies:
+            state, detail = 'na', 'Applies to organisations in high-income countries.'
+        elif d is None:
+            state = 'fail' if overdue else 'warn'
+            detail = 'Not declared.' + (' The end-of-2024 deadline has passed.' if overdue else '')
+        elif d.status == 'yes':
+            state = 'pass' if d.evidence_url else 'warn'
+            detail = 'In place.' if d.evidence_url else 'Declared in place, but no evidence linked.'
+        elif d.status == 'in_progress':
+            state = 'warn'
+            detail = 'In progress.' + (' The end-of-2024 deadline has passed.' if overdue else '')
+        else:
+            state, detail = 'fail', 'Declared not in place.'
+        rows.append({'key': key, 'label': label, 'quote': quote, 'applies': applies,
+                     'state': state, 'detail': detail, 'declaration': d})
+    return rows
+
+
+def award_checklist(project, footprint, credits, today=None):
+    """
+    Wellcome alignment checks for one award. Each row: key, label, state
+    ('pass' | 'warn' | 'fail' | 'na'), detail, and the verbatim policy line it
+    tests (None where the row is good practice the policy does not state).
+    """
+    rows = []
+
+    def row(key, label, state, detail, quote):
+        rows.append({'key': key, 'label': label, 'state': state,
+                     'detail': detail, 'quote': quote})
+
+    # Impact assessed with a tool
+    missing = footprint['sites_missing_data']
+    if footprint['total'] <= 0 and not missing:
+        row('assessed', 'Environmental impact assessed', 'fail',
+            'Nothing recorded yet: add sites, journeys or spend charged to the award.',
+            POLICY_QUOTES['assess'])
+    elif missing:
+        row('assessed', 'Environmental impact assessed', 'warn',
+            f'{len(missing)} site(s) on the award have no emission data, so their share counts as zero.',
+            POLICY_QUOTES['assess'])
+    else:
+        row('assessed', 'Environmental impact assessed', 'pass',
+            f"{footprint['total']:.1f} tCO₂e attributed to the award.",
+            POLICY_QUOTES['assess'])
+
+    journeys = footprint['journeys']
+    codes = {flag['code'] for r in footprint['journey_rows'] for flag in r['flags']}
+    flights = [j for j in journeys if j.mode == 'air']
+
+    # Travel justified
+    if not journeys:
+        row('justified', 'All travel justified', 'na',
+            'No journeys logged on this award.', POLICY_QUOTES['justified'])
+    elif 'no_justification' in codes:
+        n = sum(1 for r in footprint['journey_rows']
+                if any(f['code'] == 'no_justification' for f in r['flags']))
+        row('justified', 'All travel justified', 'warn',
+            f'{n} of {len(journeys)} journeys have no justification recorded.',
+            POLICY_QUOTES['justified'])
+    else:
+        row('justified', 'All travel justified', 'pass',
+            f'All {len(journeys)} journeys carry a justification.', POLICY_QUOTES['justified'])
+
+    # Rail for trips up to 10 hours
+    if not flights:
+        row('rail', 'Rail used for trips up to 10 hours', 'na',
+            'No flights logged.', POLICY_QUOTES['rail'])
+    elif 'rail_feasible' in codes or 'rail_unknown' in codes:
+        row('rail', 'Rail used for trips up to 10 hours', 'warn',
+            'Some flights had a rail option within 10 hours, or no rail time recorded. '
+            'Record the exception that applied.',
+            POLICY_QUOTES['rail'])
+    else:
+        row('rail', 'Rail used for trips up to 10 hours', 'pass',
+            'Every flight records a rail alternative over 10 hours.', POLICY_QUOTES['rail'])
+
+    # No business class
+    if not flights:
+        row('business', 'No business-class flights', 'na',
+            'No flights logged.', POLICY_QUOTES['business'])
+    elif 'business_class' in codes:
+        n = sum(1 for j in flights if j.cabin_class == 'business')
+        row('business', 'No business-class flights', 'fail',
+            f'{n} business-class flight(s) logged.', POLICY_QUOTES['business'])
+    else:
+        row('business', 'No business-class flights', 'pass',
+            'No business-class flights logged.', POLICY_QUOTES['business'])
+
+    # Remaining travel emissions mitigated with credits
+    if credits['required'] <= 0:
+        row('mitigated', 'Remaining travel emissions mitigated', 'na',
+            'No travel emissions to mitigate.', POLICY_QUOTES['mitigate'])
+    elif credits['covered']:
+        row('mitigated', 'Remaining travel emissions mitigated', 'pass',
+            f"{credits['purchased']} accredited credits cover {credits['required']} required.",
+            POLICY_QUOTES['mitigate'])
+    else:
+        row('mitigated', 'Remaining travel emissions mitigated', 'warn',
+            f"{credits['outstanding']} of {credits['required']} credits still to buy.",
+            POLICY_QUOTES['mitigate'])
+
+    # Credits third-party accredited
+    if not credits['purchases']:
+        row('accredited', 'Credits third-party accredited', 'na',
+            'No credits recorded.', POLICY_QUOTES['accredited'])
+    elif credits['unaccredited']:
+        row('accredited', 'Credits third-party accredited', 'fail',
+            f"{len(credits['unaccredited'])} purchase(s) not from an accredited standard.",
+            POLICY_QUOTES['accredited'])
+    else:
+        row('accredited', 'Credits third-party accredited', 'pass',
+            'All purchases are from an accredited standard.', POLICY_QUOTES['accredited'])
+
+    # Laboratory accreditation for lab sites on the award
+    today = today or date.today()
+    labs = [r['facility'] for r in footprint['site_rows'] if r['facility'].is_laboratory]
+    statuses = [(f, lab_status(f, today)) for f in labs]
+    missing = [f for f, st in statuses if st['state'] == 'none']
+    equivalent = [f for f, st in statuses if st['state'] == 'equivalent']
+    if not labs:
+        row('lab', 'Laboratories accredited', 'na',
+            'No site on this award is marked as having laboratories.', POLICY_QUOTES['lab'])
+    elif missing:
+        overdue = today > LAB_ACCREDITATION_DEADLINE
+        names = ', '.join(f.display_name for f in missing)
+        row('lab', 'Laboratories accredited', 'fail' if overdue else 'warn',
+            f"No current accreditation: {names}."
+            + (' The end-of-2025 deadline has passed.' if overdue else ''),
+            POLICY_QUOTES['lab'])
+    elif equivalent:
+        names = ', '.join(f.display_name for f in equivalent)
+        row('lab', 'Laboratories accredited', 'warn',
+            f'Only an "equivalent" scheme recorded for {names}; confirm Wellcome accepts it.',
+            POLICY_QUOTES['lab'])
+    else:
+        row('lab', 'Laboratories accredited', 'pass',
+            f'All {len(labs)} lab site(s) hold current LEAF or My Green Lab accreditation.',
+            POLICY_QUOTES['lab'])
+
+    # Reduction plan
+    trajectory = award_trajectory(project)
+    if trajectory is None:
+        row('reduction', 'Reduction target set and tracked', 'warn',
+            'No reduction target set for this award.', POLICY_QUOTES['reduce'])
+    elif trajectory['baseline_missing']:
+        row('reduction', 'Reduction target set and tracked', 'warn',
+            f"Target set, but there is no data for the {trajectory['target'].baseline_year} baseline year.",
+            POLICY_QUOTES['reduce'])
+    elif trajectory['on_track'] is False:
+        row('reduction', 'Reduction target set and tracked', 'warn',
+            'Target set; the latest year is above the target line.', POLICY_QUOTES['reduce'])
+    else:
+        t = trajectory['target']
+        row('reduction', 'Reduction target set and tracked', 'pass',
+            f'{t.reduction_pct:.0f}% below {t.baseline_year} by {t.target_year}'
+            + ('; on track.' if trajectory['on_track'] else '; no complete year after the baseline yet.'),
+            POLICY_QUOTES['reduce'])
+
+    # Retirement: good practice, not stated in the policy
+    if not credits['purchases']:
+        row('retired', 'Credits retired on the registry', 'na',
+            'No credits recorded.', None)
+    elif credits['unretired']:
+        row('retired', 'Credits retired on the registry', 'warn',
+            f"{len(credits['unretired'])} purchase(s) not yet marked retired.", None)
+    else:
+        row('retired', 'Credits retired on the registry', 'pass',
+            'All purchases marked retired.', None)
+
+    return rows
+
+
+# ---------------------------------------------------------------------------
+# Reduction measures an applicant can commit to, each with the verbatim line of
+# Wellcome's Environmental sustainability funding policy it comes from (read
+# 2026-10-17). Grouped by the policy's own headings.
+# ---------------------------------------------------------------------------
+REDUCTION_MEASURES = {
+    # key: (group, short label, policy quote)
+    'virtual': ('Travel', 'Meet virtually where possible',
+                'Use alternatives (such as video conferencing, hybrid meetings and attending '
+                'conferences virtually) where possible.'),
+    'local_skills': ('Travel', 'Use local skills for fieldwork',
+                     'Leverage existing local skills for fieldwork or if necessary, upskill others '
+                     'who are already located in the field rather than to travel to site themselves.'),
+    'rail': ('Travel', 'Train for trips up to 10 hours', POLICY_QUOTES['rail']),
+    'economy': ('Travel', 'Economy class when flying', POLICY_QUOTES['economy']),
+    'equipment_off': ('Energy', 'Switch equipment off when not in use',
+                      'Turn off equipment, including laminar flow cabinets when not in use '
+                      '(for example overnight).'),
+    'fume_hoods': ('Energy', 'Close fume hoods', 'Close fume hoods when not in use.'),
+    'freezers': ('Energy', 'Ultra-low freezers at -70 °C',
+                 'Set ultralow freezers no lower than -70 degrees Celsius.'),
+    'asset_check': ('Reuse', 'Check inventories before buying',
+                    'Check internal inventories/asset registries at host organisations for '
+                    'existing equipment, materials and consumables before purchasing new items.'),
+    'second_hand': ('Reuse', 'Second-hand or reconditioned equipment',
+                    'Use second hand or reconditioned equipment where available, viable and more '
+                    'sustainable than purchasing new.'),
+    'share_equipment': ('Reuse', 'Share equipment',
+                        'Share equipment with other researchers/organisations where available and '
+                        'viable, rather than purchasing one of everything each.'),
+    'maintenance': ('Reuse', 'Maintenance contracts so items are repaired',
+                    'Use maintenance contracts so items can be repaired rather than recycled as '
+                    'much as possible.'),
+    'reusable': ('Consumables', 'Reusable instead of single-use plastics',
+                 'Avoid single-use plastics where reusable alternatives are available and viable.'),
+    'min_size': ('Consumables', 'Smallest plastic consumables needed',
+                 'Use plastic consumables with the minimum size required.'),
+    'recycling': ('Waste', 'Use institutional recycling',
+                  'Use institutional recycling facilities, particularly for clean packaging, and use '
+                  'general or hazardous waste bins only when unavoidable.'),
+    'recycled_materials': ('Waste', 'Recycled or recyclable materials',
+                           'Use materials, consumables and equipment that are made from recycled '
+                           'materials and/or can be recycled at the end of their useful life where viable.'),
+}
+
+
+# ---------------------------------------------------------------------------
+# Sustainability costs Wellcome says it will pay for, each with the verbatim
+# line from the policy's "Wellcome will pay for" list (read 2026-10-17).
+# ---------------------------------------------------------------------------
+ELIGIBLE_COSTS = {
+    # key: (label, policy heading, quote)
+    'staff_measurement': (
+        'Staff time to measure and report emissions', 'Project staff',
+        'Time for technical experts to advise, assess, measure and report on the '
+        'award\u2019s emissions and resource usage.'),
+    'travel_credits': (
+        'Carbon credits for remaining travel', 'Travel',
+        'The cost to mitigate the carbon from remaining essential travel related to '
+        'Wellcome grants through third-party accredited carbon credits.'),
+    'low_carbon_travel': (
+        'Lower-carbon travel', 'Travel',
+        'Essential travel by the most carbon efficient mode and class of transport, even '
+        'if cheaper less sustainable options are available.'),
+    'hybrid_tools': (
+        'Hybrid meeting hardware and software', 'Travel',
+        'Computer hardware and software to enable hybrid meetings (for example business '
+        'Zoom or Teams subscriptions where a collaborator does not already have these and '
+        'where free versions are unsuitable).'),
+    'lab_accreditation': (
+        'Lead applicant\u2019s lab accreditation', 'Measuring and monitoring',
+        'The cost of adding the lead applicants\u2019 laboratory to LEAF, My Green Lab or '
+        'equivalent accreditation programme (we won\u2019t pay for an entire '
+        'organisation\u2019s membership).'),
+    'sustainable_materials': (
+        'Sustainable materials and consumables', 'Materials and consumables',
+        'Sustainable versions of the materials and consumables required for research.'),
+    'efficient_equipment': (
+        'Second-hand, efficient or maintained equipment', 'Equipment',
+        'Second hand or reconditioned equipment. New efficient equipment where it is the '
+        'more sustainable option (taking into account embodied carbon of manufacture). '
+        'Maintenance of existing equipment where it is viable as an alternative to '
+        'purchasing new equipment.'),
+    'cpd_training': (
+        'Sustainability training (CPD)', 'Continuing Professional Development',
+        'our CPD policy allows up to \u00a3500 per person per year for career-based training '
+        '... This funding can be used for training on how environmental sustainability '
+        'relates to research and how to use tools to assess the sustainability of the research.'),
+    'lca': (
+        'Life cycle assessment of research outputs', 'Innovation',
+        'Life cycle assessments for any products, tools or therapy developed as an output '
+        'of research can be costed into outputs management plans.'),
+}
+
+# ---------------------------------------------------------------------------
+# Computing emissions: Green Algorithms method.
+# Lannelongue L, Grealey J, Inouye M. Green Algorithms: Quantifying the Carbon
+# Footprint of Computation. Advanced Science 2021;8(12):2100707,
+# doi:10.1002/advs.202100707 (read via PubMed Central PMC8224424, 2026-10-17).
+#   energy (kWh) = runtime_h x (cores x W_per_core x usage + memory_GB x W_per_GB)
+#                  x PUE / 1000, repeated for the "pragmatic scaling factor"
+# Memory draw "was estimated to be 0.3725 W per GB"; the worldwide average PUE
+# is 1.67, and PUE 1 is used for laptops and desktops. Core power is the
+# processor's TDP per core, which the user takes from the manufacturer.
+# Carbon = energy x grid intensity where the job runs (ELECTRICITY_EF).
+# ---------------------------------------------------------------------------
+GREEN_ALGORITHMS_DOI = 'https://doi.org/10.1002/advs.202100707'
+MEMORY_W_PER_GB = Decimal('0.3725')
+DEFAULT_PUE = Decimal('1.67')
+
+
+def compute_job_kwh(runtime_hours, cores, watts_per_core, usage, memory_gb, pue, runs=1):
+    """Energy for a computing job (all its runs), in kWh."""
+    power_w = (Decimal(cores) * Decimal(watts_per_core) * Decimal(usage)
+               + Decimal(memory_gb) * MEMORY_W_PER_GB)
+    return Decimal(runtime_hours) * power_w * Decimal(pue) / Decimal('1000') * Decimal(runs)
+
+
+# ---------------------------------------------------------------------------
+# Factor currency audit, 17 October 2026. Each factor checked against its
+# source and the latest edition where the source is openly available.
+# ---------------------------------------------------------------------------
+FACTOR_AUDIT_DATE = date(2026, 10, 17)
+FACTOR_AUDIT = [
+    # (factor, status, note)
+    ('Natural gas, LPG, mineral diesel (stationary and fleet)', 'updated',
+     'Checked against DEFRA 2026 flat file v1.2. LPG 2.93921 → 2.93936 kg/kg; diesel 2.68779 → '
+     '2.66155 kg/L; natural gas unchanged at 2.02633 kg/m³.'),
+    ('Average car (road business travel)', 'updated',
+     'DEFRA 2026 average car, unknown fuel: 0.171 → 0.16591 kg/km.'),
+    ('Contracted vehicles', 'updated',
+     'DEFRA 2026 average van up to 3.5 t, diesel: 0.267 → 0.25716 kg/km.'),
+    ('Site flights (passenger-km)', 'updated',
+     'DEFRA 2026 long-haul economy with radiative forcing: 0.14993 → 0.11704 kg/pkm (−22%).'),
+    ('UK grid electricity', 'updated',
+     'DEFRA 2026 "Electricity: UK" generated: 0.200 → 0.13096 kg/kWh. Generation only, '
+     'excluding transmission and distribution losses, as before.'),
+    ('General waste to landfill', 'checked',
+     'DEFRA 2026 household residual waste to landfill 497.29 kg/t; unchanged at the 3 s.f. used.'),
+    ('Award travel log (air, rail, bus, coach, taxi, car)', 'checked',
+     'Taken from DEFRA 2026 when the travel log was built.'),
+    ('Computing (Green Algorithms)', 'checked',
+     'Memory 0.3725 W/GB and average PUE 1.67, from Lannelongue et al. 2021.'),
+    ('Grid electricity outside the UK', 'not re-verified',
+     'Cited to IEA 2023, Climate Transparency and national reports. The IEA emission factors '
+     'dataset is licensed, so the values could not be checked against it in this audit.'),
+    ('Refrigerant gases', 'not re-verified',
+     'The blend uses R-410A 2088, R-134a 1430 and R-22 1810, which are IPCC AR4 GWP100 values, '
+     'while the header cites AR6. Needs reconciling before it is cited.'),
+    ('Anaesthetic gases, medical inhalers, clinical waste incineration', 'not re-verified',
+     'Peer-reviewed and NHS sources as cited; not re-checked in this audit.'),
+    ('Procurement spend factors', 'not re-verified',
+     'Spend-based EEIO factors as cited per category; not re-checked in this audit.'),
+]
+
+# First-person wording for each measure in the draft application text. These
+# are drafting aids for the applicant to edit, not policy quotations.
+MEASURE_COMMITMENTS = {
+    'virtual': 'hold meetings and attend conferences virtually where possible',
+    'local_skills': 'use local skills for fieldwork, and upskill staff already in the field, instead of travelling to site',
+    'rail': 'take the train for journeys of up to 10 hours door to door',
+    'economy': 'fly economy class when flying is unavoidable',
+    'equipment_off': 'switch equipment, including laminar flow cabinets, off when not in use',
+    'fume_hoods': 'close fume hoods when not in use',
+    'freezers': 'set ultra-low freezers no lower than -70 °C',
+    'asset_check': 'check institutional inventories and asset registries before buying equipment or consumables',
+    'second_hand': 'use second-hand or reconditioned equipment where viable',
+    'share_equipment': 'share equipment with other groups instead of buying duplicates',
+    'maintenance': 'use maintenance contracts so equipment is repaired rather than replaced',
+    'reusable': 'replace single-use plastics with reusable alternatives where viable',
+    'min_size': 'use the smallest plastic consumables the work needs',
+    'recycling': 'use institutional recycling, keeping general and hazardous waste bins for what cannot be recycled',
+    'recycled_materials': 'choose materials and equipment made from recycled content or recyclable at end of life',
+}
+
+MEASURE_GROUP_INTROS = {
+    'Travel': 'To reduce travel emissions, the team will',
+    'Energy': 'To reduce energy use, the team will',
+    'Reuse': 'To reuse equipment and materials, the team will',
+    'Consumables': 'To reduce consumables, the team will',
+    'Waste': 'To reduce and recycle waste, the team will',
+}
+
+
+def _join_phrases(phrases):
+    if len(phrases) <= 2:
+        return ' and '.join(phrases)
+    return '; '.join(phrases[:-1]) + '; and ' + phrases[-1]
+
+
+def application_statement(project, estimate, footprint):
+    """
+    Draft text for the application's environmental sustainability section,
+    built only from the applicant's own inputs. Returns paragraphs, the
+    figures each number came from, and warnings to fix before submitting.
+    """
+    paragraphs, sources, warnings = [], [], []
+    rows = {r['label']: r for r in estimate['rows']}
+    travel = rows['Travel']['estimate']
+    spend_t = rows['Purchases charged to the award']['estimate']
+    site_t = rows['Share of site running emissions']['estimate']
+    trips = [r['journey'] for r in estimate['planned_trips']]
+    spend_usd = sum((line.spend_usd for line in estimate['planned_lines']), Decimal('0'))
+    n_sites = len(footprint['site_rows'])
+
+    parts = []
+    if trips:
+        parts.append(f'{len(trips)} planned trip{"s" if len(trips) != 1 else ""} ({travel:.1f} tCO₂e)')
+        sources.append(f'Travel {travel:.2f} t: sum of {len(trips)} planned trips in the estimate.')
+    if estimate['planned_lines']:
+        parts.append(f'planned purchases of ${spend_usd:,.0f} ({spend_t:.1f} tCO₂e)')
+        sources.append(f'Purchases {spend_t:.2f} t: {len(estimate["planned_lines"])} planned lines '
+                       'at spend-based factors.')
+    if estimate['planned_jobs']:
+        compute_t = rows["Computing outside the award's sites"]['estimate']
+        n_jobs = len(estimate['planned_jobs'])
+        parts.append(f'{n_jobs} planned computing job{"s" if n_jobs != 1 else ""} '
+                     f'({compute_t:.1f} tCO₂e)')
+        sources.append(f'Computing {compute_t:.2f} t: {n_jobs} planned jobs by the Green '
+                       'Algorithms method.')
+    if n_sites:
+        parts.append(f'the project\'s share of running emissions at {n_sites} '
+                     f'site{"s" if n_sites != 1 else ""} ({site_t:.1f} tCO₂e)')
+        sources.append(f'Site share {site_t:.2f} t: declared shares of each site\'s latest '
+                       'emission record, excluding site travel.')
+    if parts:
+        paragraphs.append(
+            f'We estimate the project\'s carbon footprint at {estimate["estimate_total"]:.1f} tCO₂e, '
+            f'made up of {_join_phrases(parts)}. Travel uses the UK Government 2026 '
+            'business-travel conversion factors; purchases use spend-based factors'
+            + ('; computing uses the Green Algorithms method.' if estimate['planned_jobs'] else '.')
+        )
+
+    chosen = [k for k in REDUCTION_MEASURES if k in (project.reduction_measures or [])]
+    for group, intro in MEASURE_GROUP_INTROS.items():
+        phrases = [MEASURE_COMMITMENTS[k] for k in chosen if REDUCTION_MEASURES[k][0] == group]
+        text = f'{intro} {_join_phrases(phrases)}.' if phrases else ''
+        if group == 'Travel' and estimate['credits_for_plan'] > 0:
+            credit_text = (f'Remaining travel emissions of {travel:.1f} tCO₂e will be mitigated with '
+                           f'{estimate["credits_for_plan"]:.0f} third-party accredited carbon credits')
+            if estimate['credit_budget_usd'] is not None:
+                credit_text += (f', budgeted at ${estimate["credit_budget_usd"]:,.0f} '
+                                f'(${project.credit_price_usd:,.2f} per credit)')
+                sources.append(f'Credit budget: {estimate["credits_for_plan"]:.0f} credits × '
+                               f'${project.credit_price_usd:,.2f}, the price entered.')
+            text = (text + ' ' if text else '') + credit_text + '.'
+        if text:
+            paragraphs.append(text)
+
+    if estimate['cost_lines']:
+        items = [f'{c.label.lower()} (${c.amount_usd:,.0f})' for c in estimate['cost_lines']]
+        paragraphs.append(
+            f'The budget includes ${estimate["costs_total"]:,.0f} of sustainability costs that '
+            f'Wellcome lists as eligible: {_join_phrases(items)}.'
+        )
+        sources.append(f'Sustainability costs ${estimate["costs_total"]:,.2f}: '
+                       f'{len(estimate["cost_lines"])} budget lines entered.')
+
+    if project.reduction_notes:
+        paragraphs.append(project.reduction_notes.strip())
+
+    for row in estimate['planned_trips']:
+        j = row['journey']
+        for flag in row['flags']:
+            if flag['severity'] in ('fail', 'warn'):
+                warnings.append(f'{j.origin} → {j.destination}: {flag["message"]}')
+    if not chosen and not project.reduction_notes:
+        warnings.append('No reduction measures chosen yet.')
+
+    return {'paragraphs': paragraphs, 'sources': sources, 'warnings': warnings,
+            'text': '\n\n'.join(paragraphs)}
+
+
+def project_estimate(project, footprint, credits):
+    """
+    Application-stage estimate for an award, laid beside the actuals.
+
+    Estimate = the award's share of its sites' running emissions (excluding
+    site travel, which planned trips replace) + planned trips + planned spend.
+    The site share uses each site's latest record, so it is the same figure in
+    both columns. Actual travel is the credit-position travel figure (logged
+    journeys, or the site-travel estimate when none are logged).
+    """
+    by_category = footprint['by_category']
+    site_travel = sum((by_category.get(f, Decimal('0')) for f in SITE_TRAVEL_FIELDS),
+                      Decimal('0'))
+    site_share = footprint['apportioned_total'] - site_travel
+
+    planned_trips = list(project.journeys.filter(is_planned=True))
+    planned_travel = sum((j.tco2e() for j in planned_trips), Decimal('0'))
+    planned_lines = list(project.planned_spend.all())
+    planned_spend = sum((line.tco2e() for line in planned_lines), Decimal('0'))
+
+    actual_travel = credits['travel_tco2e']
+    actual_computing = footprint['computing_total']
+    actual_spend = (footprint['direct_total'] - footprint['travel_total']
+                    - actual_computing)
+    planned_jobs = list(project.compute_jobs.filter(is_planned=True))
+    planned_computing = sum((job.tco2e() for job in planned_jobs), Decimal('0'))
+
+    rows = [
+        {'label': 'Travel', 'estimate': planned_travel, 'actual': actual_travel},
+        {'label': 'Purchases charged to the award', 'estimate': planned_spend,
+         'actual': actual_spend},
+        {'label': 'Computing outside the award\'s sites', 'estimate': planned_computing,
+         'actual': actual_computing},
+        {'label': 'Share of site running emissions', 'estimate': site_share,
+         'actual': site_share},
+    ]
+    for r in rows:
+        r['difference'] = r['actual'] - r['estimate']
+    estimate_total = site_share + planned_travel + planned_spend + planned_computing
+    actual_total = site_share + actual_travel + actual_spend + actual_computing
+
+    cost_lines = list(project.sustainability_costs.all())
+
+    credits_for_plan = (planned_travel.to_integral_value(rounding=ROUND_CEILING)
+                        if planned_travel > 0 else Decimal('0'))
+    price = project.credit_price_usd
+    return {
+        'planned_trips': [{'journey': j, 'flags': journey_policy_flags(j)} for j in planned_trips],
+        'planned_lines': planned_lines,
+        'planned_jobs': planned_jobs,
+        'rows': rows,
+        'estimate_total': estimate_total,
+        'actual_total': actual_total,
+        'difference': actual_total - estimate_total,
+        'credits_for_plan': credits_for_plan,
+        'credit_budget_usd': (credits_for_plan * price) if price is not None else None,
+        'measures': [
+            {'key': k, 'group': g, 'label': label, 'quote': q}
+            for k, (g, label, q) in REDUCTION_MEASURES.items()
+            if k in (project.reduction_measures or [])
+        ],
+        'has_plan': bool(planned_trips or planned_lines or planned_jobs),
+        'cost_lines': cost_lines,
+        'costs_total': sum((c.amount_usd for c in cost_lines), Decimal('0')),
+        'credit_cost_budgeted': any(c.kind == 'travel_credits' for c in cost_lines),
+    }
+
+
+def _latest_record(facility, year=None):
+    from appname.models import EmissionData
+    records = EmissionData.objects.filter(emission_source__facility=facility)
+    if year is not None:
+        records = records.filter(date__year=year)
+    return records.order_by('-date', '-id').first()
+
+
+def project_footprint(project, year=None):
     """
     Attribute emissions to one award.
 
     Returns a dict with per-site rows, the direct/apportioned split, a category
     breakdown, scope totals, and the procurement hot spots for spend charged to
     the award. Sites with no emission record are reported so the gap is visible
-    rather than silently reducing the total.
+    rather than silently reducing the total. Logged journeys are direct, and once
+    any exist they replace the award's share of SITE_TRAVEL_FIELDS.
+
+    With `year`, each site's latest record within that year is used and only
+    that year's journeys are counted, giving the award's footprint for one year.
     """
     from appname.models import ProcurementLine
 
     site_rows = []
     by_category = {field: Decimal('0') for field in APPORTIONABLE_FIELDS}
     by_category['lab_consumables'] = Decimal('0')
+    by_category['award_travel'] = Decimal('0')
+    by_category['computing'] = Decimal('0')
     direct_total = Decimal('0')
     apportioned_total = Decimal('0')
     direct_lines = []
 
+    journeys = project.journeys.filter(is_planned=False)
+    if year is not None:
+        journeys = journeys.filter(date__year=year)
+    journeys = list(journeys)
+    travel_logged = bool(journeys)
+    apportioned_fields = [
+        field for field in APPORTIONABLE_FIELDS
+        if not (travel_logged and field in SITE_TRAVEL_FIELDS)
+    ]
+
     for project_site in project.sites.select_related('facility').all():
         facility = project_site.facility
         share = (project_site.share_pct or Decimal('0')) / Decimal('100')
-        record = _latest_record(facility)
+        record = _latest_record(facility, year)
         if record is None:
             site_rows.append({
                 'site_id': project_site.id,
@@ -1564,7 +2429,7 @@ def project_footprint(project):
         full = compute_tco2e(record, facility.country, facility.sector)
 
         site_apportioned = Decimal('0')
-        for field in APPORTIONABLE_FIELDS:
+        for field in apportioned_fields:
             value = full.get(field, Decimal('0')) * share
             by_category[field] += value
             site_apportioned += value
@@ -1608,6 +2473,30 @@ def project_footprint(project):
             'missing_data': False,
         })
 
+    jobs = project.compute_jobs.filter(is_planned=False)
+    if year is not None:
+        jobs = jobs.filter(date__year=year)
+    jobs = list(jobs)
+    computing_total = sum((job.tco2e() for job in jobs), Decimal('0'))
+    by_category['computing'] = computing_total
+    direct_total += computing_total
+
+    travel_total = sum((j.tco2e() for j in journeys), Decimal('0'))
+    by_category['award_travel'] = travel_total
+    journey_rows = [{'journey': j, 'flags': journey_policy_flags(j)} for j in journeys]
+    flag_counts = {}
+    for row in journey_rows:
+        for flag in row['flags']:
+            entry = flag_counts.setdefault(flag['code'], {
+                'code': flag['code'], 'label': TRAVEL_FLAG_LABELS[flag['code']],
+                'severity': flag['severity'], 'count': 0,
+            })
+            entry['count'] += 1
+    severity_order = {'fail': 0, 'warn': 1, 'info': 2}
+    travel_flag_summary = sorted(
+        flag_counts.values(), key=lambda e: (severity_order[e['severity']], e['code']))
+    direct_total += travel_total
+
     total = direct_total + apportioned_total
     category_rows = sorted(
         (
@@ -1627,6 +2516,13 @@ def project_footprint(project):
         'direct_share_pct': (direct_total / total * 100) if total else Decimal('0'),
         'procurement_rows': _project_procurement_rows(direct_lines),
         'sites_missing_data': [r for r in site_rows if r['missing_data']],
+        'journeys': journeys,
+        'journey_rows': journey_rows,
+        'travel_flag_summary': travel_flag_summary,
+        'travel_total': travel_total,
+        'travel_logged': travel_logged,
+        'compute_jobs': jobs,
+        'computing_total': computing_total,
     }
 
 

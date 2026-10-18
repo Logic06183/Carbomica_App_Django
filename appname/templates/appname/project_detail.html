@@ -2,7 +2,7 @@
 {% load humanize %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-start mb-1">
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-1">
     <div>
         <p class="section-label mb-1">Award carbon report</p>
         <h2 class="mb-1">{{ project.name }}</h2>
@@ -12,15 +12,44 @@
             {% if project.organisation %} · {{ project.organisation.display_label }}{% endif %}
         </p>
     </div>
-    <div class="text-nowrap">
-        <button onclick="window.print()" class="btn btn-outline-secondary btn-sm">
-            <i class="fas fa-print me-1"></i> Print / PDF
-        </button>
+    <div class="d-flex flex-wrap gap-1">
+        <a href="{% url 'project_report' project.id %}" class="btn btn-primary btn-sm">
+            <i class="fas fa-file-lines me-1"></i> Funder report
+        </a>
+        <a href="{% url 'project_export' project.id %}" class="btn btn-outline-secondary btn-sm">
+            <i class="fas fa-file-csv me-1"></i> CSV
+        </a>
         <a href="{% url 'projects' %}" class="btn btn-outline-secondary btn-sm">
             <i class="fas fa-arrow-left me-1"></i> Awards
         </a>
     </div>
 </div>
+
+<!-- ── Section navigation ── -->
+<nav class="d-flex flex-wrap gap-1 my-2 small no-print" aria-label="Sections of this award">
+    <span class="text-muted me-1">Jump to:</span>
+    <a href="#alignment" class="badge rounded-pill text-bg-light border text-decoration-none">Alignment</a>
+    <a href="#sites" class="badge rounded-pill text-bg-light border text-decoration-none">Sites</a>
+    <a href="#estimate" class="badge rounded-pill text-bg-light border text-decoration-none">Application estimate</a>
+    <a href="#application-text" class="badge rounded-pill text-bg-light border text-decoration-none">Draft text</a>
+    <a href="#travel" class="badge rounded-pill text-bg-light border text-decoration-none">Travel log</a>
+    <a href="#computing" class="badge rounded-pill text-bg-light border text-decoration-none">Computing</a>
+    <a href="#credits" class="badge rounded-pill text-bg-light border text-decoration-none">Credits</a>
+    <a href="#reduction-plan" class="badge rounded-pill text-bg-light border text-decoration-none">Reduction plan</a>
+    <a href="#method" class="badge rounded-pill text-bg-light border text-decoration-none">Method</a>
+</nav>
+
+{% if footprint.total == 0 and not estimate.has_plan %}
+<div class="alert alert-info small no-print" id="getting-started">
+    <strong>Getting started with this award</strong>
+    <ol class="mb-0 mt-1 ps-3">
+        <li><a href="#sites">Add the sites</a> the award runs at, with its share of each and the evidence for that share.</li>
+        <li>In the <a href="#estimate">application estimate</a>, plan trips, purchases and computing, and pick the reduction measures you will commit to.</li>
+        <li>Copy the <a href="#application-text">draft application text</a> into your Wellcome application and edit it into your own words.</li>
+        <li>Once the award runs, log journeys and credits here, then send the funder report.</li>
+    </ol>
+</div>
+{% endif %}
 
 <!-- ── Headline ── -->
 <div class="row g-3 my-2">
@@ -63,10 +92,65 @@
 
 {% if messages %}{% endif %}
 
+<!-- ── Wellcome alignment ── -->
+<div class="card mb-4" id="alignment">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <strong>Wellcome alignment</strong>
+        <a href="{{ wellcome_policy_url }}" target="_blank" rel="noopener" class="small">
+            Environmental sustainability funding policy
+        </a>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+            <tbody>
+                {% for c in checklist %}
+                <tr>
+                    <td style="width:2rem;" class="text-center">
+                        {% if c.state == 'pass' %}<i class="fas fa-circle-check text-success" title="pass"></i>
+                        {% elif c.state == 'warn' %}<i class="fas fa-circle-exclamation text-warning" title="warn"></i>
+                        {% elif c.state == 'fail' %}<i class="fas fa-circle-xmark text-danger" title="fail"></i>
+                        {% else %}<i class="fas fa-circle-minus text-muted" title="not applicable"></i>{% endif %}
+                    </td>
+                    <td style="width:28%;" class="fw-semibold small">{{ c.label }}</td>
+                    <td class="small">
+                        {{ c.detail }}
+                        <div class="text-muted fst-italic" style="font-size:.7rem;">
+                            {% if c.quote %}Policy: &ldquo;{{ c.quote }}&rdquo;
+                            {% else %}Good practice; the policy does not mention this.{% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="card-footer text-muted" style="font-size:.7rem;">
+        Checks the app can evidence from this award's own records.
+    </div>
+</div>
+
+{% if org_readiness %}
+<div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <strong>Lead organisation: {{ project.organisation.name }}</strong>
+        <a href="{% url 'org_readiness' project.organisation.id %}" class="small">Organisation readiness</a>
+    </div>
+    <div class="card-body py-2 small">
+        {% for r in org_readiness %}
+        <span class="me-3 d-inline-block">
+            <span class="badge {% if r.state == 'pass' %}bg-success{% elif r.state == 'warn' %}bg-warning text-dark{% elif r.state == 'fail' %}bg-danger{% else %}bg-light text-dark border{% endif %}">{% if r.state == 'na' %}n/a{% else %}{{ r.state }}{% endif %}</span>
+            {{ r.label }}
+        </span>
+        {% endfor %}
+        <div class="text-muted mt-1" style="font-size:.7rem;">Self-declared by the organisation; not verified by the app.</div>
+    </div>
+</div>
+{% endif %}
+
 <div class="row g-4">
     <!-- ── Sites and allocation ── -->
     <div class="col-lg-7">
-        <div class="card">
+        <div class="card" id="sites">
             <div class="card-header"><strong>Sites and apportionment</strong></div>
             <div class="table-responsive">
                 <table class="table table-sm align-middle mb-0">
@@ -121,7 +205,8 @@
                 </table>
             </div>
             <div class="card-footer text-muted" style="font-size:.75rem;">
-                <strong>Direct</strong> is spend charged to this award, counted in full.
+                <strong>Direct</strong> is spend charged to this award, counted in full;
+                logged journeys are added to the award's direct total, not to any site.
                 <strong>Apportioned</strong> is the award's share of that site's shared
                 running emissions. Purchases charged to a different award are excluded
                 from the pool entirely, so two awards at the same site never double-count
@@ -243,8 +328,759 @@
     </div>
 </div>
 
+<!-- ── Application estimate ── -->
+<div class="card mt-4" id="estimate">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <strong>Application estimate</strong>
+        <span class="text-muted small">Plan the award's footprint before it starts, then compare with actuals.</span>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+            <thead class="table-light">
+                <tr><th></th><th class="text-end">Estimate (tCO<sub>2</sub>e)</th><th class="text-end">Actual (tCO<sub>2</sub>e)</th><th class="text-end">Difference</th></tr>
+            </thead>
+            <tbody>
+                {% for r in estimate.rows %}
+                <tr>
+                    <td>{{ r.label }}</td>
+                    <td class="text-end">{{ r.estimate|floatformat:2 }}</td>
+                    <td class="text-end">{{ r.actual|floatformat:2 }}</td>
+                    <td class="text-end text-muted">{{ r.difference|floatformat:2 }}</td>
+                </tr>
+                {% endfor %}
+                <tr class="fw-semibold">
+                    <td>Total</td>
+                    <td class="text-end">{{ estimate.estimate_total|floatformat:2 }}</td>
+                    <td class="text-end">{{ estimate.actual_total|floatformat:2 }}</td>
+                    <td class="text-end">{{ estimate.difference|floatformat:2 }}</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="card-body small text-muted border-bottom" style="font-size:.75rem;">
+        The site share uses each site's latest emission record, so it is the same in both columns.
+        Planned trips and purchases are the application's figures; actuals come from the travel log
+        and spend charged to the award.
+        {% if not estimate.has_plan %}<strong>No planned trips or purchases yet.</strong>{% endif %}
+    </div>
+
+    <div class="card-body">
+        <div class="row g-4">
+            <!-- Planned trips -->
+            <div class="col-lg-7">
+                <h6 class="mb-2">Planned trips</h6>
+                <table class="table table-sm align-middle small mb-2">
+                    <tbody>
+                        {% for row in estimate.planned_trips %}{% with j=row.journey %}
+                        <tr>
+                            <td>{{ j.origin }} → {{ j.destination }}
+                                <div class="text-muted" style="font-size:.7rem;">
+                                    {{ j.get_mode_display }}{% if j.mode == 'air' %} · {{ j.get_cabin_class_display }}{% endif %}
+                                    · {{ j.distance_km|floatformat:0|intcomma }} km × {{ j.passengers }}
+                                </div>
+                            </td>
+                            <td class="text-end">{{ j.tco2e|floatformat:3 }} t</td>
+                            <td style="font-size:.7rem;">
+                                {% for f in row.flags %}
+                                <div><span class="badge {% if f.severity == 'fail' %}bg-danger{% elif f.severity == 'warn' %}bg-warning text-dark{% else %}bg-light text-dark border{% endif %}">{{ f.severity }}</span> {{ f.message }}</div>
+                                {% endfor %}
+                            </td>
+                            <td class="text-end">
+                                <form method="post" class="d-inline">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="action" value="remove_journey">
+                                    <input type="hidden" name="journey_id" value="{{ j.id }}">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger"><i class="fas fa-times"></i></button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endwith %}{% empty %}
+                        <tr><td class="text-muted">No planned trips.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                <form method="post" class="row g-2 align-items-end">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="add_journey">
+                    <input type="hidden" name="is_planned" value="on">
+                    <div class="col-4"><input type="date" name="date" class="form-control form-control-sm" required title="Planned date"></div>
+                    <div class="col-4"><input type="text" name="origin" class="form-control form-control-sm" required placeholder="From"></div>
+                    <div class="col-4"><input type="text" name="destination" class="form-control form-control-sm" required placeholder="To"></div>
+                    <div class="col-4">
+                        <select name="mode" class="form-select form-select-sm">
+                            {% for value, label in mode_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-4">
+                        <select name="air_haul" class="form-select form-select-sm">
+                            <option value="">Flight type —</option>
+                            {% for value, label in haul_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-4">
+                        <select name="cabin_class" class="form-select form-select-sm">
+                            {% for value, label in cabin_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-3"><input type="number" step="0.1" min="0.1" name="distance_km" class="form-control form-control-sm" required placeholder="km"></div>
+                    <div class="col-2"><input type="number" min="1" name="passengers" value="1" class="form-control form-control-sm" title="People"></div>
+                    <div class="col-3"><input type="number" step="0.5" min="0" name="rail_hours" class="form-control form-control-sm" placeholder="rail h"></div>
+                    <div class="col-4"><input type="text" name="purpose" class="form-control form-control-sm" placeholder="Justification"></div>
+                    <div class="col-12 text-end"><button type="submit" class="btn btn-sm btn-outline-success">Add planned trip</button></div>
+                </form>
+            </div>
+
+            <!-- Planned purchases + credit budget -->
+            <div class="col-lg-5">
+                <h6 class="mb-2">Planned purchases</h6>
+                <table class="table table-sm align-middle small mb-2">
+                    <tbody>
+                        {% for line in estimate.planned_lines %}
+                        <tr>
+                            <td>{{ line.category_label }}{% if line.description %}<div class="text-muted" style="font-size:.7rem;">{{ line.description }}</div>{% endif %}</td>
+                            <td class="text-end">${{ line.spend_usd|floatformat:0|intcomma }}</td>
+                            <td class="text-end">{{ line.tco2e|floatformat:2 }} t</td>
+                            <td class="text-end">
+                                <form method="post" class="d-inline">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="action" value="remove_planned_spend">
+                                    <input type="hidden" name="line_id" value="{{ line.id }}">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger"><i class="fas fa-times"></i></button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr><td class="text-muted">No planned purchases.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                <form method="post" class="row g-2 align-items-end mb-4">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="add_planned_spend">
+                    <div class="col-12">
+                        <select name="category" class="form-select form-select-sm" required>
+                            {% for value, label in procurement_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-7"><input type="text" name="description" class="form-control form-control-sm" placeholder="Description (optional)"></div>
+                    <div class="col-5"><input type="number" step="0.01" min="0.01" name="spend_usd" class="form-control form-control-sm" required placeholder="USD"></div>
+                    <div class="col-12 text-end"><button type="submit" class="btn btn-sm btn-outline-success">Add planned purchase</button></div>
+                </form>
+
+                <h6 class="mb-2">Credits to budget for planned travel</h6>
+                <p class="small mb-1">
+                    <strong>{{ estimate.credits_for_plan|floatformat:0 }}</strong> credits
+                    {% if estimate.credit_budget_usd is not None %}
+                    × ${{ project.credit_price_usd|floatformat:2 }} =
+                    <strong>${{ estimate.credit_budget_usd|floatformat:2|intcomma }}</strong>
+                    {% else %}
+                    · enter the price your provider quotes below to cost them.
+                    {% endif %}
+                </p>
+                <p class="text-muted mb-0" style="font-size:.7rem;">
+                    Wellcome lists "The cost to mitigate the carbon from remaining essential travel related to
+                    Wellcome grants through third-party accredited carbon credits" as an eligible cost.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Eligible sustainability costs -->
+    <div class="card-body border-top" id="eligible-costs">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="mb-0">Sustainability costs to budget</h6>
+            <span class="small">Total <strong>${{ estimate.costs_total|floatformat:2|intcomma }}</strong></span>
+        </div>
+        {% if estimate.credit_budget_usd and not estimate.credit_cost_budgeted %}
+        <form method="post" class="alert alert-info py-2 small d-flex justify-content-between align-items-center mb-2">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="add_cost">
+            <input type="hidden" name="kind" value="travel_credits">
+            <input type="hidden" name="description" value="{{ estimate.credits_for_plan|floatformat:0 }} credits for planned travel">
+            <input type="hidden" name="amount_usd" value="{{ estimate.credit_budget_usd }}">
+            <span>Your planned-travel credits come to ${{ estimate.credit_budget_usd|floatformat:2|intcomma }} and are not in the budget yet.</span>
+            <button type="submit" class="btn btn-sm btn-outline-primary">Add to budget</button>
+        </form>
+        {% endif %}
+        <table class="table table-sm align-middle small mb-2">
+            <tbody>
+                {% for c in estimate.cost_lines %}
+                <tr>
+                    <td>{{ c.label }}{% if c.description %}<div class="text-muted" style="font-size:.7rem;">{{ c.description }}</div>{% endif %}</td>
+                    <td class="text-end">${{ c.amount_usd|floatformat:2|intcomma }}</td>
+                    <td class="text-end" style="width:3rem;">
+                        <form method="post" class="d-inline">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="remove_cost">
+                            <input type="hidden" name="cost_id" value="{{ c.id }}">
+                            <button type="submit" class="btn btn-sm btn-outline-danger"><i class="fas fa-times"></i></button>
+                        </form>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td class="text-muted">No sustainability costs budgeted yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <form method="post" class="row g-2 align-items-end">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="add_cost">
+            <div class="col-md-4">
+                <select name="kind" class="form-select form-select-sm" required>
+                    {% for c in eligible_costs %}<option value="{{ c.key }}">{{ c.label }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="col-md-5"><input type="text" name="description" class="form-control form-control-sm" placeholder="What it covers"></div>
+            <div class="col-md-2"><input type="number" step="0.01" min="0.01" name="amount_usd" class="form-control form-control-sm" required placeholder="USD"></div>
+            <div class="col-md-1"><button type="submit" class="btn btn-sm btn-outline-success w-100">Add</button></div>
+        </form>
+        <details class="small text-muted mt-2">
+            <summary>What Wellcome says it will pay for</summary>
+            <ul class="mb-0 mt-1">
+                {% for c in eligible_costs %}
+                <li><strong>{{ c.label }}</strong> ({{ c.heading }}): &ldquo;{{ c.quote }}&rdquo;</li>
+                {% endfor %}
+            </ul>
+        </details>
+    </div>
+
+    <!-- Reduction measures -->
+    <div class="card-body border-top">
+        <h6 class="mb-1">Reduction measures this award commits to</h6>
+        <p class="text-muted small mb-3">
+            Wellcome asks applicants to "demonstrate how they will reduce the emissions and natural resources
+            used in their research". Each measure below is quoted from the policy.
+        </p>
+        <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="update_estimate">
+            <div class="row g-3">
+                {% for group, items in measure_groups %}
+                <div class="col-md-4 col-lg">
+                    <div class="fw-semibold small mb-1">{{ group }}</div>
+                    {% for m in items %}
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="reduction_measures"
+                               value="{{ m.key }}" id="m_{{ m.key }}" {% if m.chosen %}checked{% endif %}>
+                        <label class="form-check-label small" for="m_{{ m.key }}" title="{{ m.quote }}">{{ m.label }}</label>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endfor %}
+            </div>
+            <div class="row g-2 mt-2 align-items-end">
+                <div class="col-md-8">
+                    <label class="form-label small fw-semibold">Other measures (your own words)</label>
+                    <textarea name="reduction_notes" rows="2" class="form-control form-control-sm">{{ project.reduction_notes }}</textarea>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small fw-semibold">Credit price (USD)</label>
+                    <input type="number" step="0.01" min="0" name="credit_price_usd" class="form-control form-control-sm"
+                           value="{% if project.credit_price_usd is not None %}{{ project.credit_price_usd }}{% endif %}" placeholder="from your provider">
+                </div>
+                <div class="col-md-2"><button type="submit" class="btn btn-sm btn-primary w-100">Save</button></div>
+            </div>
+        </form>
+    </div>
+
+    <!-- Draft application text -->
+    <div class="card-body border-top" id="application-text">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="mb-0">Draft application text</h6>
+            {% if statement.paragraphs %}
+            <button type="button" class="btn btn-sm btn-outline-secondary no-print"
+                    onclick="navigator.clipboard.writeText(document.getElementById('statement-text').value); this.textContent='Copied';">
+                <i class="far fa-copy me-1"></i>Copy
+            </button>
+            {% endif %}
+        </div>
+        {% if statement.warnings %}
+        <div class="alert alert-warning py-2 small mb-2">
+            <strong>Fix before submitting:</strong>
+            <ul class="mb-0 ps-3">{% for w in statement.warnings %}<li>{{ w }}</li>{% endfor %}</ul>
+        </div>
+        {% endif %}
+        {% if statement.paragraphs %}
+        <textarea id="statement-text" class="form-control form-control-sm mb-2" rows="8" readonly>{{ statement.text }}</textarea>
+        <details class="small text-muted">
+            <summary>Where each number comes from</summary>
+            <ul class="mb-0 mt-1">{% for src in statement.sources %}<li>{{ src }}</li>{% endfor %}</ul>
+        </details>
+        <p class="text-muted mt-2 mb-0" style="font-size:.7rem;">
+            A starting draft from your own inputs. Edit it into your application's voice; it makes no
+            claim the estimate above does not support.
+        </p>
+        {% else %}
+        <p class="text-muted small mb-0">Add planned trips, purchases or sites, and choose measures, to draft this text.</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- ── Travel log ── -->
+<div class="card mt-4" id="travel">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <strong>Travel log</strong>
+        <span class="text-muted small">
+            {{ footprint.journeys|length }} journey{{ footprint.journeys|length|pluralize }}
+            · {{ footprint.travel_total|floatformat:2 }} tCO<sub>2</sub>e
+        </span>
+    </div>
+    {% if footprint.travel_flag_summary %}
+    <div class="card-body border-bottom py-2 small">
+        <strong>Wellcome travel checks:</strong>
+        {% for f in footprint.travel_flag_summary %}
+        <span class="badge {% if f.severity == 'fail' %}bg-danger{% elif f.severity == 'warn' %}bg-warning text-dark{% else %}bg-light text-dark border{% endif %} ms-1">
+            {{ f.count }} · {{ f.label }}
+        </span>
+        {% endfor %}
+        <a href="{{ wellcome_policy_url }}" target="_blank" rel="noopener" class="ms-2" style="font-size:.75rem;">policy</a>
+    </div>
+    {% endif %}
+    <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Date</th>
+                    <th>Journey</th>
+                    <th>Mode</th>
+                    <th>Traveller</th>
+                    <th class="text-end">km</th>
+                    <th class="text-end">People</th>
+                    <th class="text-end">tCO<sub>2</sub>e</th>
+                    <th>Purpose</th>
+                    <th>Checks</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in footprint.journey_rows %}{% with j=row.journey %}
+                <tr>
+                    <td class="text-nowrap">{{ j.date|date:"j M Y" }}</td>
+                    <td>{{ j.origin }} → {{ j.destination }}</td>
+                    <td>
+                        {{ j.get_mode_display }}
+                        {% if j.mode == 'air' %}
+                        <div class="text-muted" style="font-size:.7rem;">
+                            {{ j.get_air_haul_display }} · {{ j.get_cabin_class_display }}
+                        </div>
+                        {% endif %}
+                    </td>
+                    <td class="text-muted small">{{ j.traveller|default:"—" }}</td>
+                    <td class="text-end">{{ j.distance_km|floatformat:0|intcomma }}</td>
+                    <td class="text-end">{{ j.passengers }}</td>
+                    <td class="text-end fw-semibold">{{ j.tco2e|floatformat:3 }}</td>
+                    <td class="text-muted" style="font-size:.75rem;">{{ j.purpose|default:"—" }}</td>
+                    <td style="font-size:.7rem;">
+                        {% for f in row.flags %}
+                        <div class="mb-1" title="Wellcome policy: &ldquo;{{ f.quote }}&rdquo;">
+                            <span class="badge {% if f.severity == 'fail' %}bg-danger{% elif f.severity == 'warn' %}bg-warning text-dark{% else %}bg-light text-dark border{% endif %}">{{ f.severity }}</span>
+                            {{ f.message }}
+                        </div>
+                        {% empty %}
+                        <span class="text-success"><i class="fas fa-check"></i> meets travel rules</span>
+                        {% endfor %}
+                    </td>
+                    <td class="text-end">
+                        <form method="post" class="d-inline">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="remove_journey">
+                            <input type="hidden" name="journey_id" value="{{ j.id }}">
+                            <button type="submit" class="btn btn-sm btn-outline-danger"
+                                    onclick="return confirm('Remove this journey?')">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% endwith %}{% empty %}
+                <tr><td colspan="10" class="text-muted p-3">
+                    No journeys logged. Until you log them, this award carries its share of
+                    each site's flights and road travel. Once you log its journeys, they
+                    replace that share.
+                </td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="card-body border-top">
+        <h6 class="mb-3">Log a journey</h6>
+        <form method="post" class="row g-2 align-items-end">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="add_journey">
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Date</label>
+                <input type="date" name="date" class="form-control form-control-sm" required>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">From</label>
+                <input type="text" name="origin" class="form-control form-control-sm" required placeholder="Johannesburg">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">To</label>
+                <input type="text" name="destination" class="form-control form-control-sm" required placeholder="Nairobi">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Mode</label>
+                <select name="mode" class="form-select form-select-sm" required>
+                    {% for value, label in mode_choices %}
+                    <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Distance (km)</label>
+                <input type="number" step="0.1" min="0.1" name="distance_km" class="form-control form-control-sm" required placeholder="2900">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">People</label>
+                <input type="number" min="1" name="passengers" value="1" class="form-control form-control-sm" required>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold">Flight type <span class="text-muted fw-normal">(flights only)</span></label>
+                <select name="air_haul" class="form-select form-select-sm">
+                    <option value="">—</option>
+                    {% for value, label in haul_choices %}
+                    <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Cabin <span class="text-muted fw-normal">(flights)</span></label>
+                <select name="cabin_class" class="form-select form-select-sm">
+                    {% for value, label in cabin_choices %}
+                    <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Rail hours <span class="text-muted fw-normal">(flights)</span></label>
+                <input type="number" step="0.5" min="0" name="rail_hours" class="form-control form-control-sm" placeholder="door to door">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Traveller</label>
+                <input type="text" name="traveller" class="form-control form-control-sm" placeholder="PI">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold">Purpose</label>
+                <input type="text" name="purpose" class="form-control form-control-sm" placeholder="Why the trip was needed">
+            </div>
+            <div class="col-12 d-flex justify-content-between align-items-center">
+                <span class="form-text" style="font-size:.7rem;">
+                    Log a return trip as two journeys. Car distance is per vehicle, so people
+                    sharing a car are not multiplied. Factors: {{ travel_factor_source }}.
+                </span>
+                <button type="submit" class="btn btn-sm btn-success">Log journey</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ── Computing ── -->
+<div class="card mt-4" id="computing">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <strong>Computing outside the award's sites</strong>
+        <span class="text-muted small">{{ footprint.computing_total|floatformat:3 }} tCO<sub>2</sub>e logged</span>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0 small">
+            <thead class="table-light">
+                <tr><th>Date</th><th>Work</th><th class="text-end">Hours × runs</th><th class="text-end">Cores × W</th><th class="text-end">Memory</th><th class="text-end">PUE</th><th>Grid</th><th class="text-end">kWh</th><th class="text-end">tCO<sub>2</sub>e</th><th></th></tr>
+            </thead>
+            <tbody>
+                {% for job in all_compute_jobs %}
+                <tr>
+                    <td class="text-nowrap">{{ job.date|date:"j M Y" }}</td>
+                    <td>{{ job.description }}{% if job.is_planned %} <span class="badge bg-info text-dark">planned</span>{% endif %}</td>
+                    <td class="text-end">{{ job.runtime_hours|floatformat:1 }} × {{ job.runs }}</td>
+                    <td class="text-end">{{ job.cores }} × {{ job.watts_per_core|floatformat:1 }}{% if job.usage_factor != 1 %} @ {{ job.usage_factor|floatformat:2 }}{% endif %}</td>
+                    <td class="text-end">{{ job.memory_gb|floatformat:0 }} GB</td>
+                    <td class="text-end">{{ job.pue }}</td>
+                    <td>{{ job.grid_country }}</td>
+                    <td class="text-end">{{ job.kwh|floatformat:1 }}</td>
+                    <td class="text-end fw-semibold">{{ job.tco2e|floatformat:3 }}</td>
+                    <td class="text-end">
+                        <form method="post" class="d-inline">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="remove_compute">
+                            <input type="hidden" name="job_id" value="{{ job.id }}">
+                            <button type="submit" class="btn btn-sm btn-outline-danger"><i class="fas fa-times"></i></button>
+                        </form>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="10" class="text-muted p-3">No computing logged. Log national HPC or cloud work here; computing on a site's own servers is already in that site's electricity.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="card-body border-top">
+        <form method="post" class="row g-2 align-items-end">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="add_compute">
+            <div class="col-md-3"><label class="form-label small fw-semibold">Work</label><input type="text" name="description" class="form-control form-control-sm" required placeholder="GWAS on national HPC"></div>
+            <div class="col-md-2"><label class="form-label small fw-semibold">Date</label><input type="date" name="date" class="form-control form-control-sm" required></div>
+            <div class="col-md-1"><label class="form-label small fw-semibold">Hours</label><input type="number" step="0.01" min="0.01" name="runtime_hours" class="form-control form-control-sm" required></div>
+            <div class="col-md-1"><label class="form-label small fw-semibold">Cores</label><input type="number" min="1" name="cores" class="form-control form-control-sm" required></div>
+            <div class="col-md-1"><label class="form-label small fw-semibold">W / core</label><input type="number" step="0.01" min="0.01" name="watts_per_core" class="form-control form-control-sm" required title="Processor TDP ÷ cores, from the spec sheet"></div>
+            <div class="col-md-1"><label class="form-label small fw-semibold">Usage</label><input type="number" step="0.001" min="0.001" max="1" name="usage_factor" value="1" class="form-control form-control-sm"></div>
+            <div class="col-md-1"><label class="form-label small fw-semibold">Memory GB</label><input type="number" step="0.01" min="0" name="memory_gb" value="0" class="form-control form-control-sm"></div>
+            <div class="col-md-1"><label class="form-label small fw-semibold">PUE</label><input type="number" step="0.01" min="1" name="pue" value="{{ default_pue }}" class="form-control form-control-sm"></div>
+            <div class="col-md-1"><label class="form-label small fw-semibold">Runs</label><input type="number" min="1" name="runs" value="1" class="form-control form-control-sm"></div>
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold">Data centre grid</label>
+                <select name="grid_country" class="form-select form-select-sm">
+                    {% for value, label in grid_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <div class="form-check mt-4"><input class="form-check-input" type="checkbox" name="is_planned" id="cp"><label class="form-check-label small" for="cp">Planned</label></div>
+            </div>
+            <div class="col-md-5 form-text" style="font-size:.7rem;">
+                Green Algorithms method (<a href="{{ green_algorithms_doi }}" target="_blank" rel="noopener">Lannelongue et al. 2021</a>):
+                hours × (cores × W per core × usage + memory × 0.3725 W/GB) × PUE × runs, times the grid intensity.
+            </div>
+            <div class="col-md-2"><button type="submit" class="btn btn-sm btn-success w-100">Log computing</button></div>
+        </form>
+    </div>
+</div>
+
+<!-- ── Carbon credits for travel ── -->
+<div class="card mt-4" id="credits">
+    <div class="card-header"><strong>Carbon credits for travel</strong></div>
+    <div class="card-body">
+        <div class="row g-3 text-center mb-3">
+            <div class="col-6 col-md-3">
+                <div class="text-muted small">Travel to mitigate</div>
+                <div class="fw-bold fs-5">{{ credits.travel_tco2e|floatformat:2 }} t</div>
+                <div class="text-muted" style="font-size:.7rem;">
+                    {% if credits.basis == 'logged' %}from the travel log
+                    {% elif credits.basis == 'apportioned' %}estimate: share of site travel
+                    {% else %}no travel recorded{% endif %}
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="text-muted small">Credits required</div>
+                <div class="fw-bold fs-5">{{ credits.required|floatformat:0 }}</div>
+                <div class="text-muted" style="font-size:.7rem;">whole credits, 1 = 1 tCO<sub>2</sub>e</div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="text-muted small">Accredited credits bought</div>
+                <div class="fw-bold fs-5">{{ credits.purchased|floatformat:2 }}</div>
+                {% if credits.not_counted %}
+                <div class="text-danger" style="font-size:.7rem;">
+                    + {{ credits.not_counted|floatformat:2 }} not accredited, not counted
+                </div>
+                {% endif %}
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="text-muted small">{% if credits.surplus %}Surplus{% else %}Still to buy{% endif %}</div>
+                <div class="fw-bold fs-5 {% if credits.covered %}text-success{% elif credits.required %}text-danger{% endif %}">
+                    {% if credits.surplus %}{{ credits.surplus|floatformat:2 }}{% else %}{{ credits.outstanding|floatformat:2 }}{% endif %}
+                </div>
+            </div>
+        </div>
+        {% if credits.unaccredited %}
+        <div class="alert alert-danger py-2 small mb-2">
+            {{ credits.unaccredited|length }} purchase{{ credits.unaccredited|length|pluralize }} not from
+            a third-party accredited standard, so not counted towards cover. Wellcome asks for
+            "accredited carbon credits" and names Gold Standard, Verra, Woodland Carbon Code and
+            Plan Vivo as examples.
+        </div>
+        {% endif %}
+        {% if credits.unretired %}
+        <div class="alert alert-warning py-2 small mb-2">
+            {{ credits.unretired|length }} purchase{{ credits.unretired|length|pluralize }} not yet marked
+            retired. Retire credits on the registry so they cannot be counted again.
+        </div>
+        {% endif %}
+    </div>
+    <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th class="text-end">Credits</th><th>Provider</th><th>Standard</th>
+                    <th>Registry ref</th><th class="text-end">Cost</th><th>Date</th><th>Status</th><th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in credits.purchases %}
+                <tr>
+                    <td class="text-end">{{ p.credits_tco2e|floatformat:2 }}</td>
+                    <td>{{ p.provider }}</td>
+                    <td>
+                        {{ p.get_registry_display }}
+                        {% if not p.is_accredited %}<span class="badge bg-danger ms-1">not accredited</span>{% endif %}
+                    </td>
+                    <td class="text-muted small">{{ p.registry_reference|default:"—" }}</td>
+                    <td class="text-end">{% if p.cost_usd is not None %}${{ p.cost_usd|floatformat:2|intcomma }}{% else %}—{% endif %}</td>
+                    <td class="text-nowrap small">{{ p.purchase_date|date:"j M Y"|default:"—" }}</td>
+                    <td>
+                        {% if p.retired %}
+                        <span class="badge bg-success">Retired</span>
+                        {% else %}
+                        <form method="post" class="d-inline">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="retire_purchase">
+                            <input type="hidden" name="purchase_id" value="{{ p.id }}">
+                            <button type="submit" class="btn btn-sm btn-outline-success">Mark retired</button>
+                        </form>
+                        {% endif %}
+                    </td>
+                    <td class="text-end">
+                        <form method="post" class="d-inline">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="remove_purchase">
+                            <input type="hidden" name="purchase_id" value="{{ p.id }}">
+                            <button type="submit" class="btn btn-sm btn-outline-danger"
+                                    onclick="return confirm('Remove this purchase?')">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="8" class="text-muted p-3">No credits recorded against this award.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="card-body border-top">
+        <h6 class="mb-3">Record a purchase</h6>
+        <form method="post" class="row g-2 align-items-end">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="add_purchase">
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Credits (tCO<sub>2</sub>e)</label>
+                <input type="number" step="0.01" min="0.01" name="credits_tco2e" class="form-control form-control-sm" required
+                       value="{% if credits.outstanding %}{{ credits.outstanding|floatformat:0 }}{% endif %}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small fw-semibold">Provider</label>
+                <input type="text" name="provider" class="form-control form-control-sm" required>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Standard</label>
+                <select name="registry" class="form-select form-select-sm">
+                    {% for value, label in registry_choices %}
+                    <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Registry ref</label>
+                <input type="text" name="registry_reference" class="form-control form-control-sm" placeholder="serial / retirement ref">
+            </div>
+            <div class="col-md-1">
+                <label class="form-label small fw-semibold">Cost $</label>
+                <input type="number" step="0.01" min="0" name="cost_usd" class="form-control form-control-sm">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Date</label>
+                <input type="date" name="purchase_date" class="form-control form-control-sm">
+            </div>
+            <div class="col-12 d-flex justify-content-between align-items-center">
+                <span class="form-text" style="font-size:.7rem;">
+                    Wellcome: "Mitigate the remaining carbon emissions of all journeys using accredited
+                    carbon credits". One credit is one tonne CO<sub>2</sub>e
+                    (<a href="{{ verra_vcu_url }}" target="_blank" rel="noopener">Verra VCU definition</a>).
+                </span>
+                <button type="submit" class="btn btn-sm btn-success">Record purchase</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ── Reduction plan ── -->
+<div class="card mt-4" id="reduction-plan">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <strong>Reduction plan</strong>
+        {% if trajectory %}
+        <form method="post" class="d-inline">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="delete_target">
+            <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete the reduction target?')">Delete target</button>
+        </form>
+        {% endif %}
+    </div>
+    <div class="card-body">
+        {% if trajectory %}
+        <p class="mb-2">
+            <strong>{{ trajectory.target.reduction_pct|floatformat:0 }}% below {{ trajectory.target.baseline_year }}
+            by {{ trajectory.target.target_year }}</strong>
+            {% if trajectory.target.note %}<span class="text-muted small"> · {{ trajectory.target.note }}</span>{% endif %}
+            {% if trajectory.on_track is True %}<span class="badge bg-success ms-2">on track</span>
+            {% elif trajectory.on_track is False %}<span class="badge bg-danger ms-2">off track</span>{% endif %}
+        </p>
+        {% if trajectory.baseline_missing %}
+        <div class="alert alert-warning py-2 small mb-0">
+            No data for the {{ trajectory.target.baseline_year }} baseline year, so the target line cannot be drawn.
+            Years with data: {{ data_years|join:", "|default:"none" }}.
+        </div>
+        {% else %}
+        <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+                <thead class="table-light">
+                    <tr><th>Year</th><th class="text-end">Target line (tCO<sub>2</sub>e)</th><th class="text-end">Actual (tCO<sub>2</sub>e)</th><th>Status</th></tr>
+                </thead>
+                <tbody>
+                    {% for r in trajectory.rows %}
+                    <tr>
+                        <td>{{ r.year }}</td>
+                        <td class="text-end">{{ r.required|floatformat:1 }}</td>
+                        <td class="text-end">
+                            {% if r.actual is not None %}{{ r.actual|floatformat:1 }}{% else %}—{% endif %}
+                            {% if r.incomplete %}<span class="badge bg-warning text-dark ms-1" title="A site on the award has no record this year, so this is understated.">incomplete</span>{% endif %}
+                        </td>
+                        <td>
+                            {% if forloop.first %}<span class="text-muted small">baseline</span>
+                            {% elif r.status == 'on' %}<span class="badge bg-success">on track</span>
+                            {% elif r.status == 'off' %}<span class="badge bg-danger">above line</span>
+                            {% elif r.incomplete %}<span class="text-muted small">not assessed</span>{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+        {% else %}
+        <p class="text-muted small">
+            No target yet. Wellcome asks researchers to "demonstrate how they will reduce the emissions and
+            natural resources used in their research". Set a percentage cut from a baseline year; each year's
+            actual footprint is tracked against a straight line. Years with data: {{ data_years|join:", "|default:"none" }}.
+        </p>
+        {% endif %}
+    </div>
+    <div class="card-body border-top">
+        <form method="post" class="row g-2 align-items-end">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="set_target">
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Baseline year</label>
+                <input type="number" name="baseline_year" class="form-control form-control-sm" required
+                       value="{{ trajectory.target.baseline_year|default:'' }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Target year</label>
+                <input type="number" name="target_year" class="form-control form-control-sm" required
+                       value="{{ trajectory.target.target_year|default:'' }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Reduction %</label>
+                <input type="number" step="0.01" min="0.01" max="100" name="reduction_pct" class="form-control form-control-sm" required
+                       value="{{ trajectory.target.reduction_pct|default:'' }}">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label small fw-semibold">Note</label>
+                <input type="text" name="note" class="form-control form-control-sm" value="{{ trajectory.target.note|default:'' }}">
+            </div>
+            <div class="col-md-2"><button type="submit" class="btn btn-sm btn-primary w-100">{% if trajectory %}Update{% else %}Set target{% endif %}</button></div>
+        </form>
+    </div>
+</div>
+
 <!-- ── Statement of method ── -->
-<div class="card mt-4" style="border-left:4px solid var(--hh-blue);">
+<div class="card mt-4" id="method" style="border-left:4px solid var(--hh-blue);">
     <div class="card-header"><i class="fas fa-scale-balanced me-2"></i>Statement of method</div>
     <div class="card-body small text-muted">
         <p>
@@ -266,9 +1102,17 @@
         <p class="mb-0">
             <strong>Limitations.</strong> Apportionment assumes the declared basis is a
             reasonable proxy for a site's shared resource use; it is not a metered
-            measurement of the award's own consumption. Travel is currently apportioned
-            rather than attributed per trip, so an award with unusually heavy or light
-            travel will be over- or under-stated on that line. Procurement uses
+            measurement of the award's own consumption.
+            {% if footprint.travel_logged %}
+            Travel is attributed per journey from the award's travel log, using
+            {{ travel_factor_source }}; it replaces the award's share of site flights and
+            road travel, so journeys missing from the log are not counted.
+            {% else %}
+            No journeys are logged, so travel is apportioned from site figures rather than
+            attributed per trip; an award with unusually heavy or light travel will be over-
+            or under-stated on that line.
+            {% endif %}
+            Procurement uses
             spend-based factors, which assume price tracks carbon.
             {% if footprint.sites_missing_data %}
             <br><strong class="text-danger">

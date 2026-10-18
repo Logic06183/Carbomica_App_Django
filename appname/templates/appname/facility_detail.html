@@ -311,6 +311,116 @@
 
 {% endif %}
 
+<!-- ── Laboratory accreditation ── -->
+<div class="card mb-4">
+    <div class="card-header d-flex align-items-center justify-content-between">
+        <span><i class="fas fa-flask me-2" style="color:var(--hh-blue);"></i>Laboratory accreditation</span>
+        <form method="post" class="d-flex align-items-center gap-2 no-print">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="set_laboratory">
+            <div class="form-check form-switch mb-0">
+                <input class="form-check-input" type="checkbox" name="has_laboratory" id="has_laboratory"
+                       {% if facility.is_laboratory %}checked{% endif %}
+                       {% if facility.facility_type == 'university_lab' %}disabled{% endif %}
+                       onchange="this.form.submit()">
+                <label class="form-check-label small" for="has_laboratory">This site has laboratories</label>
+            </div>
+        </form>
+    </div>
+    <div class="card-body small">
+        {% if facility.is_laboratory %}
+            {% if lab.state == 'accredited' %}
+            <span class="badge bg-success me-1">Accredited</span> Current LEAF or My Green Lab award on record.
+            {% elif lab.state == 'equivalent' %}
+            <span class="badge bg-warning text-dark me-1">Equivalent scheme only</span>
+            Confirm with Wellcome that the scheme counts.
+            {% else %}
+            <span class="badge bg-danger me-1">No current accreditation</span>
+            Wellcome: "Laboratories should achieve the minimum level of accreditation offered by
+            LEAF, My Green Lab or equivalent by the end of 2025."
+            {% endif %}
+        {% else %}
+        <span class="text-muted">Not marked as a laboratory site, so no accreditation is expected.</span>
+        {% endif %}
+    </div>
+    {% if accreditations %}
+    <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0 small">
+            <thead class="table-light">
+                <tr><th>Lab</th><th>Scheme</th><th>Level</th><th>Awarded</th><th>Valid until</th><th>Evidence</th><th></th></tr>
+            </thead>
+            <tbody>
+                {% for a in accreditations %}
+                <tr>
+                    <td>{{ a.lab_name|default:"—" }}</td>
+                    <td>{{ a.get_scheme_display }}</td>
+                    <td>{{ a.get_level_display }}</td>
+                    <td class="text-nowrap">{{ a.awarded_on|date:"j M Y" }}</td>
+                    <td class="text-nowrap">
+                        {% if a.valid_until %}{{ a.valid_until|date:"j M Y" }}
+                        {% if not a.expires_on %}<span class="text-muted" style="font-size:.7rem;">(2-yr recertification)</span>{% endif %}
+                        {% else %}<span class="text-muted">not entered</span>{% endif %}
+                        {% if a in lab.current %}{% else %}<span class="badge bg-secondary ms-1">lapsed</span>{% endif %}
+                    </td>
+                    <td>{% if a.evidence_url %}<a href="{{ a.evidence_url }}" target="_blank" rel="noopener">link</a>{% else %}—{% endif %}</td>
+                    <td class="text-end no-print">
+                        <form method="post" class="d-inline">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="remove_accreditation">
+                            <input type="hidden" name="accreditation_id" value="{{ a.id }}">
+                            <button type="submit" class="btn btn-sm btn-outline-danger"
+                                    onclick="return confirm('Remove this accreditation?')"><i class="fas fa-times"></i></button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+    <div class="card-body border-top no-print">
+        <form method="post" class="row g-2 align-items-end">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="add_accreditation">
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Lab</label>
+                <input type="text" name="lab_name" class="form-control form-control-sm" placeholder="optional">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Scheme</label>
+                <select name="scheme" class="form-select form-select-sm" required>
+                    {% for value, label in scheme_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Level</label>
+                <select name="level" class="form-select form-select-sm" required>
+                    {% for value, label in level_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Awarded</label>
+                <input type="date" name="awarded_on" class="form-control form-control-sm" required>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Expires</label>
+                <input type="date" name="expires_on" class="form-control form-control-sm">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-semibold">Evidence URL</label>
+                <input type="url" name="evidence_url" class="form-control form-control-sm" placeholder="https://">
+            </div>
+            <div class="col-12 d-flex justify-content-between align-items-center">
+                <span class="form-text" style="font-size:.7rem;">
+                    LEAF awards Bronze, Silver and Gold; My Green Lab awards Bronze to Green and recertifies
+                    after 2 years, so its expiry defaults to that. Enter LEAF expiry from your certificate.
+                </span>
+                <button type="submit" class="btn btn-sm btn-success">Record accreditation</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <!-- ── Linked interventions ── -->
 <div class="card mb-4">
     <div class="card-header d-flex align-items-center justify-content-between">
@@ -380,14 +490,14 @@
         <h6 class="fw-bold mb-2"><i class="fas fa-graduation-cap me-2" style="color:var(--hh-blue);"></i>Emission conversion methodology</h6>
         <p class="text-muted small mb-1">
             Raw usage data (kWh, m³, kg, litres, km, units) is converted to tCO₂e using
-            country-specific grid emission factors (IEA 2022) and GHG Protocol / DEFRA 2023 combustion factors.
+            country-specific grid emission factors (IEA; UK from DEFRA 2026) and DEFRA 2026 combustion factors.
         </p>
         <p class="text-muted small mb-1">
             <strong>Electricity factors:</strong> Zimbabwe 0.556 kg CO₂e/kWh (coal grid) · South Africa 0.928 kg CO₂e/kWh (Eskom) · Kenya 0.032 kg CO₂e/kWh (renewables-heavy).
             Anaesthetic gases use a weighted average GWP of 802 (50% isoflurane GWP 510, 30% sevoflurane GWP 130, 20% desflurane GWP 2540 — IPCC AR6).
         </p>
         <p class="text-muted small mb-0">
-            <strong>Scope 3 categories:</strong> flights use DEFRA 2023 long-haul economy factors
+            <strong>Scope 3 categories:</strong> flights use DEFRA 2026 long-haul economy factors
             including radiative forcing; consumables &amp; procurement use spend-based EEIO factors
             (HESCET v2, ~0.5 kg CO₂e per USD). Categories are labelled with GHG Protocol
             Corporate Standard scopes throughout.

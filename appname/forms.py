@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from django import forms
 from django.forms import inlineformset_factory
-from .models import Facility, EmissionData, FacilityIntervention, Intervention, EmissionSource, Policy, OptimizationScenario, Organisation
+from .models import Facility, EmissionData, FacilityIntervention, Intervention, EmissionSource, Policy, OptimizationScenario, Organisation, TravelJourney, CreditPurchase, LabAccreditation, PlannedSpend, SustainabilityCost, AwardReductionTarget, ComputeJob
 
 class FacilityForm(forms.ModelForm):
     class Meta:
@@ -181,3 +181,69 @@ class EmissionDataUpdateForm(forms.ModelForm):
     def has_any_value(self):
         """True if at least one category was given a non-zero figure."""
         return any(self.cleaned_data.get(name) for name in self.Meta.fields)
+
+
+class TravelJourneyForm(forms.ModelForm):
+    """One journey on an award's travel log. Model.clean() rejects factor
+    combinations DEFRA does not publish."""
+
+    class Meta:
+        model = TravelJourney
+        fields = [
+            'date', 'traveller', 'origin', 'destination', 'mode', 'air_haul',
+            'cabin_class', 'distance_km', 'passengers', 'rail_hours', 'purpose',
+            'is_planned',
+        ]
+
+
+class CreditPurchaseForm(forms.ModelForm):
+    """Credits bought against an award's remaining travel emissions."""
+
+    class Meta:
+        model = CreditPurchase
+        fields = [
+            'credits_tco2e', 'provider', 'registry', 'registry_reference',
+            'cost_usd', 'purchase_date',
+        ]
+
+
+class LabAccreditationForm(forms.ModelForm):
+    """A LEAF / My Green Lab / equivalent award held by a site."""
+
+    class Meta:
+        model = LabAccreditation
+        fields = ['lab_name', 'scheme', 'level', 'awarded_on', 'expires_on', 'evidence_url']
+
+
+class PlannedSpendForm(forms.ModelForm):
+    """A purchase planned in the application."""
+
+    class Meta:
+        model = PlannedSpend
+        fields = ['category', 'description', 'spend_usd']
+
+
+class SustainabilityCostForm(forms.ModelForm):
+    """A sustainability cost line under one of Wellcome's eligible headings."""
+
+    class Meta:
+        model = SustainabilityCost
+        fields = ['kind', 'description', 'amount_usd']
+
+
+class AwardReductionTargetForm(forms.ModelForm):
+    """Reduction target for one award."""
+
+    class Meta:
+        model = AwardReductionTarget
+        fields = ['baseline_year', 'target_year', 'reduction_pct', 'note']
+
+
+class ComputeJobForm(forms.ModelForm):
+    """Computing run outside the award's sites, estimated with Green Algorithms."""
+
+    class Meta:
+        model = ComputeJob
+        fields = ['description', 'date', 'runtime_hours', 'cores', 'watts_per_core',
+                  'usage_factor', 'memory_gb', 'pue', 'runs', 'grid_country', 'is_planned']
+

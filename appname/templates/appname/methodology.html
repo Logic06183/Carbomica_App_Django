@@ -27,7 +27,7 @@
                 <span class="text-muted">Category structure and Scope 1 / 2 / 3 boundaries for all 13 emission categories.</span>
             </div>
             <div class="col-md-3">
-                <strong class="d-block mb-1">DEFRA 2023 conversion factors</strong>
+                <strong class="d-block mb-1">DEFRA 2026 conversion factors</strong>
                 <span class="text-muted">Fuel combustion, transport, flights (incl. radiative forcing) and waste treatment.</span>
             </div>
             <div class="col-md-3">
@@ -186,6 +186,90 @@
                     <td class="text-muted" style="font-size:.75rem;">
                         {% if row.naics != '—' %}NAICS {{ row.naics }} — {% endif %}{{ row.naics_title }}
                     </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- ── Award travel log factors ── -->
+<div class="card mb-4" id="travel-factors">
+    <div class="card-header"><i class="fas fa-plane me-2"></i>Award travel log — per-journey factors</div>
+    <div class="card-body small text-muted">
+        <p class="mb-2">
+            Journeys logged on an award are converted with the UK Government's business-travel
+            factors: <a href="{{ travel_factor_url }}" target="_blank" rel="noopener">{{ travel_factor_source }}</a>
+            (read 17 October 2026). Flight factors include radiative forcing. DEFRA publishes only an
+            average-passenger factor for UK domestic flights and no first or premium-economy factor for
+            short-haul, so those combinations are not accepted. Car is per vehicle-km; every other
+            mode is per passenger-km.
+        </p>
+        <p class="mb-0">
+            Once an award logs its journeys, they replace its apportioned share of site flights and
+            road travel, so a trip is never counted in both.
+        </p>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-sm mb-0">
+            <thead class="table-light">
+                <tr><th>Mode</th><th>Detail</th><th class="text-end">kg CO<sub>2</sub>e per unit</th><th>Unit</th></tr>
+            </thead>
+            <tbody>
+                {% for row in travel_rows %}
+                <tr>
+                    <td>{{ row.mode }}</td>
+                    <td class="text-muted">{{ row.detail }}</td>
+                    <td class="text-end">{{ row.factor }}</td>
+                    <td class="text-muted">{{ row.unit }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- ── Computing ── -->
+<div class="card mb-4" id="computing-method">
+    <div class="card-header"><i class="fas fa-microchip me-2"></i>Computing outside the award's sites — Green Algorithms</div>
+    <div class="card-body small text-muted">
+        <p class="mb-2">
+            High-performance and cloud computing logged on an award uses the Green Algorithms method
+            (Lannelongue, Grealey &amp; Inouye, <em>Advanced Science</em> 2021;8:2100707,
+            <a href="{{ green_algorithms_doi }}" target="_blank" rel="noopener">doi:10.1002/advs.202100707</a>):
+        </p>
+        <p class="mb-2 font-monospace">energy (kWh) = hours × (cores × W per core × usage + memory GB × {{ memory_w_per_gb }} W/GB) × PUE ÷ 1000 × runs</p>
+        <p class="mb-2">
+            Memory draw of {{ memory_w_per_gb }} W per GB and the worldwide average PUE of {{ default_pue }} are the paper's
+            values; it uses PUE 1 for laptops and desktops. Core power is the processor's thermal design power per core,
+            taken from the manufacturer. Energy is converted with the grid intensity of the country the data centre is in
+            (table above). Like the paper, this excludes hardware manufacture and storage.
+        </p>
+        <p class="mb-0">
+            Only computing outside the award's own sites is logged this way. Computing on a site's own servers is already
+            inside that site's electricity and its apportioned share.
+        </p>
+    </div>
+</div>
+
+<!-- ── Factor audit ── -->
+<div class="card mb-4" id="factor-audit">
+    <div class="card-header"><i class="fas fa-clipboard-check me-2"></i>Factor audit — {{ factor_audit_date|date:"j F Y" }}</div>
+    <div class="card-body small text-muted pb-0">
+        Every factor checked against its source and the latest published edition where that source is openly
+        available. Factors marked "not re-verified" are used as cited; treat them with more caution.
+    </div>
+    <div class="table-responsive">
+        <table class="table table-sm mb-0 small">
+            <thead class="table-light"><tr><th>Factor</th><th>Status</th><th>What was found</th></tr></thead>
+            <tbody>
+                {% for factor, status, note in factor_audit %}
+                <tr>
+                    <td class="fw-semibold">{{ factor }}</td>
+                    <td class="text-nowrap">
+                        <span class="badge {% if status == 'updated' %}bg-primary{% elif status == 'checked' %}bg-success{% else %}bg-warning text-dark{% endif %}">{{ status }}</span>
+                    </td>
+                    <td class="text-muted">{{ note }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
